@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inox
+    ports:
+      # Map host port 5432 to container port 5432 so your local Go server can connect
+      - "5432:5432"
+    volumes:
+      # Named volume guarantees database data persists across container restarts
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready checks if the PostgreSQL server is actively accepting connections
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inox"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
+    driver: local
