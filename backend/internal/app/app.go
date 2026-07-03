@@ -16,6 +16,8 @@ import (
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/config"
+	"github.com/inox/inox/backend/internal/room"
+	"github.com/inox/inox/backend/internal/ws"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -37,19 +39,27 @@ func New(cfg *config.Config, log *slog.Logger, db *pgxpool.Pool, rdb *redis.Clie
 }
 
 func (a *App) Run() error {
-	// 1. Initialize Auth domain persistence layer
+	// 1. Initialize domain persistence layers
 	userRepo := auth.NewUserRepository(a.DB)
 	sessionStore := auth.NewSessionStore(a.Redis)
+	roomRepo := room.NewRoomRepository(a.DB)
 
-	// 2. Initialize Auth business logic service
+	// 2. Initialize business logic services
 	authService := auth.NewAuthService(userRepo, sessionStore)
+	roomService := room.NewRoomService(roomRepo)
 
-	// 3. Initialize HTTP transport handlers
+	// 3. Initialize real-time WebSocket engine
+	hub := ws.NewHub()
+	go hub.Run()
+
+	// 4. Initialize HTTP transport handlers
 	isProd := strings.ToLower(a.Config.Environment) == "production"
 	authHandler := handler.NewAuthHandler(authService, isProd)
+	roomHandler := handler.NewRoomHandler(roomService)
+	wsHandler := handler.NewWSHandler(hub)
 
-	// 4. Register router with wired handlers & middleware
-	router := api.NewRouter(authHandler, authService)
+	// 5. Register router with wired handlers & middleware
+	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),

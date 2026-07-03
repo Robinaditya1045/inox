@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/inox/inox/backend/internal/api/handler"
+	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/domain"
 )
@@ -23,7 +23,7 @@ func RequireAuth(authService auth.AuthService) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie(SessionCookieName)
 			if err != nil || cookie.Value == "" {
-				handler.WriteError(w, http.StatusUnauthorized, "authentication required")
+				respond.WriteError(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
@@ -31,7 +31,7 @@ func RequireAuth(authService auth.AuthService) func(http.Handler) http.Handler {
 			if err != nil {
 				// Clear expired or invalid session cookie from client
 				ClearSessionCookie(w)
-				handler.WriteError(w, http.StatusUnauthorized, "session expired or invalid")
+				respond.WriteError(w, http.StatusUnauthorized, "session expired or invalid")
 				return
 			}
 
@@ -46,6 +46,11 @@ func RequireAuth(authService auth.AuthService) func(http.Handler) http.Handler {
 func GetSessionFromContext(ctx context.Context) (*domain.Session, bool) {
 	session, ok := ctx.Value(sessionContextKey).(*domain.Session)
 	return session, ok
+}
+
+// WithSessionContext returns a new context with the session injected (useful for unit testing and internal RPCs).
+func WithSessionContext(ctx context.Context, session *domain.Session) context.Context {
+	return context.WithValue(ctx, sessionContextKey, session)
 }
 
 // ClearSessionCookie sets an expired cookie to purge the session ID from browser memory.

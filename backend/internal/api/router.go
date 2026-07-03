@@ -6,11 +6,17 @@ import (
 
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
+	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/auth"
+	"github.com/inox/inox/backend/internal/room"
 )
 
 // NewRouter initializes Go 1.22 standard library ServeMux and registers application routes.
-func NewRouter(authHandler *handler.AuthHandler, authService auth.AuthService) http.Handler {
+func NewRouter(
+	authHandler *handler.AuthHandler, authService auth.AuthService,
+	roomHandler *handler.RoomHandler, roomService room.RoomService,
+	wsHandler *handler.WSHandler,
+) http.Handler {
 	mux := http.NewServeMux()
 
 	// Register liveness check endpoint for Kubernetes / Docker health probes.
@@ -27,6 +33,24 @@ func NewRouter(authHandler *handler.AuthHandler, authService auth.AuthService) h
 		// Protected Endpoints requiring explicit Redis session authentication
 		requireAuth := middleware.RequireAuth(authService)
 		mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(meHandler)))
+
+		if roomHandler != nil && roomService != nil {
+			requireMember := middleware.RequireRoomMembership(roomService)
+
+			// Room Creation & Joining
+			mux.Handle("POST /api/v1/rooms", requireAuth(http.HandlerFunc(roomHandler.CreateRoom)))
+			mux.Handle("POST /api/v1/rooms/{id}/join", requireAuth(http.HandlerFunc(roomHandler.JoinRoom)))
+
+			// Protected Room Workspace Endpoints (Requires both login AND room membership)
+			mux.Handle("GET /api/v1/rooms/{id}", requireAuth(requireMember(http.HandlerFunc(roomHandler.GetRoom))))
+			mux.Handle("PUT /api/v1/rooms/{id}/members/{user_id}/role", requireAuth(http.HandlerFunc(roomHandler.AssignRole)))
+			mux.Handle("DELETE /api/v1/rooms/{id}/members/{user_id}", requireAuth(http.HandlerFunc(roomHandler.KickMember)))
+
+			if wsHandler != nil {
+				// Real-time WebSocket upgrade endpoint (Requires both login AND room membership)
+				mux.Handle("GET /api/v1/rooms/{id}/ws", requireAuth(requireMember(http.HandlerFunc(wsHandler.ServeWS))))
+			}
+		}
 	}
 
 	return mux
@@ -36,10 +60,10 @@ func NewRouter(authHandler *handler.AuthHandler, authService auth.AuthService) h
 func meHandler(w http.ResponseWriter, r *http.Request) {
 	session, ok := middleware.GetSessionFromContext(r.Context())
 	if !ok {
-		handler.WriteError(w, http.StatusUnauthorized, "session context missing")
+		respond.WriteError(w, http.StatusUnauthorized, "session context missing")
 		return
 	}
-	handler.WriteJSON(w, http.StatusOK, session)
+	respond.WriteJSON(w, http.StatusOK, session)
 }
 
 // healthCheckHandler responds with HTTP 200 and JSON status indicating the server is alive.
