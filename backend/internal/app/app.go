@@ -8,30 +8,48 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/inox/inox/backend/internal/api"
+	"github.com/inox/inox/backend/internal/api/handler"
+	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 type App struct {
 	Config *config.Config
 	Logger *slog.Logger
 	DB     *pgxpool.Pool
+	Redis  *redis.Client
 }
 
-func New(cfg *config.Config, log *slog.Logger, db *pgxpool.Pool) *App {
+func New(cfg *config.Config, log *slog.Logger, db *pgxpool.Pool, rdb *redis.Client) *App {
 	return &App{
 		Config: cfg,
 		Logger: log,
 		DB:     db,
+		Redis:  rdb,
 	}
 }
 
 func (a *App) Run() error {
-	router := api.NewRouter()
+	// 1. Initialize Auth domain persistence layer
+	userRepo := auth.NewUserRepository(a.DB)
+	sessionStore := auth.NewSessionStore(a.Redis)
+
+	// 2. Initialize Auth business logic service
+	authService := auth.NewAuthService(userRepo, sessionStore)
+
+	// 3. Initialize HTTP transport handlers
+	isProd := strings.ToLower(a.Config.Environment) == "production"
+	authHandler := handler.NewAuthHandler(authService, isProd)
+
+	// 4. Register router with wired handlers & middleware
+	router := api.NewRouter(authHandler, authService)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),
@@ -61,6 +79,11 @@ func (a *App) Run() error {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		a.Logger.Error("server shutdown error", "error", err)
+	}
+
+	if a.Redis != nil {
+		a.Logger.Info("closing Redis connection pool...")
+		a.Redis.Close()
 	}
 
 	// Cleanly close database connections so PostgreSQL terminates sockets gracefully.

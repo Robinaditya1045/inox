@@ -10,6 +10,7 @@ type Config struct {
 	HTTPPort    string
 	LogLevel    string
 	DatabaseURL string
+	RedisURL    string
 }
 
 func Load() (*Config, error) {
@@ -19,11 +20,15 @@ func Load() (*Config, error) {
 		LogLevel:    getEnv("LOG_LEVEL", "debug"),
 		// Default local dev DSN (Data Source Name)
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/inox?sslmode=disable"),
+		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379/0"),
 	}
 
-	// Fail fast if DATABASE_URL is empty
+	// Fail fast if DATABASE_URL or REDIS_URL is empty
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL environment variable is required")
+	}
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("REDIS_URL environment variable is required")
 	}
 
 	return cfg, nil

@@ -23,6 +23,26 @@ services:
       retries: 5
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    container_name: inox-redis
+    restart: unless-stopped
+    ports:
+      # Map host port 6379 to container port 6379
+      - "6379:6379"
+    volumes:
+      # Persistent volume so cached sessions survive container restarts during local dev
+      - redis_data:/data
+    healthcheck:
+      # redis-cli ping returns PONG when Redis is ready for traffic
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local

@@ -33,7 +33,15 @@ func main() {
 	}
 	log.Info("connected to PostgreSQL successfully")
 
-	application := app.New(cfg, log, dbPool)
+	log.Info("connecting to Redis...")
+	redisClient, err := database.NewRedisClient(bootCtx, cfg.RedisURL)
+	if err != nil {
+		log.Error("fatal redis connection error", "error", err)
+		os.Exit(1)
+	}
+	log.Info("connected to Redis successfully")
+
+	application := app.New(cfg, log, dbPool, redisClient)
 
 	if err := application.Run(); err != nil {
 		log.Error("fatal server error", "error", err)
