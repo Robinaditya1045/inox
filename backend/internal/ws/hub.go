@@ -19,6 +19,9 @@ type Hub struct {
 
 	// Inbound events from clients waiting to be dispatched to room members.
 	Broadcast chan *Event
+
+	// Stop signals the Hub event loop to gracefully shut down and disconnect all clients.
+	Stop chan struct{}
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
@@ -28,7 +31,13 @@ func NewHub() *Hub {
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan *Event, 256),
+		Stop:       make(chan struct{}),
 	}
+}
+
+// Shutdown initiates a graceful teardown of the WebSocket Hub.
+func (h *Hub) Shutdown() {
+	close(h.Stop)
 }
 
 // Run executes the central event loop of the Hub.
@@ -46,8 +55,26 @@ func (h *Hub) Run() {
 
 		case event := <-h.Broadcast:
 			h.dispatchEvent(event)
+
+		case <-h.Stop:
+			h.shutdownAll()
+			return
 		}
 	}
+}
+
+func (h *Hub) shutdownAll() {
+	slog.Info("draining all active websocket connections across rooms...")
+	for roomID, clients := range h.rooms {
+		for client := range clients {
+			close(client.Send)
+			if client.Conn != nil {
+				_ = client.Conn.Close()
+			}
+		}
+		delete(h.rooms, roomID)
+	}
+	slog.Info("websocket hub shutdown complete")
 }
 
 func (h *Hub) registerClient(client *Client) {

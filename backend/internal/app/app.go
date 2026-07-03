@@ -91,6 +91,9 @@ func (a *App) Run() error {
 		a.Logger.Error("server shutdown error", "error", err)
 	}
 
+	a.Logger.Info("shutting down real-time WebSocket hub...")
+	hub.Shutdown()
+
 	if a.Redis != nil {
 		a.Logger.Info("closing Redis connection pool...")
 		a.Redis.Close()

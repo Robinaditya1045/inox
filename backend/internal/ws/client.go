@@ -37,9 +37,15 @@ type Client struct {
 // The application ensures that there is at most one reader on a connection by
 // executing all reads from this goroutine.
 func (c *Client) ReadPump() {
+	if c.Conn == nil {
+		return
+	}
+
 	defer func() {
 		c.Hub.Unregister <- c
-		_ = c.Conn.Close()
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
 	}()
 
 	c.Conn.SetReadLimit(maxMessageSize)
@@ -81,10 +87,16 @@ func (c *Client) ReadPump() {
 // application ensures that there is at most one writer to a connection by
 // executing all writes from this goroutine.
 func (c *Client) WritePump() {
+	if c.Conn == nil {
+		return
+	}
+
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		_ = c.Conn.Close()
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
 	}()
 
 	for {
