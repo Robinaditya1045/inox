@@ -1,0 +1,53 @@
+/* Inox Design System Tokens (Obsidian Glassmorphism Theme) */
+:root {
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Color Palette - Deep Obsidian & Frosted Glass */
+  --color-bg-obsidian: #0B0E14;
+  --color-bg-surface: #111622;
+  --color-bg-surface-hover: #181F30;
+  --color-bg-glass: rgba(17, 22, 34, 0.75);
+  --color-bg-glass-heavy: rgba(11, 14, 20, 0.85);
+  --color-bg-glass-light: rgba(255, 255, 255, 0.05);
+  
+  /* Neon Accents */
+  --color-accent-purple: #AA3BFF;
+  --color-accent-purple-glow: rgba(170, 59, 255, 0.3);
+  --color-accent-cyan: #00F0FF;
+  --color-accent-cyan-glow: rgba(0, 240, 255, 0.3);
+  --color-accent-emerald: #10B981;
+  --color-accent-emerald-glow: rgba(16, 185, 129, 0.3);
+  --color-accent-rose: #F43F5E;
+  
+  /* Text & Content Colors */
+  --color-text-primary: #F3F4F6;
+  --color-text-secondary: #9CA3AF;
+  --color-text-muted: #6B7280;
+  --color-text-on-accent: #FFFFFF;
+  
+  /* Borders & Dividers */
+  --color-border-glass: rgba(255, 255, 255, 0.08);
+  --color-border-hover: rgba(255, 255, 255, 0.18);
+  --color-border-accent: rgba(170, 59, 255, 0.5);
+  
+  /* Shadows & Glows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --shadow-neon-purple: 0 0 20px rgba(170, 59, 255, 0.4);
+  --shadow-neon-cyan: 0 0 20px rgba(0, 240, 255, 0.4);
+  
+  /* Transitions & Animations */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* Layout Dimensions */
+  --sidebar-left-width: 260px;
+  --sidebar-right-width: 320px;
+  --panel-bottom-height: 72px;
+  --header-height: 64px;
+}
