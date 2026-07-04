@@ -23,6 +23,7 @@ type RoomService interface {
 	AssignRole(ctx context.Context, roomID, requesterID, targetUserID string, newRole domain.Role, customPerms *domain.Permissions) (*domain.RoomMember, error)
 	KickMember(ctx context.Context, roomID, requesterID, targetUserID string) error
 	CheckPlaybackPermission(ctx context.Context, roomID, userID string) error
+	ListRooms(ctx context.Context, userID string) ([]*domain.Room, error)
 }
 
 type roomService struct {
@@ -165,4 +166,9 @@ func (s *roomService) CheckPlaybackPermission(ctx context.Context, roomID, userI
 		return ErrPermissionDenied
 	}
 	return nil
+}
+
+// ListRooms retrieves all public rooms and private rooms where the user is an owner or member.
+func (s *roomService) ListRooms(ctx context.Context, userID string) ([]*domain.Room, error) {
+	return s.repo.ListRooms(ctx, userID)
 }

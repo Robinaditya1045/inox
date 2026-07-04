@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/inox/inox/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
@@ -50,6 +51,9 @@ func (r *postgresUserRepository) Create(ctx context.Context, user *domain.User) 
 		// Check for PostgreSQL unique constraint violation error code (23505)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if strings.Contains(pgErr.ConstraintName, "username") || strings.Contains(pgErr.Message, "username") || strings.Contains(pgErr.Detail, "username") {
+				return errors.New("username is already taken")
+			}
 			return ErrEmailAlreadyTaken
 		}
 		return fmt.Errorf("failed to insert user: %w", err)

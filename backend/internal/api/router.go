@@ -38,7 +38,8 @@ func NewRouter(
 		if roomHandler != nil && roomService != nil {
 			requireMember := middleware.RequireRoomMembership(roomService)
 
-			// Room Creation & Joining
+			// Room Creation, Listing & Joining
+			mux.Handle("GET /api/v1/rooms", requireAuth(http.HandlerFunc(roomHandler.ListRooms)))
 			mux.Handle("POST /api/v1/rooms", requireAuth(http.HandlerFunc(roomHandler.CreateRoom)))
 			mux.Handle("POST /api/v1/rooms/{id}/join", requireAuth(http.HandlerFunc(roomHandler.JoinRoom)))
 
@@ -59,7 +60,7 @@ func NewRouter(
 		}
 	}
 
-	return mux
+	return middleware.CORS(mux)
 }
 
 // meHandler returns the authenticated user's profile retrieved from Redis session context.

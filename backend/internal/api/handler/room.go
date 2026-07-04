@@ -59,6 +59,23 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListRooms retrieves all public rooms and private rooms where the user is an owner or member.
+func (h *RoomHandler) ListRooms(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	rooms, err := h.roomService.ListRooms(r.Context(), session.UserID)
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to list rooms")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, rooms)
+}
+
 // JoinRoom allows an authenticated user to join a room via ID.
 func (h *RoomHandler) JoinRoom(w http.ResponseWriter, r *http.Request) {
 	session, ok := middleware.GetSessionFromContext(r.Context())

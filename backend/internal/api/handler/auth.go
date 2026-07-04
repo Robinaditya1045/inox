@@ -3,7 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/inox/inox/backend/internal/api/respond"
@@ -43,11 +45,11 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.authService.Signup(r.Context(), req.Username, req.Email, req.Password)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidInput) || errors.Is(err, auth.ErrEmailAlreadyTaken) {
+		if errors.Is(err, auth.ErrInvalidInput) || errors.Is(err, auth.ErrEmailAlreadyTaken) || strings.Contains(err.Error(), "already") {
 			respond.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		respond.WriteError(w, http.StatusInternalServerError, "failed to create user account")
+		respond.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create user account: %v", err))
 		return
 	}
 
@@ -69,7 +71,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			respond.WriteError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
-		respond.WriteError(w, http.StatusInternalServerError, "login failed due to server error")
+		respond.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("login failed due to server error: %v", err))
 		return
 	}
 

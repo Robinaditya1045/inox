@@ -24,6 +24,7 @@ type RoomRepository interface {
 	AddMember(ctx context.Context, member *domain.RoomMember) error
 	UpdateMemberPermissions(ctx context.Context, roomID, userID string, role domain.Role, perms domain.Permissions) (*domain.RoomMember, error)
 	RemoveMember(ctx context.Context, roomID, userID string) error
+	ListRooms(ctx context.Context, userID string) ([]*domain.Room, error)
 }
 
 type postgresRoomRepository struct {
@@ -202,4 +203,37 @@ func (r *postgresRoomRepository) RemoveMember(ctx context.Context, roomID, userI
 		return ErrMemberNotFound
 	}
 	return nil
+}
+
+// ListRooms returns all public rooms and private rooms where the user is an owner or member.
+func (r *postgresRoomRepository) ListRooms(ctx context.Context, userID string) ([]*domain.Room, error) {
+	query := `
+		SELECT DISTINCT r.id, r.name, r.owner_id, r.is_private, r.created_at, r.updated_at
+		FROM rooms r
+		LEFT JOIN room_members rm ON r.id = rm.room_id
+		WHERE r.is_private = false OR r.owner_id = $1 OR rm.user_id = $1
+		ORDER BY r.created_at DESC
+		LIMIT 50
+	`
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list rooms: %w", err)
+	}
+	defer rows.Close()
+
+	var rooms []*domain.Room
+	for rows.Next() {
+		room := &domain.Room{}
+		if err := rows.Scan(&room.ID, &room.Name, &room.OwnerID, &room.IsPrivate, &room.CreatedAt, &room.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan room: %w", err)
+		}
+		rooms = append(rooms, room)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	if rooms == nil {
+		rooms = []*domain.Room{}
+	}
+	return rooms, nil
 }
