@@ -14,6 +14,10 @@ const (
 	EventWebRTCOffer     EventType = "WEBRTC_OFFER"
 	EventWebRTCAnswer    EventType = "WEBRTC_ANSWER"
 	EventWebRTCICECand   EventType = "WEBRTC_ICE_CANDIDATE"
+	EventSFUJoin         EventType = "SFU_JOIN"
+	EventSFUOffer        EventType = "SFU_OFFER"
+	EventSFUAnswer       EventType = "SFU_ANSWER"
+	EventSFUICECandidate EventType = "SFU_ICE_CANDIDATE"
 	EventError           EventType = "ERROR"
 )
 
@@ -36,4 +40,17 @@ type VideoControlPayload struct {
 // ChatPayload represents a room text chat message.
 type ChatPayload struct {
 	Message string `json:"message"`
+}
+
+// SFUSDOPayload represents WebRTC Session Description Protocol (SDP) offer/answer framing for SFU media routing.
+type SFUSDOPayload struct {
+	SDP  string `json:"sdp"`
+	Type string `json:"type"` // "offer" or "answer"
+}
+
+// SFUICECandidatePayload represents WebRTC ICE candidate framing for NAT traversal.
+type SFUICECandidatePayload struct {
+	Candidate     string  `json:"candidate"`
+	SDPMid        *string `json:"sdpMid,omitempty"`
+	SDPMLineIndex *uint16 `json:"sdpMLineIndex,omitempty"`
 }

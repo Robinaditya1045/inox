@@ -17,6 +17,7 @@ import (
 	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/config"
 	"github.com/inox/inox/backend/internal/room"
+	"github.com/inox/inox/backend/internal/sfu"
 	"github.com/inox/inox/backend/internal/ws"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -43,13 +44,18 @@ func (a *App) Run() error {
 	userRepo := auth.NewUserRepository(a.DB)
 	sessionStore := auth.NewSessionStore(a.Redis)
 	roomRepo := room.NewRoomRepository(a.DB)
+	chatRepo := room.NewChatRepository(a.DB)
 
 	// 2. Initialize business logic services
 	authService := auth.NewAuthService(userRepo, sessionStore)
 	roomService := room.NewRoomService(roomRepo)
+	chatService := room.NewChatService(chatRepo, roomRepo)
 
-	// 3. Initialize real-time WebSocket engine
+	// 3. Initialize real-time WebSocket engine & SFU media manager
 	hub := ws.NewHub()
+	hub.SetChatService(chatService)
+	sfuMgr := sfu.NewManager()
+	hub.SetSFUManager(sfuMgr)
 	go hub.Run()
 
 	// 4. Initialize HTTP transport handlers
@@ -57,9 +63,10 @@ func (a *App) Run() error {
 	authHandler := handler.NewAuthHandler(authService, isProd)
 	roomHandler := handler.NewRoomHandler(roomService)
 	wsHandler := handler.NewWSHandler(hub)
+	chatHandler := handler.NewChatHandler(chatService)
 
 	// 5. Register router with wired handlers & middleware
-	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler)
+	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),

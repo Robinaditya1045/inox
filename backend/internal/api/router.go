@@ -16,6 +16,7 @@ func NewRouter(
 	authHandler *handler.AuthHandler, authService auth.AuthService,
 	roomHandler *handler.RoomHandler, roomService room.RoomService,
 	wsHandler *handler.WSHandler,
+	chatHandler *handler.ChatHandler,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -49,6 +50,11 @@ func NewRouter(
 			if wsHandler != nil {
 				// Real-time WebSocket upgrade endpoint (Requires both login AND room membership)
 				mux.Handle("GET /api/v1/rooms/{id}/ws", requireAuth(requireMember(http.HandlerFunc(wsHandler.ServeWS))))
+			}
+
+			if chatHandler != nil {
+				// Room chat message history retrieval endpoint
+				mux.Handle("GET /api/v1/rooms/{id}/messages", requireAuth(requireMember(http.HandlerFunc(chatHandler.GetRecentMessages))))
 			}
 		}
 	}
