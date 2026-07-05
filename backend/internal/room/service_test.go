@@ -102,6 +102,12 @@ func (m *mockRoomRepository) ListPendingInvitationsForUser(ctx context.Context, 
 func (m *mockRoomRepository) UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error {
 	return nil
 }
+func (m *mockRoomRepository) UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error {
+	if r, ok := m.rooms[roomID]; ok {
+		r.CurrentMediaURL = mediaURL
+	}
+	return nil
+}
 
 func TestRoomCreationAndRBACWorkflow(t *testing.T) {
 	ctx := context.Background()

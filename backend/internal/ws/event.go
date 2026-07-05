@@ -11,6 +11,8 @@ const (
 	EventPlay            EventType = "PLAY"
 	EventPause           EventType = "PAUSE"
 	EventSeek            EventType = "SEEK"
+	EventChangeMedia     EventType = "CHANGE_MEDIA"
+	EventSyncPlayback    EventType = "SYNC_PLAYBACK"
 	EventWebRTCOffer     EventType = "WEBRTC_OFFER"
 	EventWebRTCAnswer    EventType = "WEBRTC_ANSWER"
 	EventWebRTCICECand   EventType = "WEBRTC_ICE_CANDIDATE"
@@ -32,9 +34,12 @@ type Event struct {
 	Timestamp  int64           `json:"timestamp"`
 }
 
-// VideoControlPayload represents sync timestamp and media state for PLAY, PAUSE, and SEEK events.
+// VideoControlPayload represents sync timestamp and media state for PLAY, PAUSE, SEEK, CHANGE_MEDIA, and SYNC_PLAYBACK events.
 type VideoControlPayload struct {
+	MediaURL         string  `json:"media_url,omitempty"`
+	IsPlaying        bool    `json:"is_playing"`
 	MediaTimeSeconds float64 `json:"media_time_seconds"`
+	LastUpdated      int64   `json:"last_updated,omitempty"` // Epoch millis
 }
 
 // ChatPayload represents a room text chat message.

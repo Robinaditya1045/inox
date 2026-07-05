@@ -41,16 +41,19 @@ func TestHubRoomBroadcastingAndTargetedSignaling(t *testing.T) {
 	hub.Register <- alice
 	hub.Register <- bob
 
-	// Draining initial JOIN_ROOM notification events
+	// Draining initial JOIN_ROOM and SYNC_PLAYBACK notification events
 	readEventWithin(t, alice.Send, 500*time.Millisecond) // Alice joined notification
+	readEventWithin(t, alice.Send, 500*time.Millisecond) // Alice SYNC_PLAYBACK notification
 	readEventWithin(t, alice.Send, 500*time.Millisecond) // Bob joined notification sent to Alice
 	readEventWithin(t, bob.Send, 500*time.Millisecond)   // Bob joined notification sent to Bob
+	readEventWithin(t, bob.Send, 500*time.Millisecond)   // Bob SYNC_PLAYBACK notification
 
 	// Register Charlie
 	hub.Register <- charlie
 	readEventWithin(t, alice.Send, 500*time.Millisecond)   // Charlie joined -> Alice
 	readEventWithin(t, bob.Send, 500*time.Millisecond)     // Charlie joined -> Bob
 	readEventWithin(t, charlie.Send, 500*time.Millisecond) // Charlie joined -> Charlie
+	readEventWithin(t, charlie.Send, 500*time.Millisecond) // Charlie SYNC_PLAYBACK notification
 
 	// 3. Test Room Broadcast (Video Play Command)
 	playEvt := &ws.Event{

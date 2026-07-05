@@ -89,6 +89,14 @@ export const WatchPartyPlayer: React.FC = () => {
     const video = videoRef.current;
     if (!video) return;
     setDuration(video.duration);
+    if (isRemoteUpdate && Math.abs(video.currentTime - remoteTime) > 0.5) {
+      video.currentTime = remoteTime;
+      setProgress(remoteTime);
+      if (isPlayingRemote && video.paused) {
+        video.play().catch(() => {});
+        setIsPlayingLocal(true);
+      }
+    }
   };
 
   const handlePlayClick = () => {

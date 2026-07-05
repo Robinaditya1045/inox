@@ -5,6 +5,8 @@ export type WSEventType =
   | 'PLAY'
   | 'PAUSE'
   | 'SEEK'
+  | 'CHANGE_MEDIA'
+  | 'SYNC_PLAYBACK'
   | 'WEBRTC_OFFER'
   | 'WEBRTC_ANSWER'
   | 'WEBRTC_ICE_CANDIDATE'
@@ -30,7 +32,10 @@ export interface WSJoinPayload {
 }
 
 export interface WSPlaybackPayload {
+  media_url?: string;
+  is_playing?: boolean;
   media_time_seconds: number;
+  last_updated?: number;
 }
 
 export interface WSChatPayload {

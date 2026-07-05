@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWS } from './useWS';
 import { usePermissions } from './usePermissions';
+import { useRoom } from './useRoom';
 import type { WSPlaybackPayload } from '../types/ws';
 import { logger } from '../utils/logger';
 
@@ -21,7 +22,8 @@ export interface PlayerSyncState {
 const DEFAULT_STREAM_URL = 'https://media.w3.org/2010/05/bunny/movie.mp4';
 
 export const usePlayerSync = (): PlayerSyncState => {
-  const [mediaUrl, setMediaUrlState] = useState<string>(DEFAULT_STREAM_URL);
+  const { activeRoom } = useRoom();
+  const [mediaUrl, setMediaUrlState] = useState<string>(activeRoom?.current_media_url || DEFAULT_STREAM_URL);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number>(Date.now());
@@ -31,6 +33,12 @@ export const usePlayerSync = (): PlayerSyncState => {
 
   const { send, subscribe } = useWS();
   const permissions = usePermissions();
+
+  useEffect(() => {
+    if (activeRoom?.current_media_url) {
+      setMediaUrlState(activeRoom.current_media_url);
+    }
+  }, [activeRoom?.current_media_url]);
 
   const clearRemoteFlag = useCallback(() => {
     isRemoteUpdateRef.current = false;
@@ -74,10 +82,45 @@ export const usePlayerSync = (): PlayerSyncState => {
       }
     });
 
+    const unsubChangeMedia = subscribe('CHANGE_MEDIA', (msg) => {
+      const payload = msg.payload as WSPlaybackPayload;
+      if (payload && payload.media_url) {
+        logger.debug('PlayerSync: Remote CHANGE_MEDIA received', { url: payload.media_url, sender: msg.sender_name });
+        isRemoteUpdateRef.current = true;
+        setMediaUrlState(payload.media_url);
+        setCurrentTime(0);
+        setIsPlaying(false);
+        setLastSyncTimestamp(Date.now());
+      }
+    });
+
+    const unsubSyncPlayback = subscribe('SYNC_PLAYBACK', (msg) => {
+      const payload = msg.payload as WSPlaybackPayload;
+      if (payload) {
+        logger.info('PlayerSync: Authoritative SYNC_PLAYBACK received on join', { ...payload });
+        isRemoteUpdateRef.current = true;
+        if (payload.media_url) {
+          setMediaUrlState(payload.media_url);
+        }
+        
+        let targetTime = payload.media_time_seconds || 0;
+        if (payload.is_playing && payload.last_updated) {
+          const elapsedSec = Math.max(0, (Date.now() - payload.last_updated) / 1000);
+          targetTime += elapsedSec;
+        }
+        
+        setCurrentTime(targetTime);
+        setIsPlaying(!!payload.is_playing);
+        setLastSyncTimestamp(Date.now());
+      }
+    });
+
     return () => {
       unsubPlay();
       unsubPause();
       unsubSeek();
+      unsubChangeMedia();
+      unsubSyncPlayback();
     };
   }, [subscribe]);
 
@@ -89,8 +132,9 @@ export const usePlayerSync = (): PlayerSyncState => {
     setMediaUrlState(url);
     setCurrentTime(0);
     setIsPlaying(false);
-    logger.info('PlayerSync: Media stream URL changed', { url });
-  }, [permissions.can_control_playback]);
+    send<WSPlaybackPayload>('CHANGE_MEDIA', { media_url: url, media_time_seconds: 0, is_playing: false });
+    logger.info('PlayerSync: Media stream URL changed and broadcasted', { url });
+  }, [permissions.can_control_playback, send]);
 
   const play = useCallback((time: number) => {
     if (!permissions.can_control_playback) {

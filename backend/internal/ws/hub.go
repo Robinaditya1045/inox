@@ -4,11 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/inox/inox/backend/internal/room"
 	"github.com/inox/inox/backend/internal/sfu"
 	"github.com/pion/webrtc/v3"
 )
+
+// RoomPlaybackState maintains the authoritative real-time media state of an active watch party room.
+type RoomPlaybackState struct {
+	MediaURL         string  `json:"media_url"`
+	IsPlaying        bool    `json:"is_playing"`
+	MediaTimeSeconds float64 `json:"media_time_seconds"`
+	LastUpdated      int64   `json:"last_updated"` // Epoch millis
+}
 
 // Hub maintains the pool of active WebSocket clients partitioned by room IDs,
 // and coordinates real-time event broadcasting across connections.
@@ -31,6 +40,12 @@ type Hub struct {
 	// Optional chat service to persist real-time chat messages to PostgreSQL.
 	chatService room.ChatService
 
+	// Optional room service to query and update persisted room media URLs.
+	roomService room.RoomService
+
+	// Authoritative in-memory watch party playback state for active rooms.
+	playbackStates map[string]*RoomPlaybackState
+
 	// Optional SFU manager to route WebRTC voice and screen share media streams.
 	sfuManager *sfu.Manager
 }
@@ -38,11 +53,12 @@ type Hub struct {
 // NewHub initializes a new Hub instance with buffered channels.
 func NewHub() *Hub {
 	return &Hub{
-		rooms:      make(map[string]map[*Client]bool),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Broadcast:  make(chan *Event, 256),
-		Stop:       make(chan struct{}),
+		rooms:          make(map[string]map[*Client]bool),
+		playbackStates: make(map[string]*RoomPlaybackState),
+		Register:       make(chan *Client),
+		Unregister:     make(chan *Client),
+		Broadcast:      make(chan *Event, 256),
+		Stop:           make(chan struct{}),
 	}
 }
 
@@ -56,9 +72,34 @@ func (h *Hub) SetChatService(cs room.ChatService) {
 	h.chatService = cs
 }
 
+// SetRoomService wires the room management service for persisting media URL changes.
+func (h *Hub) SetRoomService(rs room.RoomService) {
+	h.roomService = rs
+}
+
 // SetSFUManager wires the Selective Forwarding Unit for voice chat and video routing.
 func (h *Hub) SetSFUManager(mgr *sfu.Manager) {
 	h.sfuManager = mgr
+}
+
+func (h *Hub) getOrCreatePlaybackState(roomID string) *RoomPlaybackState {
+	state, ok := h.playbackStates[roomID]
+	if !ok {
+		mediaURL := "https://media.w3.org/2010/05/bunny/movie.mp4"
+		if h.roomService != nil {
+			if r, err := h.roomService.GetRoomByID(context.Background(), roomID); err == nil && r != nil && r.CurrentMediaURL != "" {
+				mediaURL = r.CurrentMediaURL
+			}
+		}
+		state = &RoomPlaybackState{
+			MediaURL:         mediaURL,
+			IsPlaying:        false,
+			MediaTimeSeconds: 0,
+			LastUpdated:      time.Now().UnixMilli(),
+		}
+		h.playbackStates[roomID] = state
+	}
+	return state
 }
 
 // Run executes the central event loop of the Hub.
@@ -117,6 +158,23 @@ func (h *Hub) registerClient(client *Client) {
 		SenderName: client.Username,
 	}
 	h.dispatchEvent(joinEvt)
+
+	// Send authoritative playback synchronization state directly to the newly joined peer
+	state := h.getOrCreatePlaybackState(client.RoomID)
+	syncPayload, _ := json.Marshal(VideoControlPayload{
+		MediaURL:         state.MediaURL,
+		IsPlaying:        state.IsPlaying,
+		MediaTimeSeconds: state.MediaTimeSeconds,
+		LastUpdated:      state.LastUpdated,
+	})
+	syncEvt := &Event{
+		Type:      EventSyncPlayback,
+		RoomID:    client.RoomID,
+		TargetID:  client.UserID,
+		Payload:   syncPayload,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	h.dispatchEvent(syncEvt)
 }
 
 func (h *Hub) unregisterClient(client *Client) {
@@ -134,6 +192,7 @@ func (h *Hub) unregisterClient(client *Client) {
 		// Clean up empty rooms from memory
 		if len(roomClients) == 0 {
 			delete(h.rooms, client.RoomID)
+			delete(h.playbackStates, client.RoomID)
 			if h.sfuManager != nil {
 				h.sfuManager.RemoveRoom(client.RoomID)
 			}
@@ -176,6 +235,46 @@ func (h *Hub) dispatchEvent(event *Event) {
 		var payload ChatPayload
 		if err := json.Unmarshal(event.Payload, &payload); err == nil {
 			_, _ = h.chatService.SaveMessage(context.Background(), event.RoomID, event.SenderID, event.SenderName, payload.Message)
+		}
+	}
+
+	// Update authoritative in-memory playback state when media control events occur
+	if event.Type == EventPlay {
+		var payload VideoControlPayload
+		if err := json.Unmarshal(event.Payload, &payload); err == nil {
+			state := h.getOrCreatePlaybackState(event.RoomID)
+			state.IsPlaying = true
+			state.MediaTimeSeconds = payload.MediaTimeSeconds
+			state.LastUpdated = time.Now().UnixMilli()
+		}
+	} else if event.Type == EventPause {
+		var payload VideoControlPayload
+		if err := json.Unmarshal(event.Payload, &payload); err == nil {
+			state := h.getOrCreatePlaybackState(event.RoomID)
+			state.IsPlaying = false
+			state.MediaTimeSeconds = payload.MediaTimeSeconds
+			state.LastUpdated = time.Now().UnixMilli()
+		}
+	} else if event.Type == EventSeek {
+		var payload VideoControlPayload
+		if err := json.Unmarshal(event.Payload, &payload); err == nil {
+			state := h.getOrCreatePlaybackState(event.RoomID)
+			state.MediaTimeSeconds = payload.MediaTimeSeconds
+			state.LastUpdated = time.Now().UnixMilli()
+		}
+	} else if event.Type == EventChangeMedia {
+		var payload VideoControlPayload
+		if err := json.Unmarshal(event.Payload, &payload); err == nil {
+			state := h.getOrCreatePlaybackState(event.RoomID)
+			state.MediaURL = payload.MediaURL
+			state.IsPlaying = false
+			state.MediaTimeSeconds = 0
+			state.LastUpdated = time.Now().UnixMilli()
+			if h.roomService != nil && payload.MediaURL != "" {
+				go func(roomID, url string) {
+					_ = h.roomService.UpdateRoomMediaURL(context.Background(), roomID, url)
+				}(event.RoomID, payload.MediaURL)
+			}
 		}
 	}
 

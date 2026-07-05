@@ -24,6 +24,7 @@ export interface Room {
   name: string;
   owner_id: string;
   is_private: boolean;
+  current_media_url?: string;
   created_at: string;
   members?: RoomMember[];
 }

@@ -27,13 +27,14 @@ type Permissions struct {
 
 // Room represents a Watch Party workspace where users gather to watch synchronized video.
 type Room struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	OwnerID   string        `json:"owner_id"`
-	IsPrivate bool          `json:"is_private"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
-	Members   []*RoomMember `json:"members,omitempty"`
+	ID              string        `json:"id"`
+	Name            string        `json:"name"`
+	OwnerID         string        `json:"owner_id"`
+	IsPrivate       bool          `json:"is_private"`
+	CurrentMediaURL string        `json:"current_media_url"`
+	CreatedAt       time.Time     `json:"created_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
+	Members         []*RoomMember `json:"members,omitempty"`
 }
 
 // RoomMember represents a user's membership and permission set inside a specific room.

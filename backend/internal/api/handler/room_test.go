@@ -60,6 +60,14 @@ func (m *mockRoomService) RespondToInvitation(ctx context.Context, invID, userID
 	return nil, nil, nil
 }
 
+func (m *mockRoomService) GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error) {
+	return nil, nil
+}
+
+func (m *mockRoomService) UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error {
+	return nil
+}
+
 func TestCreateRoomHTTPHandler(t *testing.T) {
 	mockSvc := &mockRoomService{}
 	roomHandler := handler.NewRoomHandler(mockSvc)

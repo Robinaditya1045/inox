@@ -28,6 +28,8 @@ type RoomService interface {
 	InviteUserByUsername(ctx context.Context, roomID, inviterID, inviteeUsername string) (*domain.RoomInvitation, error)
 	ListUserPendingInvitations(ctx context.Context, userID string) ([]*domain.RoomInvitation, error)
 	RespondToInvitation(ctx context.Context, invID, userID string, accept bool) (*domain.Room, *domain.RoomMember, error)
+	GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error)
+	UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error
 }
 
 type roomService struct {
@@ -275,4 +277,12 @@ func (s *roomService) RespondToInvitation(ctx context.Context, invID, userID str
 		return nil, nil, err
 	}
 	return roomObj, newMember, nil
+}
+
+func (s *roomService) UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error {
+	return s.repo.UpdateRoomMediaURL(ctx, roomID, mediaURL)
+}
+
+func (s *roomService) GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error) {
+	return s.repo.GetRoomByID(ctx, roomID)
 }

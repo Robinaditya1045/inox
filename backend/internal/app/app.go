@@ -54,6 +54,7 @@ func (a *App) Run() error {
 	// 3. Initialize real-time WebSocket engine & SFU media manager
 	hub := ws.NewHub()
 	hub.SetChatService(chatService)
+	hub.SetRoomService(roomService)
 	sfuMgr := sfu.NewManager()
 	hub.SetSFUManager(sfuMgr)
 	go hub.Run()
