@@ -43,7 +43,13 @@ func NewRouter(
 			mux.Handle("POST /api/v1/rooms", requireAuth(http.HandlerFunc(roomHandler.CreateRoom)))
 			mux.Handle("POST /api/v1/rooms/{id}/join", requireAuth(http.HandlerFunc(roomHandler.JoinRoom)))
 
+			// Room Invitations
+			mux.Handle("GET /api/v1/invitations", requireAuth(http.HandlerFunc(roomHandler.ListInvitations)))
+			mux.Handle("POST /api/v1/invitations/{id}/accept", requireAuth(http.HandlerFunc(roomHandler.AcceptInvitation)))
+			mux.Handle("POST /api/v1/invitations/{id}/decline", requireAuth(http.HandlerFunc(roomHandler.DeclineInvitation)))
+
 			// Protected Room Workspace Endpoints (Requires both login AND room membership)
+			mux.Handle("POST /api/v1/rooms/{id}/invite", requireAuth(requireMember(http.HandlerFunc(roomHandler.InviteUser))))
 			mux.Handle("GET /api/v1/rooms/{id}", requireAuth(requireMember(http.HandlerFunc(roomHandler.GetRoom))))
 			mux.Handle("PUT /api/v1/rooms/{id}/members/{user_id}/role", requireAuth(http.HandlerFunc(roomHandler.AssignRole)))
 			mux.Handle("DELETE /api/v1/rooms/{id}/members/{user_id}", requireAuth(http.HandlerFunc(roomHandler.KickMember)))

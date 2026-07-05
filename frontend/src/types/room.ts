@@ -32,3 +32,18 @@ export interface CreateRoomRequest {
   name: string;
   is_private: boolean;
 }
+
+export type InvitationStatus = 'pending' | 'accepted' | 'declined';
+
+export interface RoomInvitation {
+  id: string;
+  room_id: string;
+  room_name?: string;
+  inviter_id: string;
+  inviter_name?: string;
+  invitee_id: string;
+  invitee_name?: string;
+  status: InvitationStatus;
+  created_at: string;
+  updated_at: string;
+}

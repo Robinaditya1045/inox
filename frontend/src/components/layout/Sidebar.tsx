@@ -4,12 +4,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { useRoom } from '../../hooks/useRoom';
 import { Button } from '../common/Button';
 import { CreateRoomModal } from '../room/CreateRoomModal';
-import { Tv, Plus, LogOut, Compass, Lock, Globe, Sparkles } from 'lucide-react';
+import { Tv, Plus, LogOut, Compass, Lock, Globe, Sparkles, Bell, Check, X } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const { user, logout, isLoading: isAuthLoading } = useAuth();
-  const { rooms, activeRoom, leaveRoom } = useRoom();
+  const { rooms, activeRoom, leaveRoom, invitations, acceptInvitation, declineInvitation } = useRoom();
   const navigate = useNavigate();
 
   const handleLeaveCurrentRoom = async () => {
@@ -87,6 +87,48 @@ export const Sidebar: React.FC = () => {
             <span>Room Lobby</span>
           </NavLink>
         </div>
+
+        {/* Pending Invites Section */}
+        {invitations.length > 0 && (
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px', borderBottom: '1px solid var(--color-border-glass)', background: 'rgba(168, 85, 247, 0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-accent-purple)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Bell size={14} /> Pending Invites ({invitations.length})
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+              {invitations.map((inv) => (
+                <div key={inv.id} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-glass)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>{inv.room_name || 'Private Room'}</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>from @{inv.inviter_name || 'user'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const joined = await acceptInvitation(inv.id);
+                          navigate(`/room/${joined.id}`);
+                        } catch (err) {
+                          // handled in provider
+                        }
+                      }}
+                      style={{ flex: 1, padding: '4px', borderRadius: '6px', background: 'var(--color-accent-emerald)', color: '#FFF', border: 'none', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                    >
+                      <Check size={12} /> Accept
+                    </button>
+                    <button
+                      onClick={() => declineInvitation(inv.id)}
+                      style={{ flex: 1, padding: '4px', borderRadius: '6px', background: 'var(--color-bg-surface-hover)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-glass)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                    >
+                      <X size={12} /> Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Room List Section */}
         <div style={{ flex: 1, padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>

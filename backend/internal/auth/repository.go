@@ -23,6 +23,7 @@ type UserRepository interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	GetByID(ctx context.Context, id string) (*domain.User, error)
+	GetByUsername(ctx context.Context, username string) (*domain.User, error)
 }
 
 type postgresUserRepository struct {
@@ -111,6 +112,33 @@ func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*domai
 			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to query user by id: %w", err)
+	}
+
+	return &user, nil
+}
+
+// GetByUsername fetches a user by their unique username.
+func (r *postgresUserRepository) GetByUsername(ctx context.Context, username string) (*domain.User, error) {
+	query := `
+		SELECT id, username, email, password_hash, created_at, updated_at
+		FROM users
+		WHERE username = $1
+	`
+
+	var user domain.User
+	err := r.db.QueryRow(ctx, query, username).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to query user by username: %w", err)
 	}
 
 	return &user, nil

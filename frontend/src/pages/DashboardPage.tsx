@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 export const DashboardPage: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const { user } = useAuth();
-  const { rooms, isLoadingRoom } = useRoom();
+  const { rooms, invitations, acceptInvitation, declineInvitation, isLoadingRoom } = useRoom();
   const navigate = useNavigate();
 
   return (
@@ -43,6 +43,76 @@ export const DashboardPage: React.FC = () => {
           Create Watch Room
         </Button>
       </div>
+
+      {/* Pending Invitations Section */}
+      {invitations.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--color-accent-purple)' }}>
+              <Lock size={20} />
+              <span>Pending Private Room Invites</span>
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>({invitations.length})</span>
+            </h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+            {invitations.map((inv) => (
+              <div
+                key={inv.id}
+                className="glass-panel"
+                style={{
+                  padding: '20px',
+                  borderRadius: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                  background: 'rgba(168, 85, 247, 0.1)',
+                  border: '1px solid rgba(168, 85, 247, 0.3)',
+                  boxShadow: '0 8px 24px rgba(168, 85, 247, 0.15)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                      {inv.room_name || 'Private Watch Room'}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                      Invited by <strong style={{ color: 'var(--color-accent-cyan)' }}>@{inv.inviter_name || 'Member'}</strong>
+                    </span>
+                  </div>
+                  <div style={{ padding: '4px 8px', borderRadius: '6px', background: 'rgba(168, 85, 247, 0.2)', color: 'var(--color-accent-purple)', fontSize: '0.75rem', fontWeight: 700 }}>
+                    PRIVATE
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    style={{ flex: 1, background: 'var(--color-accent-emerald)', borderColor: 'var(--color-accent-emerald)' }}
+                    onClick={async () => {
+                      try {
+                        const joined = await acceptInvitation(inv.id);
+                        navigate(`/room/${joined.id}`);
+                      } catch (err) {
+                        // handled in provider
+                      }
+                    }}
+                  >
+                    Accept & Join
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    style={{ flex: 1 }}
+                    onClick={() => declineInvitation(inv.id)}
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Active Watch Rooms Section */}
       <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

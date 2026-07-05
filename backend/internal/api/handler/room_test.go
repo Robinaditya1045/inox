@@ -44,6 +44,22 @@ func (m *mockRoomService) CheckPlaybackPermission(ctx context.Context, roomID, u
 	return nil
 }
 
+func (m *mockRoomService) ListRooms(ctx context.Context, userID string) ([]*domain.Room, error) {
+	return nil, nil
+}
+
+func (m *mockRoomService) InviteUserByUsername(ctx context.Context, roomID, inviterID, inviteeUsername string) (*domain.RoomInvitation, error) {
+	return nil, nil
+}
+
+func (m *mockRoomService) ListUserPendingInvitations(ctx context.Context, userID string) ([]*domain.RoomInvitation, error) {
+	return nil, nil
+}
+
+func (m *mockRoomService) RespondToInvitation(ctx context.Context, invID, userID string, accept bool) (*domain.Room, *domain.RoomMember, error) {
+	return nil, nil, nil
+}
+
 func TestCreateRoomHTTPHandler(t *testing.T) {
 	mockSvc := &mockRoomService{}
 	roomHandler := handler.NewRoomHandler(mockSvc)

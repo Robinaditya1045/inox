@@ -78,10 +78,35 @@ func (m *mockRoomRepository) RemoveMember(ctx context.Context, roomID, userID st
 	return nil
 }
 
+func (m *mockRoomRepository) ListRooms(ctx context.Context, userID string) ([]*domain.Room, error) {
+	return nil, nil
+}
+func (m *mockRoomRepository) ListRoomMembers(ctx context.Context, roomID string) ([]*domain.RoomMember, error) {
+	var list []*domain.RoomMember
+	for _, mem := range m.members {
+		if mem.RoomID == roomID {
+			list = append(list, mem)
+		}
+	}
+	return list, nil
+}
+func (m *mockRoomRepository) CreateInvitation(ctx context.Context, inv *domain.RoomInvitation) error {
+	return nil
+}
+func (m *mockRoomRepository) GetInvitationByID(ctx context.Context, invID string) (*domain.RoomInvitation, error) {
+	return nil, nil
+}
+func (m *mockRoomRepository) ListPendingInvitationsForUser(ctx context.Context, userID string) ([]*domain.RoomInvitation, error) {
+	return nil, nil
+}
+func (m *mockRoomRepository) UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error {
+	return nil
+}
+
 func TestRoomCreationAndRBACWorkflow(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRoomRepository()
-	service := room.NewRoomService(repo)
+	service := room.NewRoomService(repo, nil)
 
 	ownerID := "user-owner-1"
 	viewerID := "user-viewer-2"

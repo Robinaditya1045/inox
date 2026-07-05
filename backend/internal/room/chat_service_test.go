@@ -43,7 +43,7 @@ func TestChatServiceRBACAndHistoryWorkflow(t *testing.T) {
 	roomRepo := newMockRoomRepository()
 	chatRepo := newMockChatRepository()
 
-	roomService := room.NewRoomService(roomRepo)
+	roomService := room.NewRoomService(roomRepo, nil)
 	chatService := room.NewChatService(chatRepo, roomRepo)
 
 	ownerID := "user-alice"

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { RoomContext } from '../contexts/room.context';
 import { roomService, DEFAULT_PERMISSIONS } from '../services/room/room.service';
-import type { Room, CreateRoomRequest, RoomRole } from '../types';
+import type { Room, CreateRoomRequest, RoomRole, RoomInvitation } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
 import { APIError } from '../api/client';
@@ -13,6 +13,7 @@ interface RoomProviderProps {
 export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [invitations, setInvitations] = useState<RoomInvitation[]>([]);
   const [isLoadingRoom, setIsLoadingRoom] = useState<boolean>(false);
   const [roomError, setRoomError] = useState<string | null>(null);
 
@@ -35,9 +36,23 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     }
   }, [user]);
 
+  const refreshInvitations = useCallback(async () => {
+    if (!user) {
+      setInvitations([]);
+      return;
+    }
+    try {
+      const fetched = await roomService.getPendingInvitations();
+      setInvitations(fetched);
+    } catch (err) {
+      logger.warn('RoomProvider: Failed to refresh invitations', { err });
+    }
+  }, [user]);
+
   useEffect(() => {
     refreshRooms();
-  }, [refreshRooms]);
+    refreshInvitations();
+  }, [refreshRooms, refreshInvitations]);
 
   // Compute current user's role and permission matrix whenever activeRoom or user changes
   const { userRole, permissions } = React.useMemo(() => {
@@ -146,9 +161,54 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     }
   }, [activeRoom]);
 
+  const inviteUser = useCallback(async (username: string): Promise<RoomInvitation> => {
+    if (!activeRoom) throw new Error('No active room');
+    try {
+      const inv = await roomService.inviteUser(activeRoom.id, username);
+      logger.info('RoomProvider: Invited user successfully', { username });
+      return inv;
+    } catch (err) {
+      const msg = err instanceof APIError ? err.message : 'Failed to invite user.';
+      setRoomError(msg);
+      throw err;
+    }
+  }, [activeRoom]);
+
+  const acceptInvitation = useCallback(async (invId: string): Promise<Room> => {
+    setIsLoadingRoom(true);
+    setRoomError(null);
+    try {
+      const { room } = await roomService.acceptInvitation(invId);
+      setActiveRoom(room);
+      await refreshRooms();
+      await refreshInvitations();
+      logger.info('RoomProvider: Accepted invitation and joined room', { roomId: room.id });
+      return room;
+    } catch (err) {
+      const msg = err instanceof APIError ? err.message : 'Failed to accept invitation.';
+      setRoomError(msg);
+      throw err;
+    } finally {
+      setIsLoadingRoom(false);
+    }
+  }, [refreshRooms, refreshInvitations]);
+
+  const declineInvitation = useCallback(async (invId: string): Promise<void> => {
+    try {
+      await roomService.declineInvitation(invId);
+      await refreshInvitations();
+      logger.info('RoomProvider: Declined invitation', { invId });
+    } catch (err) {
+      const msg = err instanceof APIError ? err.message : 'Failed to decline invitation.';
+      setRoomError(msg);
+      throw err;
+    }
+  }, [refreshInvitations]);
+
   const value = {
     activeRoom,
     rooms,
+    invitations,
     userRole,
     permissions,
     isLoadingRoom,
@@ -159,6 +219,10 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     refreshRooms,
     updateMemberRole,
     kickMember,
+    inviteUser,
+    acceptInvitation,
+    declineInvitation,
+    refreshInvitations,
     clearRoomError,
   };
 

@@ -137,6 +137,10 @@ class RTCService {
 
   public async handleAnswer(sdp: string): Promise<void> {
     if (!this.pc) return;
+    if (this.pc.signalingState !== 'have-local-offer') {
+      logger.warn('RTCService: Ignoring SFU_ANSWER because signalingState is not have-local-offer', { state: this.pc.signalingState });
+      return;
+    }
     await this.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
   }
 

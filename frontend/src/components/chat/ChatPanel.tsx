@@ -165,7 +165,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message... (Press Enter to send)"
+              placeholder="Type a message..."
               rows={1}
               style={{
                 flex: 1,

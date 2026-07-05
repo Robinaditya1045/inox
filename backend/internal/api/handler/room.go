@@ -171,3 +171,91 @@ func (h *RoomHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "member kicked successfully"})
 }
+
+type inviteUserRequest struct {
+	Username string `json:"username"`
+}
+
+// InviteUser handles inviting a user by username to a room.
+func (h *RoomHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	roomID := r.PathValue("id")
+	var req inviteUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
+		respond.WriteError(w, http.StatusBadRequest, "valid username is required")
+		return
+	}
+
+	inv, err := h.roomService.InviteUserByUsername(r.Context(), roomID, session.UserID, req.Username)
+	if err != nil {
+		if errors.Is(err, room.ErrPermissionDenied) {
+			respond.WriteError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusCreated, inv)
+}
+
+// ListInvitations handles listing pending invitations for the logged-in user.
+func (h *RoomHandler) ListInvitations(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	invs, err := h.roomService.ListUserPendingInvitations(r.Context(), session.UserID)
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to list invitations")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, invs)
+}
+
+// AcceptInvitation handles accepting a room invitation.
+func (h *RoomHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	invID := r.PathValue("id")
+	rm, member, err := h.roomService.RespondToInvitation(r.Context(), invID, session.UserID, true)
+	if err != nil {
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]any{
+		"room":   rm,
+		"member": member,
+	})
+}
+
+// DeclineInvitation handles declining a room invitation.
+func (h *RoomHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	invID := r.PathValue("id")
+	_, _, err := h.roomService.RespondToInvitation(r.Context(), invID, session.UserID, false)
+	if err != nil {
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]string{"status": "declined"})
+}

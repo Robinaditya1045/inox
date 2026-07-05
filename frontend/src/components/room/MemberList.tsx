@@ -2,13 +2,37 @@ import React, { useState } from 'react';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuth } from '../../hooks/useAuth';
 import type { RoomRole } from '../../types/room';
-import { Shield, UserMinus, Crown, ShieldAlert, UserCheck, MoreVertical } from 'lucide-react';
+import { Shield, UserMinus, Crown, ShieldAlert, UserCheck, MoreVertical, UserPlus, Check, X, AlertCircle } from 'lucide-react';
+import { useRoom } from '../../hooks/useRoom';
 
 export const MemberList: React.FC = () => {
   const { members, isLoadingMembers, kickMember, updateRole, canModerate } = usePresence();
   const { user } = useAuth();
+  const { permissions, inviteUser, activeRoom } = useRoom();
   
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteUsername.trim()) return;
+    setIsInviting(true);
+    setInviteError(null);
+    setInviteSuccess(null);
+    try {
+      await inviteUser(inviteUsername.trim());
+      setInviteSuccess(`Invited @${inviteUsername.trim()}`);
+      setInviteUsername('');
+      setTimeout(() => setInviteSuccess(null), 4000);
+    } catch (err: any) {
+      setInviteError(err?.message || 'Failed to invite user');
+    } finally {
+      setIsInviting(false);
+    }
+  };
 
   const getRoleBadge = (role: RoomRole) => {
     switch (role) {
@@ -86,6 +110,72 @@ export const MemberList: React.FC = () => {
         gap: '12px',
       }}
     >
+      {/* Invite Section for Private Rooms */}
+      {(permissions?.can_invite_users || activeRoom?.is_private) && (
+        <div
+          style={{
+            padding: '12px',
+            borderRadius: '12px',
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-glass)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            <UserPlus size={14} color="var(--color-accent-purple)" />
+            <span>Invite to Room</span>
+          </div>
+          <form onSubmit={handleInvite} style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="text"
+              placeholder="Username..."
+              value={inviteUsername}
+              onChange={(e) => setInviteUsername(e.target.value)}
+              disabled={isInviting}
+              style={{
+                flex: 1,
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: 'var(--color-bg-surface-hover)',
+                border: '1px solid var(--color-border-glass)',
+                color: 'var(--color-text-primary)',
+                fontSize: '0.8rem',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isInviting || !inviteUsername.trim()}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                background: 'var(--color-accent-purple)',
+                color: '#FFF',
+                border: 'none',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: isInviting || !inviteUsername.trim() ? 'not-allowed' : 'pointer',
+                opacity: isInviting || !inviteUsername.trim() ? 0.6 : 1,
+              }}
+            >
+              {isInviting ? '...' : 'Invite'}
+            </button>
+          </form>
+          {inviteSuccess && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-accent-emerald)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Check size={12} /> {inviteSuccess}
+            </span>
+          )}
+          {inviteError && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-accent-rose)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <AlertCircle size={12} /> {inviteError}
+            </span>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--color-border-glass)' }}>
         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Active Participants ({members.length})

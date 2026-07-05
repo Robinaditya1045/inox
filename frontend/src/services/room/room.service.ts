@@ -1,5 +1,5 @@
 import { apiClient } from '../../api/client';
-import type { Room, CreateRoomRequest, RoomRole, RoomPermissions } from '../../types';
+import type { Room, CreateRoomRequest, RoomRole, RoomPermissions, RoomInvitation } from '../../types';
 import { logger } from '../../utils/logger';
 
 export const DEFAULT_PERMISSIONS: Record<RoomRole, RoomPermissions> = {
@@ -95,5 +95,31 @@ export const roomService = {
   async kickMember(roomId: string, userId: string): Promise<void> {
     logger.info('RoomService: Kicking member', { roomId, userId });
     await apiClient.delete<void>(`/rooms/${roomId}/members/${userId}`);
+  },
+
+  async inviteUser(roomId: string, username: string): Promise<RoomInvitation> {
+    logger.info('RoomService: Inviting user', { roomId, username });
+    return apiClient.post<RoomInvitation>(`/rooms/${roomId}/invite`, { username });
+  },
+
+  async getPendingInvitations(): Promise<RoomInvitation[]> {
+    try {
+      logger.debug('RoomService: Fetching pending invitations');
+      const response = await apiClient.get<RoomInvitation[]>('/invitations');
+      return Array.isArray(response) ? response : [];
+    } catch (error) {
+      logger.warn('RoomService: Failed to fetch invitations', { error });
+      return [];
+    }
+  },
+
+  async acceptInvitation(invId: string): Promise<{ room: Room; member: any }> {
+    logger.info('RoomService: Accepting invitation', { invId });
+    return apiClient.post<{ room: Room; member: any }>(`/invitations/${invId}/accept`);
+  },
+
+  async declineInvitation(invId: string): Promise<void> {
+    logger.info('RoomService: Declining invitation', { invId });
+    await apiClient.post<void>(`/invitations/${invId}/decline`);
   },
 };

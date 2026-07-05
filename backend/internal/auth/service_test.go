@@ -38,6 +38,15 @@ func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*dom
 	return u, nil
 }
 
+func (m *mockUserRepository) GetByUsername(ctx context.Context, username string) (*domain.User, error) {
+	for _, u := range m.users {
+		if u.Username == username {
+			return u, nil
+		}
+	}
+	return nil, auth.ErrUserNotFound
+}
+
 func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	for _, u := range m.users {
 		if u.ID == id {

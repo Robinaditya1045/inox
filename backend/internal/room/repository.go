@@ -25,6 +25,11 @@ type RoomRepository interface {
 	UpdateMemberPermissions(ctx context.Context, roomID, userID string, role domain.Role, perms domain.Permissions) (*domain.RoomMember, error)
 	RemoveMember(ctx context.Context, roomID, userID string) error
 	ListRooms(ctx context.Context, userID string) ([]*domain.Room, error)
+	ListRoomMembers(ctx context.Context, roomID string) ([]*domain.RoomMember, error)
+	CreateInvitation(ctx context.Context, inv *domain.RoomInvitation) error
+	GetInvitationByID(ctx context.Context, invID string) (*domain.RoomInvitation, error)
+	ListPendingInvitationsForUser(ctx context.Context, userID string) ([]*domain.RoomInvitation, error)
+	UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error
 }
 
 type postgresRoomRepository struct {
@@ -108,22 +113,27 @@ func (r *postgresRoomRepository) GetRoomByID(ctx context.Context, roomID string)
 		}
 		return nil, fmt.Errorf("failed to query room: %w", err)
 	}
+	members, err := r.ListRoomMembers(ctx, roomID)
+	if err == nil {
+		room.Members = members
+	}
 	return &room, nil
 }
 
 // GetMember fetches a participant's role and explicit boolean capabilities in a specific room.
 func (r *postgresRoomRepository) GetMember(ctx context.Context, roomID, userID string) (*domain.RoomMember, error) {
 	query := `
-		SELECT room_id, user_id, role,
-			can_control_playback, can_stream_audio, can_stream_video,
-			can_share_screen, can_send_messages, can_invite_users,
-			can_kick_users, can_manage_roles, joined_at
-		FROM room_members
-		WHERE room_id = $1 AND user_id = $2
+		SELECT rm.room_id, rm.user_id, u.username, rm.role,
+			rm.can_control_playback, rm.can_stream_audio, rm.can_stream_video,
+			rm.can_share_screen, rm.can_send_messages, rm.can_invite_users,
+			rm.can_kick_users, rm.can_manage_roles, rm.joined_at
+		FROM room_members rm
+		JOIN users u ON rm.user_id = u.id
+		WHERE rm.room_id = $1 AND rm.user_id = $2
 	`
 	var m domain.RoomMember
 	err := r.db.QueryRow(ctx, query, roomID, userID).Scan(
-		&m.RoomID, &m.UserID, &m.Role,
+		&m.RoomID, &m.UserID, &m.Username, &m.Role,
 		&m.Permissions.CanControlPlayback, &m.Permissions.CanStreamAudio, &m.Permissions.CanStreamVideo,
 		&m.Permissions.CanShareScreen, &m.Permissions.CanSendMessages, &m.Permissions.CanInviteUsers,
 		&m.Permissions.CanKickUsers, &m.Permissions.CanManageRoles, &m.JoinedAt,
@@ -135,6 +145,43 @@ func (r *postgresRoomRepository) GetMember(ctx context.Context, roomID, userID s
 		return nil, fmt.Errorf("failed to fetch room member: %w", err)
 	}
 	return &m, nil
+}
+
+// ListRoomMembers returns all participants currently in a room with their usernames and permissions.
+func (r *postgresRoomRepository) ListRoomMembers(ctx context.Context, roomID string) ([]*domain.RoomMember, error) {
+	query := `
+		SELECT rm.room_id, rm.user_id, u.username, rm.role,
+			rm.can_control_playback, rm.can_stream_audio, rm.can_stream_video,
+			rm.can_share_screen, rm.can_send_messages, rm.can_invite_users,
+			rm.can_kick_users, rm.can_manage_roles, rm.joined_at
+		FROM room_members rm
+		JOIN users u ON rm.user_id = u.id
+		WHERE rm.room_id = $1
+		ORDER BY rm.joined_at ASC
+	`
+	rows, err := r.db.Query(ctx, query, roomID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query room members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []*domain.RoomMember
+	for rows.Next() {
+		var m domain.RoomMember
+		if err := rows.Scan(
+			&m.RoomID, &m.UserID, &m.Username, &m.Role,
+			&m.Permissions.CanControlPlayback, &m.Permissions.CanStreamAudio, &m.Permissions.CanStreamVideo,
+			&m.Permissions.CanShareScreen, &m.Permissions.CanSendMessages, &m.Permissions.CanInviteUsers,
+			&m.Permissions.CanKickUsers, &m.Permissions.CanManageRoles, &m.JoinedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan room member: %w", err)
+		}
+		members = append(members, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating room members: %w", err)
+	}
+	return members, nil
 }
 
 // AddMember adds a user to a room with preset permissions.
@@ -235,5 +282,101 @@ func (r *postgresRoomRepository) ListRooms(ctx context.Context, userID string) (
 	if rooms == nil {
 		rooms = []*domain.Room{}
 	}
+	for _, room := range rooms {
+		members, err := r.ListRoomMembers(ctx, room.ID)
+		if err == nil {
+			room.Members = members
+		}
+	}
 	return rooms, nil
+}
+
+// CreateInvitation inserts or updates an invitation record for a user to join a room.
+func (r *postgresRoomRepository) CreateInvitation(ctx context.Context, inv *domain.RoomInvitation) error {
+	query := `
+		INSERT INTO room_invitations (room_id, inviter_id, invitee_id, status)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (room_id, invitee_id) DO UPDATE
+		SET status = EXCLUDED.status,
+		    inviter_id = EXCLUDED.inviter_id,
+		    updated_at = NOW()
+		RETURNING id, created_at, updated_at
+	`
+	err := r.db.QueryRow(ctx, query, inv.RoomID, inv.InviterID, inv.InviteeID, inv.Status).Scan(
+		&inv.ID, &inv.CreatedAt, &inv.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create room invitation: %w", err)
+	}
+	return nil
+}
+
+// GetInvitationByID retrieves an invitation along with room and user names.
+func (r *postgresRoomRepository) GetInvitationByID(ctx context.Context, invID string) (*domain.RoomInvitation, error) {
+	query := `
+		SELECT i.id, i.room_id, r.name, i.inviter_id, u1.username, i.invitee_id, u2.username, i.status, i.created_at, i.updated_at
+		FROM room_invitations i
+		JOIN rooms r ON i.room_id = r.id
+		JOIN users u1 ON i.inviter_id = u1.id
+		JOIN users u2 ON i.invitee_id = u2.id
+		WHERE i.id = $1
+	`
+	var inv domain.RoomInvitation
+	err := r.db.QueryRow(ctx, query, invID).Scan(
+		&inv.ID, &inv.RoomID, &inv.RoomName, &inv.InviterID, &inv.InviterName, &inv.InviteeID, &inv.InviteeName, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("invitation not found")
+		}
+		return nil, fmt.Errorf("failed to get invitation: %w", err)
+	}
+	return &inv, nil
+}
+
+// ListPendingInvitationsForUser lists all pending invitations for a specific user.
+func (r *postgresRoomRepository) ListPendingInvitationsForUser(ctx context.Context, userID string) ([]*domain.RoomInvitation, error) {
+	query := `
+		SELECT i.id, i.room_id, r.name, i.inviter_id, u1.username, i.invitee_id, u2.username, i.status, i.created_at, i.updated_at
+		FROM room_invitations i
+		JOIN rooms r ON i.room_id = r.id
+		JOIN users u1 ON i.inviter_id = u1.id
+		JOIN users u2 ON i.invitee_id = u2.id
+		WHERE i.invitee_id = $1 AND i.status = 'pending'
+		ORDER BY i.created_at DESC
+	`
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list user invitations: %w", err)
+	}
+	defer rows.Close()
+
+	var invs []*domain.RoomInvitation
+	for rows.Next() {
+		inv := &domain.RoomInvitation{}
+		if err := rows.Scan(&inv.ID, &inv.RoomID, &inv.RoomName, &inv.InviterID, &inv.InviterName, &inv.InviteeID, &inv.InviteeName, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan invitation: %w", err)
+		}
+		invs = append(invs, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	if invs == nil {
+		invs = []*domain.RoomInvitation{}
+	}
+	return invs, nil
+}
+
+// UpdateInvitationStatus updates the status of an invitation.
+func (r *postgresRoomRepository) UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error {
+	query := `UPDATE room_invitations SET status = $2, updated_at = NOW() WHERE id = $1`
+	res, err := r.db.Exec(ctx, query, invID, status)
+	if err != nil {
+		return fmt.Errorf("failed to update invitation status: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return errors.New("invitation not found")
+	}
+	return nil
 }

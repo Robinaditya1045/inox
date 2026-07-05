@@ -27,18 +27,20 @@ type Permissions struct {
 
 // Room represents a Watch Party workspace where users gather to watch synchronized video.
 type Room struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	OwnerID   string    `json:"owner_id"`
-	IsPrivate bool      `json:"is_private"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	OwnerID   string        `json:"owner_id"`
+	IsPrivate bool          `json:"is_private"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+	Members   []*RoomMember `json:"members,omitempty"`
 }
 
 // RoomMember represents a user's membership and permission set inside a specific room.
 type RoomMember struct {
 	RoomID      string      `json:"room_id"`
 	UserID      string      `json:"user_id"`
+	Username    string      `json:"username,omitempty"`
 	Role        Role        `json:"role"`
 	Permissions Permissions `json:"permissions"`
 	JoinedAt    time.Time   `json:"joined_at"`
@@ -94,4 +96,26 @@ func DefaultPermissionsForRole(role Role) Permissions {
 	default:
 		return DefaultPermissionsForRole(RoleGuest)
 	}
+}
+
+type InvitationStatus string
+
+const (
+	InvitationStatusPending  InvitationStatus = "pending"
+	InvitationStatusAccepted InvitationStatus = "accepted"
+	InvitationStatusDeclined InvitationStatus = "declined"
+)
+
+// RoomInvitation represents an invitation sent to a user to join a room.
+type RoomInvitation struct {
+	ID          string           `json:"id"`
+	RoomID      string           `json:"room_id"`
+	RoomName    string           `json:"room_name,omitempty"`
+	InviterID   string           `json:"inviter_id"`
+	InviterName string           `json:"inviter_name,omitempty"`
+	InviteeID   string           `json:"invitee_id"`
+	InviteeName string           `json:"invitee_name,omitempty"`
+	Status      InvitationStatus `json:"status"`
+	CreatedAt   time.Time        `json:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at"`
 }

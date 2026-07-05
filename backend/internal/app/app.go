@@ -48,7 +48,7 @@ func (a *App) Run() error {
 
 	// 2. Initialize business logic services
 	authService := auth.NewAuthService(userRepo, sessionStore)
-	roomService := room.NewRoomService(roomRepo)
+	roomService := room.NewRoomService(roomRepo, userRepo)
 	chatService := room.NewChatService(chatRepo, roomRepo)
 
 	// 3. Initialize real-time WebSocket engine & SFU media manager

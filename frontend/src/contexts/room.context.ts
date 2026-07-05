@@ -1,9 +1,10 @@
 import { createContext } from 'react';
-import type { Room, CreateRoomRequest, RoomRole, RoomPermissions } from '../types';
+import type { Room, CreateRoomRequest, RoomRole, RoomPermissions, RoomInvitation } from '../types';
 
 export interface RoomContextValue {
   activeRoom: Room | null;
   rooms: Room[];
+  invitations: RoomInvitation[];
   userRole: RoomRole | null;
   permissions: RoomPermissions | null;
   isLoadingRoom: boolean;
@@ -14,6 +15,10 @@ export interface RoomContextValue {
   refreshRooms: () => Promise<void>;
   updateMemberRole: (userId: string, role: RoomRole) => Promise<void>;
   kickMember: (userId: string) => Promise<void>;
+  inviteUser: (username: string) => Promise<RoomInvitation>;
+  acceptInvitation: (invId: string) => Promise<Room>;
+  declineInvitation: (invId: string) => Promise<void>;
+  refreshInvitations: () => Promise<void>;
   clearRoomError: () => void;
 }
 
