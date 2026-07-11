@@ -30,5 +30,8 @@ func New(levelStr string) *slog.Logger {
 	// We use JSONHandler to emit structured JSON logs suitable for Grafana Loki / CloudWatch.
 	handler := slog.NewJSONHandler(os.Stdout, opts)
 
-	return slog.New(handler)
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	return logger
 }

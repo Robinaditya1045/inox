@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/inox/inox/backend/internal/observability"
 	"github.com/inox/inox/backend/internal/room"
 	"github.com/inox/inox/backend/internal/sfu"
 	"github.com/pion/webrtc/v3"
@@ -48,6 +49,8 @@ type Hub struct {
 
 	// Optional SFU manager to route WebRTC voice and screen share media streams.
 	sfuManager *sfu.Manager
+	// Optional event aggregator for background analytics persistence.
+	eventAggregator *observability.EventAggregator
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
@@ -80,6 +83,11 @@ func (h *Hub) SetRoomService(rs room.RoomService) {
 // SetSFUManager wires the Selective Forwarding Unit for voice chat and video routing.
 func (h *Hub) SetSFUManager(mgr *sfu.Manager) {
 	h.sfuManager = mgr
+}
+
+// SetEventAggregator wires the background telemetry event worker for historical analytics persistence.
+func (h *Hub) SetEventAggregator(ea *observability.EventAggregator) {
+	h.eventAggregator = ea
 }
 
 func (h *Hub) getOrCreatePlaybackState(roomID string) *RoomPlaybackState {
@@ -145,10 +153,18 @@ func (h *Hub) shutdownAll() {
 func (h *Hub) registerClient(client *Client) {
 	if h.rooms[client.RoomID] == nil {
 		h.rooms[client.RoomID] = make(map[*Client]bool)
+		observability.Global().IncActiveRooms()
 	}
 	h.rooms[client.RoomID][client] = true
+	observability.Global().IncActiveWSConnections()
 
 	slog.Info("client joined room hub", "room_id", client.RoomID, "user_id", client.UserID, "username", client.Username)
+
+	if h.eventAggregator != nil {
+		h.eventAggregator.RecordEvent("user_joined", &client.RoomID, &client.UserID, map[string]any{
+			"username": client.Username,
+		})
+	}
 
 	// Notify existing participants that a new peer joined
 	joinEvt := &Event{
@@ -186,13 +202,21 @@ func (h *Hub) unregisterClient(client *Client) {
 	if _, exists := roomClients[client]; exists {
 		delete(roomClients, client)
 		close(client.Send)
+		observability.Global().DecActiveWSConnections()
 
 		slog.Info("client left room hub", "room_id", client.RoomID, "user_id", client.UserID)
+
+		if h.eventAggregator != nil {
+			h.eventAggregator.RecordEvent("user_left", &client.RoomID, &client.UserID, map[string]any{
+				"username": client.Username,
+			})
+		}
 
 		// Clean up empty rooms from memory
 		if len(roomClients) == 0 {
 			delete(h.rooms, client.RoomID)
 			delete(h.playbackStates, client.RoomID)
+			observability.Global().DecActiveRooms()
 			if h.sfuManager != nil {
 				h.sfuManager.RemoveRoom(client.RoomID)
 			}
@@ -231,10 +255,13 @@ func (h *Hub) dispatchEvent(event *Event) {
 		return
 	}
 
-	if event.Type == EventChatMessage && h.chatService != nil && len(event.Payload) > 0 {
-		var payload ChatPayload
-		if err := json.Unmarshal(event.Payload, &payload); err == nil {
-			_, _ = h.chatService.SaveMessage(context.Background(), event.RoomID, event.SenderID, event.SenderName, payload.Message)
+	if event.Type == EventChatMessage {
+		observability.Global().IncChatMessages()
+		if h.chatService != nil && len(event.Payload) > 0 {
+			var payload ChatPayload
+			if err := json.Unmarshal(event.Payload, &payload); err == nil {
+				_, _ = h.chatService.SaveMessage(context.Background(), event.RoomID, event.SenderID, event.SenderName, payload.Message)
+			}
 		}
 	}
 
@@ -276,6 +303,11 @@ func (h *Hub) dispatchEvent(event *Event) {
 				}(event.RoomID, payload.MediaURL)
 			}
 		}
+		if h.eventAggregator != nil {
+			h.eventAggregator.RecordEvent("media_control", &event.RoomID, &event.SenderID, map[string]any{
+				"action": string(event.Type),
+			})
+		}
 	}
 
 	for client := range roomClients {
@@ -290,6 +322,21 @@ func (h *Hub) dispatchEvent(event *Event) {
 			// If client's send buffer is full, evict the slow/unresponsive connection
 			close(client.Send)
 			delete(roomClients, client)
+			observability.Global().IncWSEvictions()
+			observability.Global().DecActiveWSConnections()
+			if h.eventAggregator != nil {
+				h.eventAggregator.RecordEvent("eviction_occurred", &event.RoomID, &client.UserID, map[string]any{
+					"reason": "send buffer overflow",
+				})
+			}
+			if len(roomClients) == 0 {
+				delete(h.rooms, event.RoomID)
+				delete(h.playbackStates, event.RoomID)
+				observability.Global().DecActiveRooms()
+				if h.sfuManager != nil {
+					h.sfuManager.RemoveRoom(event.RoomID)
+				}
+			}
 		}
 	}
 }
@@ -360,3 +407,29 @@ func (h *Hub) sendToTarget(event *Event) {
 		}
 	}
 }
+
+// InspectRooms satisfies the observability.RoomInspector interface to report active watch party metrics.
+func (h *Hub) InspectRooms() []observability.RoomTelemetry {
+	var rooms []observability.RoomTelemetry
+	for roomID, clients := range h.rooms {
+		state := h.getOrCreatePlaybackState(roomID)
+		sfuPeersCount := 0
+		if h.sfuManager != nil {
+			if sfuRoom, err := h.sfuManager.GetRoom(roomID); err == nil {
+				sfuPeersCount = sfuRoom.GetPeerCount()
+			}
+		}
+		qoe := observability.CalculateQoE(len(clients), state.IsPlaying, state.MediaURL, observability.Global().GetSnapshot().WSEvictionsTotal)
+		rooms = append(rooms, observability.RoomTelemetry{
+			RoomID:           roomID,
+			ParticipantCount: len(clients),
+			IsPlaying:        state.IsPlaying,
+			MediaURL:         state.MediaURL,
+			MediaTimeSeconds: state.MediaTimeSeconds,
+			SFUPeersCount:    sfuPeersCount,
+			QoEScore:         qoe,
+		})
+	}
+	return rooms
+}
+

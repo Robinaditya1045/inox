@@ -2,11 +2,11 @@ package sfu
 
 import (
 	"errors"
-	// "fmt"
 	"io"
 	"log/slog"
 	"sync"
 
+	"github.com/inox/inox/backend/internal/observability"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -43,6 +43,7 @@ func (r *Room) AddPeer(peer *Peer) {
 	r.mu.Unlock()
 
 	slog.Info("sfu peer joined room", "room_id", r.ID, "user_id", peer.UserID)
+	observability.Global().IncActiveSFUPeers()
 
 	// Subscribe new peer to all currently active voice/video streams
 	for _, track := range existingTracks {
@@ -76,6 +77,7 @@ func (r *Room) RemovePeer(userID string) {
 	r.mu.Unlock()
 
 	slog.Info("sfu peer left room", "room_id", r.ID, "user_id", userID)
+	observability.Global().DecActiveSFUPeers()
 	_ = peer.Close()
 }
 
@@ -148,3 +150,11 @@ func (r *Room) dispatchRemoteTrack(senderID string, remoteTrack *webrtc.TrackRem
 		}
 	}()
 }
+
+// GetPeerCount returns the number of active peers in the SFU room.
+func (r *Room) GetPeerCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.Peers)
+}
+
