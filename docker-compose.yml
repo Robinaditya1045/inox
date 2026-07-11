@@ -22,6 +22,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - inox-net
 
   redis:
     image: redis:7-alpine
@@ -40,9 +42,60 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+    networks:
+      - inox-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: inox-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # Map host port 9000 for S3 API and 9001 for MinIO Web Console
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      # Persistent object storage volume
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - inox-net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: inox-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@inox.stream
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      # Map host port 5050 to container port 80
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - inox-net
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
+  minio_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  inox-net:
+    driver: bridge
