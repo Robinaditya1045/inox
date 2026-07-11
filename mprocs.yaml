@@ -1,0 +1,12 @@
+procs:
+  docker:
+    shell: "docker compose up -d"
+  backend:
+    cwd: "backend"
+    shell: "go run ./cmd/server"
+  frontend:
+    cwd: "frontend"
+    shell: "npm run dev -- --port 5173"
+  admin:
+    cwd: "admin-portal"
+    shell: "npm run dev -- --port 3000"
