@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/auth"
+	"github.com/inox/inox/backend/internal/observability"
 	"github.com/inox/inox/backend/internal/room"
 )
 
@@ -17,6 +21,8 @@ func NewRouter(
 	roomHandler *handler.RoomHandler, roomService room.RoomService,
 	wsHandler *handler.WSHandler,
 	chatHandler *handler.ChatHandler,
+	adminHandler *handler.AdminHandler,
+	mediaHandler *handler.MediaHandler,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -28,6 +34,33 @@ func NewRouter(
 		mux.HandleFunc("POST /api/v1/auth/signup", authHandler.Signup)
 		mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
 		mux.HandleFunc("POST /api/v1/auth/logout", authHandler.Logout)
+	}
+
+	if adminHandler != nil {
+		// Observability & Admin Endpoints
+		mux.HandleFunc("GET /metrics", adminHandler.ServePrometheus)
+		mux.HandleFunc("GET /api/v1/admin/telemetry", adminHandler.GetSnapshot)
+		mux.HandleFunc("GET /api/v1/admin/telemetry/ws", adminHandler.ServeTelemetryWS)
+	}
+
+	if mediaHandler != nil {
+		// Public / Authenticated Media Endpoints
+		mux.HandleFunc("GET /api/v1/media", mediaHandler.List)
+		mux.HandleFunc("GET /api/v1/media/{id}", mediaHandler.GetByID)
+
+		// Admin Media Endpoints
+		mux.HandleFunc("POST /api/v1/admin/media/upload", mediaHandler.Upload)
+		mux.HandleFunc("POST /api/v1/admin/media/presigned-url", mediaHandler.CreatePresignedUpload)
+		mux.HandleFunc("POST /api/v1/admin/media/complete-upload", mediaHandler.CompleteDirectUpload)
+		mux.HandleFunc("POST /api/v1/admin/media/register", mediaHandler.Register)
+		mux.HandleFunc("DELETE /api/v1/admin/media/{id}", mediaHandler.Delete)
+
+		// Direct HTTP byte-range stream endpoint for locally stored media assets and HLS segments
+		mux.HandleFunc("PUT /media/stream/upload-direct", mediaHandler.UploadDirectLocal)
+		mux.HandleFunc("OPTIONS /media/stream/upload-direct", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		mux.Handle("GET /media/stream/", http.StripPrefix("/media/stream/", http.FileServer(http.Dir("./storage_data"))))
 	}
 
 	if authService != nil {
@@ -66,7 +99,46 @@ func NewRouter(
 		}
 	}
 
-	return middleware.CORS(mux)
+	return middleware.CORS(withMetrics(mux))
+}
+
+func withMetrics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		observability.Global().IncHTTPRequest(rw.status)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+// Hijack implements http.Hijacker to allow WebSocket upgrades through the statusRecorder middleware.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+	}
+	return hijacker.Hijack()
+}
+
+// Flush implements http.Flusher to allow streaming responses through the statusRecorder middleware.
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap returns the underlying ResponseWriter for Go standard library response controllers and hijackers.
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
 }
 
 // meHandler returns the authenticated user's profile retrieved from Redis session context.

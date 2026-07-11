@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+
+	"github.com/inox/inox/backend/internal/observability"
 )
 
 var (
@@ -33,6 +35,7 @@ func (m *Manager) GetOrCreateRoom(roomID string) *Room {
 		room = NewRoom(roomID)
 		m.rooms[roomID] = room
 		slog.Info("created new sfu media room", "room_id", roomID)
+		observability.Global().IncActiveSFURooms()
 	}
 	return room
 }
@@ -59,8 +62,10 @@ func (m *Manager) RemoveRoom(roomID string) {
 	m.mu.Unlock()
 
 	if ok {
+		observability.Global().DecActiveSFURooms()
 		room.mu.Lock()
 		for uid, peer := range room.Peers {
+			observability.Global().DecActiveSFUPeers()
 			_ = peer.Close()
 			delete(room.Peers, uid)
 		}
@@ -76,8 +81,10 @@ func (m *Manager) Shutdown() {
 
 	slog.Info("shutting down sfu media manager...")
 	for roomID, room := range m.rooms {
+		observability.Global().DecActiveSFURooms()
 		room.mu.Lock()
 		for uid, peer := range room.Peers {
+			observability.Global().DecActiveSFUPeers()
 			_ = peer.Close()
 			delete(room.Peers, uid)
 		}

@@ -12,7 +12,7 @@ import (
 )
 
 func TestHealthCheckEndpoint(t *testing.T) {
-	router := api.NewRouter(nil, nil, nil, nil, nil, nil)
+	router := api.NewRouter(nil, nil, nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	rec := httptest.NewRecorder()
