@@ -1,1 +1,6 @@
+# documentation
 /docs
+# Environment variables
+./backend/.env
+./frontend/.env
+./admin-portal/.env 
