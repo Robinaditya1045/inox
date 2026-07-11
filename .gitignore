@@ -3,4 +3,5 @@
 # Environment variables
 ./backend/.env
 ./frontend/.env
-./admin-portal/.env 
+./admin-portal/.env
+.cache/
