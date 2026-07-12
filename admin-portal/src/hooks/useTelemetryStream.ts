@@ -142,7 +142,11 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
     }
 
     let isSubscribed = true
-    const targetUrl = url || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/v1/admin/telemetry/ws`
+    let wsEnvUrl = import.meta.env.VITE_TELEMETRY_WS_URL || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//localhost:8080/api/v1/admin/telemetry/ws`;
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      wsEnvUrl = wsEnvUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+    }
+    const targetUrl = url || wsEnvUrl
 
     const connect = () => {
       if (!isSubscribed) return

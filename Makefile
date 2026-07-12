@@ -9,8 +9,8 @@ up:
 dev: up
 	@npx -y concurrently -n "BACKEND,CLIENT,ADMIN" -c "cyan,green,magenta" --kill-others \
 		"cd backend && go run ./cmd/server" \
-		"cd frontend && npm run dev -- --port 5173" \
-		"cd admin-portal && npm run dev -- --port 3000"
+		"cd frontend && npm run dev -- --host 0.0.0.0 --port 5173" \
+		"cd admin-portal && npm run dev -- --host 0.0.0.0 --port 3000"
 
 # Stop Docker containers
 down:
