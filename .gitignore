@@ -5,9 +5,10 @@
 ./frontend/.env
 ./admin-portal/.env
 .cache/
-./env
 
+env
 urls.txt
 tunnel.env
 ip.txt
 cloudflared.deb
+.env
