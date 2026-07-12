@@ -19,23 +19,25 @@ import (
 // MinioStorage implements Service using MinIO or AWS S3 over pure REST API with zero external dependencies.
 // It uses AWS Signature V4 authentication, automatically provisions buckets, and applies public streaming & CORS policies.
 type MinioStorage struct {
-	endpoint   string
-	accessKey  string
-	secretKey  string
-	bucket     string
-	useSSL     bool
-	httpClient *http.Client
+	endpoint      string
+	accessKey     string
+	secretKey     string
+	bucket        string
+	streamBaseURL string
+	useSSL        bool
+	httpClient    *http.Client
 }
 
 // NewMinioStorage initializes a direct MinIO / S3 storage engine and configures the bucket.
-func NewMinioStorage(endpoint, accessKey, secretKey, bucket string, useSSL bool) (*MinioStorage, error) {
+func NewMinioStorage(endpoint, accessKey, secretKey, bucket, streamBaseURL string, useSSL bool) (*MinioStorage, error) {
 	s := &MinioStorage{
-		endpoint:   endpoint,
-		accessKey:  accessKey,
-		secretKey:  secretKey,
-		bucket:     bucket,
-		useSSL:     useSSL,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		endpoint:      endpoint,
+		accessKey:     accessKey,
+		secretKey:     secretKey,
+		bucket:        bucket,
+		streamBaseURL: streamBaseURL,
+		useSSL:        useSSL,
+		httpClient:    &http.Client{Timeout: 60 * time.Second},
 	}
 
 	// Ensure bucket exists on startup and apply CORS / public read policies
@@ -145,6 +147,9 @@ func (s *MinioStorage) SaveFile(ctx context.Context, key string, reader io.Reade
 // GetFile opens a stream to read an object directly from MinIO.
 func (s *MinioStorage) GetFile(ctx context.Context, key string) (io.ReadCloser, string, error) {
 	cleanKey := strings.TrimPrefix(key, "/")
+	if strings.HasPrefix(cleanKey, s.bucket+"/") {
+		cleanKey = strings.TrimPrefix(cleanKey, s.bucket+"/")
+	}
 	urlStr := fmt.Sprintf("%s://%s/%s/%s", s.getScheme(), s.endpoint, s.bucket, cleanKey)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
@@ -173,9 +178,16 @@ func (s *MinioStorage) GetFile(ctx context.Context, key string) (io.ReadCloser, 
 	return resp.Body, contentType, nil
 }
 
-// GetStreamURL returns the direct public HTTP URL for streaming the object from MinIO.
+// GetStreamURL returns the direct public HTTP URL for streaming the object from MinIO or the proxy endpoint.
 func (s *MinioStorage) GetStreamURL(ctx context.Context, key string) (string, error) {
 	cleanKey := strings.TrimPrefix(key, "/")
+	if strings.HasPrefix(cleanKey, s.bucket+"/") {
+		cleanKey = strings.TrimPrefix(cleanKey, s.bucket+"/")
+	}
+	if s.streamBaseURL != "" {
+		base := strings.TrimSuffix(s.streamBaseURL, "/")
+		return fmt.Sprintf("%s/%s", base, cleanKey), nil
+	}
 	return fmt.Sprintf("%s://%s/%s/%s", s.getScheme(), s.endpoint, s.bucket, cleanKey), nil
 }
 

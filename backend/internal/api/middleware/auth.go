@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/auth"
@@ -16,18 +17,29 @@ const (
 	sessionContextKey contextKey = "authenticated_session"
 )
 
-// RequireAuth intercepts HTTP requests, verifies the session cookie against Redis,
+// RequireAuth intercepts HTTP requests, verifies the session cookie or token against Redis,
 // and injects the active user session into the request context.
 func RequireAuth(authService auth.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sessionID := ""
 			cookie, err := r.Cookie(SessionCookieName)
-			if err != nil || cookie.Value == "" {
+			if err == nil && cookie.Value != "" {
+				sessionID = cookie.Value
+			} else if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+				sessionID = strings.TrimPrefix(authHeader, "Bearer ")
+			} else if xSession := r.Header.Get("X-Session-ID"); xSession != "" {
+				sessionID = xSession
+			} else if qSession := r.URL.Query().Get("session_id"); qSession != "" {
+				sessionID = qSession
+			}
+
+			if sessionID == "" {
 				respond.WriteError(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
-			session, err := authService.ValidateSession(r.Context(), cookie.Value)
+			session, err := authService.ValidateSession(r.Context(), sessionID)
 			if err != nil {
 				// Clear expired or invalid session cookie from client
 				ClearSessionCookie(w)
