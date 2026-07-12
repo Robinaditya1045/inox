@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Inox Multi-Service Dev Orchestrator using tmux
+# ==============================================================================
+# Inox Background Service Launcher (start_services.sh)
+# Starts Backend (Go), Frontend (Vite), and Admin Portal in a detached tmux
+# session without attaching or blocking the terminal window.
+# ==============================================================================
+
 SESSION_NAME="inox"
 
-# 1. Start Docker containers (Postgres, Redis, MinIO)
 echo "🚀 Starting Docker infrastructure..."
 docker compose up -d
 
-# 2. Check if tmux session already exists
 tmux has-session -t $SESSION_NAME 2>/dev/null
 if [ $? != 0 ]; then
-    echo "Creating new tmux session: $SESSION_NAME"
+    echo "Creating detached tmux session: $SESSION_NAME"
     # Create new session with the Go Backend in the left pane
     tmux new-session -d -s $SESSION_NAME -n "services" -c "$PWD/backend" "go run ./cmd/server"
 
@@ -21,12 +24,11 @@ if [ $? != 0 ]; then
 
     # Set layout so left half is Backend, right half is stacked frontends
     tmux select-layout -t $SESSION_NAME:0 main-vertical
-
-    # Select the backend pane by default
     tmux select-pane -t $SESSION_NAME:0.0
 else
-    echo "Session $SESSION_NAME already exists. Attaching..."
+    echo "Session $SESSION_NAME already running in background."
 fi
 
-# 3. Attach to the session
-tmux attach-session -t $SESSION_NAME
+echo "✅ Services are running cleanly in detached tmux session '$SESSION_NAME'."
+echo "💡 To view interactive service logs anytime, run: tmux attach-session -t $SESSION_NAME"
+echo "💡 To stop all services, run: tmux kill-session -t $SESSION_NAME"

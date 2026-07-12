@@ -6,7 +6,7 @@ procs:
     shell: "go run ./cmd/server"
   frontend:
     cwd: "frontend"
-    shell: "npm run dev -- --port 5173"
+    shell: "npm run dev -- --host 0.0.0.0 --port 5173"
   admin:
     cwd: "admin-portal"
-    shell: "npm run dev -- --port 3000"
+    shell: "npm run dev -- --host 0.0.0.0 --port 3000"
