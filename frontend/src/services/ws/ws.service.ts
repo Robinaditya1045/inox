@@ -32,7 +32,12 @@ class WSService {
     this.setStatus('CONNECTING');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     // Connect to backend WebSocket endpoint
-    const url = `${protocol}//localhost:8080/api/v1/rooms/${this.roomId}/ws`;
+    let wsBase = import.meta.env.VITE_WS_BASE_URL || `${protocol}//localhost:8080/api/v1`;
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      wsBase = wsBase.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+    }
+    const storedSessionId = localStorage.getItem('inox_session_id') || '';
+    const url = `${wsBase}/rooms/${this.roomId}/ws${storedSessionId ? `?session_id=${storedSessionId}` : ''}`;
 
     logger.info('WSService: Initiating WebSocket handshake', { url, attempt: this.reconnectAttempts + 1 });
 
