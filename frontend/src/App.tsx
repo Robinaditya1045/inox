@@ -1,3 +1,4 @@
+import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './providers/AuthProvider';
 import { RoomProvider } from './providers/RoomProvider';
@@ -9,6 +10,24 @@ import { SignupPage } from './pages/SignupPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { RoomPage } from './pages/RoomPage';
 import { AppLayout } from './components/layout/AppLayout';
+
+// Full-screen layout for the room — no global sidebar, the room has its own channel sidebar
+function RoomLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: '100vh',
+        width: '100vw',
+        background: 'var(--color-bg-obsidian)',
+        color: 'var(--color-text-primary)',
+        overflow: 'hidden',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 function App() {
   return (
@@ -34,9 +53,9 @@ function App() {
                   path="/room/:roomId"
                   element={
                     <ProtectedRoute>
-                      <AppLayout>
+                      <RoomLayout>
                         <RoomPage />
-                      </AppLayout>
+                      </RoomLayout>
                     </ProtectedRoute>
                   }
                 />

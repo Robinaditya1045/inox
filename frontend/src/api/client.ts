@@ -1,6 +1,14 @@
 import { logger } from '../utils/logger';
 
-const BASE_URL = 'http://localhost:8080/api/v1';
+function resolveBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return envUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+  }
+  return envUrl;
+}
+
+const BASE_URL = resolveBaseUrl();
 
 export class APIError extends Error {
   status: number;
@@ -35,11 +43,13 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     }
   }
 
+  const storedSessionId = localStorage.getItem('inox_session_id');
   const config: RequestInit = {
     ...customConfig,
     credentials: 'include', // Mandated by backend contracts for HttpOnly cookies
     headers: {
       'Content-Type': 'application/json',
+      ...(storedSessionId ? { 'Authorization': `Bearer ${storedSessionId}`, 'X-Session-ID': storedSessionId } : {}),
       ...customConfig.headers,
     },
   };
