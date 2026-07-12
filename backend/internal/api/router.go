@@ -60,7 +60,15 @@ func NewRouter(
 		mux.HandleFunc("OPTIONS /media/stream/upload-direct", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
-		mux.Handle("GET /media/stream/", http.StripPrefix("/media/stream/", http.FileServer(http.Dir("./storage_data"))))
+		mux.HandleFunc("GET /media/stream/", mediaHandler.StreamProxy)
+		mux.HandleFunc("HEAD /media/stream/", mediaHandler.StreamProxy)
+		mux.HandleFunc("OPTIONS /media/stream/", mediaHandler.StreamProxy)
+		mux.HandleFunc("GET /inox-media/", mediaHandler.StreamProxy)
+		mux.HandleFunc("HEAD /inox-media/", mediaHandler.StreamProxy)
+		mux.HandleFunc("OPTIONS /inox-media/", mediaHandler.StreamProxy)
+		mux.HandleFunc("GET /api/v1/media/stream/", mediaHandler.StreamProxy)
+		mux.HandleFunc("HEAD /api/v1/media/stream/", mediaHandler.StreamProxy)
+		mux.HandleFunc("OPTIONS /api/v1/media/stream/", mediaHandler.StreamProxy)
 	}
 
 	if authService != nil {
