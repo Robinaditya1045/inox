@@ -85,6 +85,7 @@ func (a *App) Run() error {
 		a.Config.MinioRootUser,
 		a.Config.MinioRootPassword,
 		a.Config.MinioBucketName,
+		a.Config.MediaStreamBaseURL,
 		strings.ToLower(a.Config.MinioUseSSL) == "true",
 	)
 	if err != nil {
@@ -96,7 +97,7 @@ func (a *App) Run() error {
 	}
 	mediaProcessor := media.NewProcessor(mediaRepo, storageSvc)
 	mediaService := media.NewService(mediaRepo, storageSvc, mediaProcessor)
-	mediaHandler := handler.NewMediaHandler(mediaService)
+	mediaHandler := handler.NewMediaHandler(mediaService, a.Config.MediaStreamBaseURL)
 
 	// Reconcile stuck or orphaned transcode jobs from previous server sessions in the background
 	go mediaService.ReconcileOrphanedAssets(context.Background())

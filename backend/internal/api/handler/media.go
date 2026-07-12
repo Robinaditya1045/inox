@@ -11,18 +11,53 @@ import (
 
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
+	"github.com/inox/inox/backend/internal/domain"
 	"github.com/inox/inox/backend/internal/media"
 )
 
 // MediaHandler exposes HTTP endpoints for uploading videos, managing catalog assets,
 // and retrieving adaptive bitrate HLS renditions.
 type MediaHandler struct {
-	service media.Service
+	service       media.Service
+	streamBaseURL string
 }
 
 // NewMediaHandler initializes the HTTP media library controller.
-func NewMediaHandler(service media.Service) *MediaHandler {
-	return &MediaHandler{service: service}
+func NewMediaHandler(service media.Service, streamBaseURL string) *MediaHandler {
+	return &MediaHandler{service: service, streamBaseURL: streamBaseURL}
+}
+
+func (h *MediaHandler) NormalizeAsset(asset *domain.MediaAsset) *domain.MediaAsset {
+	if asset == nil || h.streamBaseURL == "" {
+		return asset
+	}
+	base := strings.TrimSuffix(h.streamBaseURL, "/")
+	replaceURL := func(u string) string {
+		if u == "" {
+			return u
+		}
+		for _, prefix := range []string{
+			"http://localhost:9000/inox-media",
+			"http://127.0.0.1:9000/inox-media",
+			"http://localhost:9000",
+			"http://127.0.0.1:9000",
+		} {
+			if strings.HasPrefix(u, prefix) {
+				clean := strings.TrimPrefix(u, prefix)
+				clean = strings.TrimPrefix(clean, "/")
+				return fmt.Sprintf("%s/%s", base, clean)
+			}
+		}
+		return u
+	}
+	asset.SourceURL = replaceURL(asset.SourceURL)
+	asset.HLSMasterURL = replaceURL(asset.HLSMasterURL)
+	if asset.Renditions != nil {
+		for _, r := range asset.Renditions {
+			r.PlaylistURL = replaceURL(r.PlaylistURL)
+		}
+	}
+	return asset
 }
 
 type registerMediaReq struct {
@@ -51,7 +86,7 @@ func (h *MediaHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respond.WriteJSON(w, http.StatusCreated, asset)
+	respond.WriteJSON(w, http.StatusCreated, h.NormalizeAsset(asset))
 }
 
 // Upload handles multipart file upload of raw MP4 or HLS files, triggering asynchronous FFmpeg transcoding.
@@ -86,7 +121,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respond.WriteJSON(w, http.StatusCreated, asset)
+	respond.WriteJSON(w, http.StatusCreated, h.NormalizeAsset(asset))
 }
 
 type presignedReq struct {
@@ -138,7 +173,7 @@ func (h *MediaHandler) CompleteDirectUpload(w http.ResponseWriter, r *http.Reque
 		respond.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respond.WriteJSON(w, http.StatusOK, asset)
+	respond.WriteJSON(w, http.StatusOK, h.NormalizeAsset(asset))
 }
 
 type uploadProgressReader struct {
@@ -216,6 +251,10 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for i, a := range assets {
+		assets[i] = h.NormalizeAsset(a)
+	}
+
 	respond.WriteJSON(w, http.StatusOK, assets)
 }
 
@@ -237,7 +276,7 @@ func (h *MediaHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respond.WriteJSON(w, http.StatusOK, asset)
+	respond.WriteJSON(w, http.StatusOK, h.NormalizeAsset(asset))
 }
 
 // Delete removes an asset from the catalog and purges its stored files.
@@ -266,3 +305,57 @@ func getOptionalUserID(r *http.Request) *string {
 	}
 	return nil
 }
+
+// StreamProxy proxies HLS playlists (.m3u8), segments (.ts), and direct videos from MinIO object storage
+// or local disk to remote tunneled browsers without CORS or connection refused errors.
+func (h *MediaHandler) StreamProxy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	key := r.URL.Path
+	for _, prefix := range []string{"/media/stream/", "/inox-media/", "/api/v1/media/stream/"} {
+		if strings.HasPrefix(key, prefix) {
+			key = strings.TrimPrefix(key, prefix)
+			break
+		}
+	}
+	key = strings.TrimPrefix(key, "/")
+	if strings.HasPrefix(key, "inox-media/") {
+		key = strings.TrimPrefix(key, "inox-media/")
+	}
+
+	reader, contentType, err := h.service.GetStreamFile(r.Context(), key)
+	if err != nil {
+		slog.Warn("stream proxy object not found or error reading from storage", "key", key, "error", err)
+		http.Error(w, "media asset not found", http.StatusNotFound)
+		return
+	}
+	defer reader.Close()
+
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	} else if strings.HasSuffix(key, ".m3u8") {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	} else if strings.HasSuffix(key, ".ts") {
+		w.Header().Set("Content-Type", "video/mp2t")
+	} else if strings.HasSuffix(key, ".mp4") {
+		w.Header().Set("Content-Type", "video/mp4")
+	}
+
+	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, reader)
+}
+
