@@ -4,10 +4,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { useRoom } from '../../hooks/useRoom';
 import { Button } from '../common/Button';
 import { CreateRoomModal } from '../room/CreateRoomModal';
-import { Tv, Plus, LogOut, Compass, Lock, Globe, Sparkles, Bell, Check, X } from 'lucide-react';
+import styles from './Sidebar.module.css';
+import { Tv, Plus, LogOut, Compass, Lock, Globe, Sparkles, Bell, Check, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const { user, logout, isLoading: isAuthLoading } = useAuth();
   const { rooms, activeRoom, leaveRoom, invitations, acceptInvitation, declineInvitation } = useRoom();
   const navigate = useNavigate();
@@ -19,72 +21,35 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      <aside
-        className="glass-panel"
-        style={{
-          width: 'var(--sidebar-left-width)',
-          height: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRight: '1px solid var(--color-border-glass)',
-          flexShrink: 0,
-          position: 'sticky',
-          top: 0,
-        }}
-      >
+      <aside className={`glass-panel ${styles.sidebar} ${isCollapsed ? styles.sidebarCollapsed : ''}`}>
         {/* Brand Header */}
-        <div
-          style={{
-            height: 'var(--header-height)',
-            padding: '0 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            borderBottom: '1px solid var(--color-border-glass)',
-          }}
-        >
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, var(--color-accent-purple), var(--color-accent-cyan))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFF',
-              boxShadow: '0 0 15px rgba(170, 59, 255, 0.4)',
-            }}
-          >
-            <Sparkles size={20} />
+        <div className={styles.brandHeader}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden' }}>
+            <div className={styles.brandLogo}>
+              <Sparkles size={20} />
+            </div>
+            {!isCollapsed && <span className={styles.brandText}>Inox</span>}
           </div>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-            Inox
-          </span>
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className={styles.collapseButton}
+            aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          >
+            {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
         </div>
 
         {/* Navigation */}
-        <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: '8px', borderBottom: '1px solid var(--color-border-glass)' }}>
+        <div className={styles.navSection}>
           <NavLink
             to="/"
             end
-            style={({ isActive }) => ({
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-              background: isActive ? 'var(--color-bg-surface-hover)' : 'transparent',
-              border: `1px solid ${isActive ? 'var(--color-border-hover)' : 'transparent'}`,
-              fontWeight: isActive ? 600 : 500,
-              fontSize: '0.95rem',
-              transition: 'all var(--transition-fast)',
-              textDecoration: 'none',
-            })}
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}
+            title="Room Lobby"
           >
-            <Compass size={18} color="var(--color-accent-cyan)" />
-            <span>Room Lobby</span>
+            <Compass size={18} color="var(--color-accent-cyan)" style={{ flexShrink: 0 }} />
+            {!isCollapsed && <span>Room Lobby</span>}
           </NavLink>
         </div>
 
@@ -131,11 +96,9 @@ export const Sidebar: React.FC = () => {
         )}
 
         {/* Room List Section */}
-        <div style={{ flex: 1, padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Available Rooms ({rooms.length})
-            </span>
+        <div className={styles.roomListSection}>
+          <div className={styles.sectionHeader}>
+            {!isCollapsed && <span>Available Rooms ({rooms.length})</span>}
             <button
               onClick={() => setIsCreateModalOpen(true)}
               style={{
@@ -146,6 +109,9 @@ export const Sidebar: React.FC = () => {
                 padding: '4px',
                 borderRadius: '6px',
                 transition: 'all var(--transition-fast)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
               }}
               title="Create Room"
             >
@@ -154,7 +120,7 @@ export const Sidebar: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {rooms.length === 0 && (
+            {rooms.length === 0 && !isCollapsed && (
               <div style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
                 No active rooms found. Start a new watch party!
               </div>
@@ -166,28 +132,18 @@ export const Sidebar: React.FC = () => {
                 <NavLink
                   key={room.id}
                   to={`/room/${room.id}`}
-                  style={({ isActive }) => ({
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    color: isActive || isCurrentRoom ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                    background: isActive || isCurrentRoom ? 'rgba(170, 59, 255, 0.15)' : 'transparent',
-                    border: `1px solid ${isActive || isCurrentRoom ? 'var(--color-accent-border)' : 'transparent'}`,
-                    fontWeight: 500,
-                    fontSize: '0.9rem',
-                    transition: 'all var(--transition-fast)',
-                    textDecoration: 'none',
-                  })}
+                  className={({ isActive }) => `${styles.navLink} ${isActive || isCurrentRoom ? styles.navLinkActive : ''}`}
+                  title={room.name}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                    <Tv size={16} color={isCurrentRoom ? 'var(--color-accent-purple)' : 'var(--color-text-muted)'} />
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {room.name}
-                    </span>
-                  </div>
-                  {room.is_private ? <Lock size={14} color="var(--color-text-muted)" /> : <Globe size={14} color="var(--color-text-muted)" />}
+                  <Tv size={16} color={isCurrentRoom ? 'var(--color-accent-purple)' : 'var(--color-text-muted)'} style={{ flexShrink: 0 }} />
+                  {!isCollapsed && (
+                    <>
+                      <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {room.name}
+                      </span>
+                      {room.is_private ? <Lock size={14} color="var(--color-text-muted)" style={{ flexShrink: 0 }} /> : <Globe size={14} color="var(--color-text-muted)" style={{ flexShrink: 0 }} />}
+                    </>
+                  )}
                 </NavLink>
               );
             })}
@@ -195,7 +151,7 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Active Room Indicator Footer */}
-        {activeRoom && (
+        {activeRoom && !isCollapsed && (
           <div style={{ padding: '12px 16px', background: 'rgba(170, 59, 255, 0.1)', borderTop: '1px solid var(--color-border-glass)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <span style={{ fontSize: '0.75rem', color: 'var(--color-accent-purple)', fontWeight: 600 }}>ACTIVE ROOM</span>
@@ -210,16 +166,7 @@ export const Sidebar: React.FC = () => {
         )}
 
         {/* User Profile Footer */}
-        <div
-          style={{
-            padding: '16px',
-            borderTop: '1px solid var(--color-border-glass)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'var(--color-bg-surface)',
-          }}
-        >
+        <div className={styles.userFooter}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
             <div
               style={{
@@ -239,14 +186,16 @@ export const Sidebar: React.FC = () => {
             >
               {user?.username?.[0]?.toUpperCase() || 'U'}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user?.username}
-              </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user?.email}
-              </span>
-            </div>
+            {!isCollapsed && (
+              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user?.username}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user?.email}
+                </span>
+              </div>
+            )}
           </div>
 
           <button
@@ -260,6 +209,9 @@ export const Sidebar: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--color-bg-surface-hover)';

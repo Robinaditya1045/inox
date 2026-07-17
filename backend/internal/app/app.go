@@ -14,6 +14,7 @@ import (
 
 	"github.com/inox/inox/backend/internal/api"
 	"github.com/inox/inox/backend/internal/api/handler"
+	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/config"
 	"github.com/inox/inox/backend/internal/media"
@@ -102,7 +103,12 @@ func (a *App) Run() error {
 	// Reconcile stuck or orphaned transcode jobs from previous server sessions in the background
 	go mediaService.ReconcileOrphanedAssets(context.Background())
 
-	// 5. Register router with wired handlers & middleware
+	// 5. Initialize CORS origin whitelist from configuration before registering routes.
+	// This ensures the CORS middleware validates origins against the explicit whitelist
+	// instead of reflecting any arbitrary origin (which would allow credential theft).
+	middleware.SetAllowedOrigins(a.Config.CORSAllowedOrigins)
+
+	// 6. Register router with wired handlers & middleware
 	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler)
 
 	srv := &http.Server{

@@ -73,8 +73,12 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClos
         />
 
         {/* Privacy Toggle */}
-        <div
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isPrivate}
           style={{
+            width: '100%',
             padding: '16px',
             borderRadius: '10px',
             background: 'var(--color-bg-surface)',
@@ -83,6 +87,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClos
             alignItems: 'center',
             justifyContent: 'space-between',
             cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'all var(--transition-fast)',
           }}
           onClick={() => setIsPrivate(!isPrivate)}
         >
@@ -122,6 +128,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClos
               border: '1px solid var(--color-border-hover)',
               position: 'relative',
               transition: 'all var(--transition-fast)',
+              flexShrink: 0,
             }}
           >
             <div
@@ -138,7 +145,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClos
               }}
             />
           </div>
-        </div>
+        </button>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
           <Button type="button" variant="ghost" onClick={onClose}>

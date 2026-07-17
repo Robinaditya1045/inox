@@ -36,24 +36,10 @@ func NewRouter(
 		mux.HandleFunc("POST /api/v1/auth/logout", authHandler.Logout)
 	}
 
-	if adminHandler != nil {
-		// Observability & Admin Endpoints
-		mux.HandleFunc("GET /metrics", adminHandler.ServePrometheus)
-		mux.HandleFunc("GET /api/v1/admin/telemetry", adminHandler.GetSnapshot)
-		mux.HandleFunc("GET /api/v1/admin/telemetry/ws", adminHandler.ServeTelemetryWS)
-	}
-
 	if mediaHandler != nil {
-		// Public / Authenticated Media Endpoints
+		// Public Media Endpoints (read-only, no auth required for streaming)
 		mux.HandleFunc("GET /api/v1/media", mediaHandler.List)
 		mux.HandleFunc("GET /api/v1/media/{id}", mediaHandler.GetByID)
-
-		// Admin Media Endpoints
-		mux.HandleFunc("POST /api/v1/admin/media/upload", mediaHandler.Upload)
-		mux.HandleFunc("POST /api/v1/admin/media/presigned-url", mediaHandler.CreatePresignedUpload)
-		mux.HandleFunc("POST /api/v1/admin/media/complete-upload", mediaHandler.CompleteDirectUpload)
-		mux.HandleFunc("POST /api/v1/admin/media/register", mediaHandler.Register)
-		mux.HandleFunc("DELETE /api/v1/admin/media/{id}", mediaHandler.Delete)
 
 		// Direct HTTP byte-range stream endpoint for locally stored media assets and HLS segments
 		mux.HandleFunc("PUT /media/stream/upload-direct", mediaHandler.UploadDirectLocal)
@@ -104,6 +90,22 @@ func NewRouter(
 				// Room chat message history retrieval endpoint
 				mux.Handle("GET /api/v1/rooms/{id}/messages", requireAuth(requireMember(http.HandlerFunc(chatHandler.GetRecentMessages))))
 			}
+		}
+
+		// Protected Admin Endpoints (requires authenticated session)
+		if adminHandler != nil {
+			mux.Handle("GET /metrics", requireAuth(http.HandlerFunc(adminHandler.ServePrometheus)))
+			mux.Handle("GET /api/v1/admin/telemetry", requireAuth(http.HandlerFunc(adminHandler.GetSnapshot)))
+			mux.Handle("GET /api/v1/admin/telemetry/ws", requireAuth(http.HandlerFunc(adminHandler.ServeTelemetryWS)))
+		}
+
+		// Protected Admin Media Endpoints (requires authenticated session)
+		if mediaHandler != nil {
+			mux.Handle("POST /api/v1/admin/media/upload", requireAuth(http.HandlerFunc(mediaHandler.Upload)))
+			mux.Handle("POST /api/v1/admin/media/presigned-url", requireAuth(http.HandlerFunc(mediaHandler.CreatePresignedUpload)))
+			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(http.HandlerFunc(mediaHandler.CompleteDirectUpload)))
+			mux.Handle("POST /api/v1/admin/media/register", requireAuth(http.HandlerFunc(mediaHandler.Register)))
+			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(http.HandlerFunc(mediaHandler.Delete)))
 		}
 	}
 

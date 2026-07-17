@@ -4,6 +4,7 @@ import { usePlayerSync } from '../../hooks/usePlayerSync';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useWS } from '../../hooks/useWS';
 import { normalizeMediaUrl } from '../../utils/mediaUrl';
+import { PlayerScrubber } from './PlayerScrubber';
 import {
   Play,
   Pause,
@@ -162,7 +163,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     }
   };
 
-  const handlePlayClick = () => {
+  const handlePlayClick = useCallback(() => {
     if (!permissions.can_control_playback) return;
     const video = videoRef.current;
     if (!video) return;
@@ -176,16 +177,18 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       setIsPlayingLocal(false);
       emitPause(video.currentTime);
     }
-  };
+  }, [permissions.can_control_playback, emitPlay, emitPause]);
 
-  const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!permissions.can_control_playback) return;
-    const newTime = parseFloat(e.target.value);
-    const video = videoRef.current;
-    if (video) video.currentTime = newTime;
-    setProgress(newTime);
-    emitSeek(newTime);
-  };
+  const handleSeek = useCallback(
+    (newTime: number) => {
+      if (!permissions.can_control_playback) return;
+      const video = videoRef.current;
+      if (video) video.currentTime = newTime;
+      setProgress(newTime);
+      emitSeek(newTime);
+    },
+    [permissions.can_control_playback, emitSeek]
+  );
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVol = parseFloat(e.target.value);
@@ -197,7 +200,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     }
   };
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     if (!videoRef.current) return;
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
@@ -206,9 +209,9 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       setVolume(0.5);
       videoRef.current.volume = 0.5;
     }
-  };
+  }, [isMuted, volume]);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
       containerRef.current.requestFullscreen().catch(() => {});
@@ -217,7 +220,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       document.exitFullscreen().catch(() => {});
       setIsFullscreen(false);
     }
-  };
+  }, []);
 
   const handleMouseMove = useCallback(() => {
     setShowControls(true);
@@ -226,6 +229,31 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       if (isPlayingLocal) setShowControls(false);
     }, 3000);
   }, [isPlayingLocal]);
+
+  // Keyboard accessibility shortcuts inside focused player
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore key events when typing inside inputs or textareas
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handlePlayClick();
+      } else if (e.code === 'KeyM') {
+        e.preventDefault();
+        toggleMute();
+      } else if (e.code === 'KeyF') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+
+    const container = containerRef.current;
+    if (!container) return;
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
+  }, [handlePlayClick, toggleMute, toggleFullscreen]);
 
   const setQualityLevel = (level: number) => {
     if (hlsRef.current) {
@@ -238,18 +266,6 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     setShowQuality(false);
   };
 
-  const formatTime = (seconds: number): string => {
-    if (isNaN(seconds) || !isFinite(seconds)) return '00:00';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const pct = duration > 0 ? (progress / duration) * 100 : 0;
   const currentQualityLabel =
     currentLevel === -1 || levels.length === 0
       ? 'Auto'
@@ -258,7 +274,10 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
   return (
     <div
       ref={containerRef}
+      tabIndex={0}
       onMouseMove={handleMouseMove}
+      role="region"
+      aria-label="Inox WatchParty Video Player"
       style={{
         width: '100%',
         height: '100%',
@@ -270,6 +289,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         flexDirection: 'column',
         justifyContent: 'center',
         border: '1px solid var(--color-border-hover)',
+        outline: 'none',
       }}
     >
       {/* Top Status Bar */}
@@ -328,6 +348,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         {permissions.can_control_playback && onOpenLibrary && (
           <button
             onClick={onOpenLibrary}
+            aria-label="Open Media Library"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -388,35 +409,13 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
           border: '1px solid var(--color-border-hover)',
         }}
       >
-        {/* Progress Scrubber */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: '36px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-            {formatTime(progress)}
-          </span>
-          <div style={{ flex: 1, position: 'relative', height: '16px', display: 'flex', alignItems: 'center' }}>
-            <input
-              type="range"
-              min={0}
-              max={duration || 100}
-              step="0.1"
-              value={progress}
-              onChange={handleScrubberChange}
-              disabled={!permissions.can_control_playback}
-              style={{
-                width: '100%',
-                height: '4px',
-                borderRadius: '2px',
-                background: `linear-gradient(to right, var(--color-accent-purple) 0%, var(--color-accent-purple) ${pct}%, rgba(255,255,255,0.15) ${pct}%, rgba(255,255,255,0.15) 100%)`,
-                appearance: 'none',
-                cursor: permissions.can_control_playback ? 'pointer' : 'not-allowed',
-                outline: 'none',
-              }}
-            />
-          </div>
-          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-muted)', minWidth: '36px', fontVariantNumeric: 'tabular-nums' }}>
-            {formatTime(duration)}
-          </span>
-        </div>
+        {/* Progress Scrubber (Memoized Child) */}
+        <PlayerScrubber
+          duration={duration}
+          progress={progress}
+          canControl={permissions.can_control_playback}
+          onSeek={handleSeek}
+        />
 
         {/* Action Row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -425,6 +424,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             <button
               onClick={handlePlayClick}
               disabled={!permissions.can_control_playback}
+              aria-label={isPlayingLocal ? 'Pause Video' : 'Play Video'}
               style={{
                 width: '34px',
                 height: '34px',
@@ -455,6 +455,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <button
                 onClick={toggleMute}
+                aria-label={isMuted || volume === 0 ? 'Unmute Audio' : 'Mute Audio'}
                 style={{
                   color: isMuted || volume === 0 ? 'var(--color-accent-rose)' : 'var(--color-text-secondary)',
                   display: 'flex',
@@ -475,6 +476,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
                 step="0.05"
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
+                aria-label="Volume Slider"
                 style={{
                   width: '64px',
                   height: '3px',
@@ -494,6 +496,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowQuality((p) => !p)}
+                  aria-label="Video Quality Settings"
                   style={{
                     padding: '4px 10px',
                     borderRadius: '6px',
@@ -572,6 +575,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             {/* Fullscreen */}
             <button
               onClick={toggleFullscreen}
+              aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
               style={{
                 padding: '5px',
                 borderRadius: '6px',
@@ -591,3 +595,4 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     </div>
   );
 };
+

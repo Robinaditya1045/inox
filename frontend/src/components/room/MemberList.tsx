@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuth } from '../../hooks/useAuth';
 import type { RoomRole } from '../../types/room';
-import { Shield, UserMinus, Crown, ShieldAlert, UserCheck, MoreVertical, UserPlus, Check, X, AlertCircle } from 'lucide-react';
+import { Shield, UserMinus, Crown, ShieldAlert, UserCheck, MoreVertical, UserPlus, Check, AlertCircle } from 'lucide-react';
 import { useRoom } from '../../hooks/useRoom';
 
 export const MemberList: React.FC = () => {

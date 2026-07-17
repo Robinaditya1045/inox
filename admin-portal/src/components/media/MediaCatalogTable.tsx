@@ -1,5 +1,5 @@
 import * as React from "react"
-import type { MediaAsset, MediaStatus } from "@/types/media"
+import type { MediaAsset } from "@/types/media"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

@@ -62,7 +62,21 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("REDIS_URL environment variable is required")
 	}
 
+	// SECURITY: Prevent production deployments from using the default hardcoded session secret.
+	// Every installation sharing the same secret allows cross-site session forgery.
+	isProd := strings.ToLower(cfg.Environment) == "production" || strings.ToLower(cfg.Environment) == "staging"
+	defaultSecret := "supersecretkey1234567890abcdefghijklmnopqrstuvwxyz"
+	if isProd && cfg.SessionSecret == defaultSecret {
+		return nil, fmt.Errorf("SESSION_SECRET must be explicitly configured in production/staging environments (do not use the default value)")
+	}
+
 	return cfg, nil
+}
+
+// IsProd returns true if the application is running in production or staging mode.
+func (c *Config) IsProd() bool {
+	env := strings.ToLower(c.Environment)
+	return env == "production" || env == "staging"
 }
 
 func getEnv(key, fallback string) string {
