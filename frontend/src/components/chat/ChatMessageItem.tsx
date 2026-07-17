@@ -6,7 +6,7 @@ interface ChatMessageItemProps {
   isOwn: boolean;
 }
 
-export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, isOwn }) => {
+export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(({ message, isOwn }) => {
   const formatTime = (isoString: string): string => {
     try {
       const date = new Date(isoString);
@@ -102,4 +102,6 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, isOwn
       </div>
     </div>
   );
-};
+});
+
+ChatMessageItem.displayName = 'ChatMessageItem';

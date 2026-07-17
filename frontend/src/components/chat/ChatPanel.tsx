@@ -163,7 +163,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
           <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
             <textarea
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+              }}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               rows={1}
@@ -178,7 +182,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
                 lineHeight: 1.4,
                 resize: 'none',
                 outline: 'none',
-                maxHeight: '100px',
+                maxHeight: '120px',
+                overflowY: 'auto',
                 fontFamily: 'inherit',
                 transition: 'border-color var(--transition-fast)',
               }}

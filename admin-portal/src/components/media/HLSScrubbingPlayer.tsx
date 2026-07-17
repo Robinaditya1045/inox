@@ -69,14 +69,19 @@ export function HLSScrubbingPlayer({
           enableWorker: true,
           lowLatencyMode: true,
         })
-        hlsInstance.on(Hls.Events.ERROR, (event: any, data: any) => {
+        hlsInstance.on(Hls.Events.ERROR, (_event: any, data: any) => {
           console.error("HLS error event detailed:", data.type, data.details, data)
           if (data.fatal) {
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                console.error("Fatal network error loading HLS segment or manifest:", data.url)
-                setErrorMsg(`Network Error: Failed to fetch segment (${data.details}). If asset was processed prior to relative path update, re-process asset.`)
-                hlsInstance.startLoad()
+                console.error("Fatal network error loading HLS segment or manifest:", data.url || activeUrl)
+                if (data.details === "manifestLoadError" || data.details === "manifestLoadTimeOut" || data.details === "levelLoadError") {
+                  setErrorMsg(`Network / Manifest Error (${data.details}): Failed to fetch stream manifest from ${data.url || activeUrl}. Ensure backend CDN proxy is active and asset segments are intact.`)
+                  hlsInstance.destroy()
+                } else {
+                  setErrorMsg(`Network Error: Failed to fetch segment (${data.details}). Attempting stream recovery...`)
+                  hlsInstance.startLoad()
+                }
                 break
               case Hls.ErrorTypes.MEDIA_ERROR:
                 if (data.details === "manifestIncompatibleCodecsError") {
@@ -96,7 +101,7 @@ export function HLSScrubbingPlayer({
             }
           }
         })
-        hlsInstance.on(Hls.Events.MANIFEST_PARSED, (event: any, data: any) => {
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
           console.info("HLS manifest parsed successfully. Available adaptive levels:", data.levels?.length)
           setErrorMsg(null)
         })

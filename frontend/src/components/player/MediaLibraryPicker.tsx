@@ -68,27 +68,6 @@ export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
     setTab('library');
   };
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: '9px 12px',
-    background: active ? 'rgba(170,59,255,0.15)' : 'transparent',
-    borderBottom: `2px solid ${active ? 'var(--color-accent-purple)' : 'transparent'}`,
-    color: active ? 'var(--color-accent-purple)' : 'var(--color-text-secondary)',
-    fontSize: '0.82rem',
-    fontWeight: 600,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-    border: 'none',
-    borderBottomStyle: 'solid',
-    borderBottomWidth: '2px',
-    borderBottomColor: active ? 'var(--color-accent-purple)' : 'transparent',
-    background2: active ? 'rgba(170,59,255,0.15)' : 'transparent',
-  });
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Media Library" maxWidth="560px">
       {/* Tab Bar */}

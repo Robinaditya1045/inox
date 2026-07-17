@@ -75,6 +75,7 @@ export const VoiceChannelBar: React.FC<VoiceChannelBarProps> = ({ roomId }) => {
               size="md"
               icon={<Radio size={18} />}
               onClick={connectAudio}
+              aria-label="Connect to WebRTC Voice Audio"
               style={{
                 background: 'linear-gradient(135deg, #00F0FF 0%, #0072FF 100%)',
                 color: '#000',
@@ -156,6 +157,7 @@ export const VoiceChannelBar: React.FC<VoiceChannelBarProps> = ({ roomId }) => {
         <button
           onClick={toggleMute}
           title={isAudioMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+          aria-label={isAudioMuted ? 'Unmute Microphone' : 'Mute Microphone'}
           style={{
             width: '32px',
             height: '32px',
@@ -177,6 +179,7 @@ export const VoiceChannelBar: React.FC<VoiceChannelBarProps> = ({ roomId }) => {
         <button
           onClick={toggleDeafen}
           title={isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
+          aria-label={isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
           style={{
             width: '32px',
             height: '32px',
@@ -199,6 +202,7 @@ export const VoiceChannelBar: React.FC<VoiceChannelBarProps> = ({ roomId }) => {
           <button
             onClick={toggleScreenShare}
             title={isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
+            aria-label={isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
             style={{
               padding: '0 10px',
               height: '32px',
@@ -224,6 +228,7 @@ export const VoiceChannelBar: React.FC<VoiceChannelBarProps> = ({ roomId }) => {
         <button
           onClick={disconnectAudio}
           title="Disconnect from Voice"
+          aria-label="Disconnect from Voice"
           style={{
             width: '32px',
             height: '32px',
