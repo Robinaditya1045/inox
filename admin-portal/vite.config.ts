@@ -27,7 +27,7 @@ export default defineConfig({
             }
             console.warn(`[vite proxy error] ${err.message}`)
           })
-          proxy.on('proxyReqWs', (proxyReq, _req, socket, _options, _head) => {
+          proxy.on('proxyReqWs', (_proxyReq, _req, socket, _options, _head) => {
             socket.on('error', (err) => {
               if (err.message && (err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED') || err.message.includes('EPIPE'))) {
                 return

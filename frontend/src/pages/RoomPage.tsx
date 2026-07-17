@@ -24,6 +24,8 @@ import {
   Hash,
   Volume2,
   Film,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 export const RoomPage: React.FC = () => {
@@ -32,11 +34,28 @@ export const RoomPage: React.FC = () => {
   const permissions = usePermissions();
   const navigate = useNavigate();
 
-  const [activeSection, setActiveSection] = useState<'chat' | 'members' | 'player'>('chat');
+  const [activeSection, setActiveSection] = useState<'chat' | 'members' | 'player'>('player');
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(window.innerWidth < 1024);
 
   const rtc = useRTC(activeRoom?.id);
   const { setMediaUrl, mediaUrl } = usePlayerSync();
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileViewport(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleCopyInvite = () => {
+    if (!activeRoom) return;
+    const inviteUrl = `${window.location.origin}/room/${activeRoom.id}`;
+    navigator.clipboard.writeText(inviteUrl).then(() => {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     if (roomId && activeRoom?.id !== roomId) {
@@ -394,129 +413,151 @@ export const RoomPage: React.FC = () => {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Copy Invite Link Button */}
+            <button
+              onClick={handleCopyInvite}
+              aria-label="Copy Room Invite Link"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                background: copiedLink ? 'rgba(16, 185, 129, 0.2)' : 'var(--color-bg-surface)',
+                border: `1px solid ${copiedLink ? 'rgba(16, 185, 129, 0.5)' : 'var(--color-border-glass)'}`,
+                color: copiedLink ? 'var(--color-accent-emerald)' : 'var(--color-text-secondary)',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+              <span>{copiedLink ? 'Copied Link!' : 'Invite'}</span>
+            </button>
+
             {/* Quick nav pills */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--color-bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--color-border-glass)' }}>
               <button
                 onClick={() => setActiveSection('chat')}
-                title="Chat"
+                title="Chat Panel"
+                aria-label="Switch to Chat Panel"
                 style={{
-                  width: '28px',
-                  height: '28px',
+                  padding: '5px 10px',
                   borderRadius: '6px',
-                  background: activeSection === 'chat' ? 'rgba(170,59,255,0.2)' : 'transparent',
-                  color: activeSection === 'chat' ? 'var(--color-accent-purple)' : 'var(--color-text-secondary)',
+                  background: activeSection === 'chat' ? 'var(--color-accent-purple)' : 'transparent',
+                  color: activeSection === 'chat' ? '#FFF' : 'var(--color-text-secondary)',
                   border: 'none',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.12s',
+                  gap: '5px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  transition: 'all 0.15s',
                 }}
               >
-                <MessageSquare size={15} />
+                <MessageSquare size={14} />
+                <span>Chat</span>
               </button>
               <button
                 onClick={() => setActiveSection('player')}
-                title="Watch Party Player"
+                title="Theater / Full Player"
+                aria-label="Switch to Theater Player"
                 style={{
-                  width: '28px',
-                  height: '28px',
+                  padding: '5px 10px',
                   borderRadius: '6px',
-                  background: activeSection === 'player' ? 'rgba(170,59,255,0.2)' : 'transparent',
-                  color: activeSection === 'player' ? 'var(--color-accent-purple)' : 'var(--color-text-secondary)',
+                  background: activeSection === 'player' ? 'var(--color-accent-purple)' : 'transparent',
+                  color: activeSection === 'player' ? '#FFF' : 'var(--color-text-secondary)',
                   border: 'none',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.12s',
+                  gap: '5px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  transition: 'all 0.15s',
                 }}
               >
-                <Tv size={15} />
+                <Tv size={14} />
+                <span>Theater</span>
               </button>
               <button
                 onClick={() => setActiveSection('members')}
-                title="Members"
+                title="Members Panel"
+                aria-label="Switch to Members Panel"
                 style={{
-                  width: '28px',
-                  height: '28px',
+                  padding: '5px 10px',
                   borderRadius: '6px',
-                  background: activeSection === 'members' ? 'rgba(170,59,255,0.2)' : 'transparent',
-                  color: activeSection === 'members' ? 'var(--color-accent-purple)' : 'var(--color-text-secondary)',
+                  background: activeSection === 'members' ? 'var(--color-accent-purple)' : 'transparent',
+                  color: activeSection === 'members' ? '#FFF' : 'var(--color-text-secondary)',
                   border: 'none',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.12s',
+                  gap: '5px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  transition: 'all 0.15s',
                 }}
               >
-                <Users size={15} />
+                <Users size={14} />
+                <span>Members</span>
               </button>
             </div>
           </div>
         </header>
 
-        {/* ── Content Body ──────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', width: '100%', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
-          {/* Player panel — takes center space when activeSection === 'player' */}
+        {/* ── Content Body (Responsive Multi-Panel Layout) ──────── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: isMobileViewport ? 'column' : 'row', width: '100%', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
+          {/* Main Video Player Panel */}
           <div
             style={{
-              display: activeSection === 'player' ? 'flex' : 'none',
-              flex: 1,
+              display: !isMobileViewport || activeSection === 'player' || activeSection === 'chat' || activeSection === 'members' ? 'flex' : 'none',
+              flex: !isMobileViewport && activeSection !== 'player' ? 1 : isMobileViewport && activeSection !== 'player' ? 'none' : 1,
+              height: isMobileViewport && activeSection !== 'player' ? '240px' : '100%',
               width: '100%',
               flexDirection: 'column',
               overflow: 'hidden',
               padding: '12px',
               gap: '10px',
               minWidth: 0,
+              flexShrink: isMobileViewport ? 0 : 1,
             }}
           >
             <div style={{ flex: 1, width: '100%', overflow: 'hidden', borderRadius: '10px', display: 'flex', minHeight: 0 }}>
               <WatchPartyPlayer onOpenLibrary={permissions.can_control_playback ? () => setIsLibraryOpen(true) : undefined} />
             </div>
-            {/* Voice bar inside player section */}
+            {/* Voice bar below video player */}
             <div style={{ flexShrink: 0, width: '100%' }}>
               <VoiceChannelBar roomId={activeRoom?.id} />
             </div>
           </div>
 
-          {/* Chat panel — either takes full screen in 'chat' mode OR right 380px sidebar when in 'player' mode */}
-          <div
-            style={{
-              display: activeSection === 'chat' || activeSection === 'player' ? 'flex' : 'none',
-              width: activeSection === 'player' ? '380px' : '100%',
-              flex: activeSection === 'chat' ? 1 : 'none',
-              flexShrink: 0,
-              flexDirection: 'column',
-              overflow: 'hidden',
-              borderLeft: activeSection === 'player' ? '1px solid var(--color-border-glass)' : 'none',
-            }}
-          >
-            <ChatPanel roomId={activeRoom?.id} />
-          </div>
-
-          {/* Members panel */}
-          <div
-            style={{
-              display: activeSection === 'members' ? 'flex' : 'none',
-              flex: 1,
-              width: '100%',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-          >
-            <MemberList />
-          </div>
+          {/* Side / Stacked Panel (Chat or Members) */}
+          {activeSection !== 'player' && (
+            <div
+              style={{
+                width: isMobileViewport ? '100%' : '380px',
+                flex: isMobileViewport ? 1 : 'none',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                borderLeft: !isMobileViewport ? '1px solid var(--color-border-glass)' : 'none',
+                borderTop: isMobileViewport ? '1px solid var(--color-border-glass)' : 'none',
+                background: 'var(--color-bg-obsidian)',
+              }}
+            >
+              {activeSection === 'chat' ? (
+                <ChatPanel roomId={activeRoom?.id} />
+              ) : (
+                <MemberList />
+              )}
+            </div>
+          )}
         </div>
-
-        {/* Voice Bar — shown as persistent bottom bar when in chat/members view */}
-        {activeSection !== 'player' && (
-          <div style={{ flexShrink: 0, width: '100%', padding: '6px 12px 8px', borderTop: '1px solid var(--color-border-glass)', background: 'rgba(5,7,10,0.6)' }}>
-            <VoiceChannelBar roomId={activeRoom?.id} />
-          </div>
-        )}
       </div>
 
       {/* Invisible Audio Renderer */}

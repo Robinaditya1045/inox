@@ -8,9 +8,10 @@ RUN apk update && apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy go.mod first to leverage Docker layer caching for dependency downloads.
-# If go.mod hasn't changed, Docker reuses the cached layer instead of re-downloading modules.
-COPY go.mod ./
+# Copy dependency manifests first to leverage Docker layer caching for module downloads.
+# If go.mod/go.sum haven't changed, Docker reuses the cached layer instead of re-downloading modules.
+COPY go.mod go.sum ./
+RUN go mod download
 
 # Copy the rest of the backend source code.
 COPY . .
@@ -31,12 +32,20 @@ COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
 WORKDIR /app
 
+# Install FFmpeg for HLS transcoding (Adaptive Bitrate ladder generation).
+# Without this, the media processor silently falls back to direct-stream proxy mode,
+# meaning uploaded videos are never transcoded into multi-bitrate HLS segments.
+RUN apk add --no-cache ffmpeg
+
 # Create a non-privileged system user for Kubernetes security compliance.
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 # Copy only the compiled binary from Stage 1
 COPY --from=builder /app/bin/server ./server
+
+# Copy SQL migration files so the server can run them on startup
+COPY --from=builder /app/migrations ./migrations
 
 # Expose our application HTTP port
 EXPOSE 8080

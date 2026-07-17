@@ -24,7 +24,7 @@
   /* Text & Content Colors */
   --color-text-primary: #F3F4F6;
   --color-text-secondary: #9CA3AF;
-  --color-text-muted: #6B7280;
+  --color-text-muted: #8B949E; /* WCAG AA 4.5:1 compliant on obsidian */
   --color-text-on-accent: #FFFFFF;
   
   /* Borders & Dividers */
@@ -50,4 +50,22 @@
   --sidebar-right-width: 320px;
   --panel-bottom-height: 72px;
   --header-height: 64px;
+
+  /* Z-Index Hierarchy */
+  --z-negative: -1;
+  --z-elevated: 10;
+  --z-sticky: 100;
+  --z-drawer: 500;
+  --z-modal-backdrop: 900;
+  --z-modal-content: 1000;
+  --z-tooltip: 1100;
+
+  /* Responsive Viewport References */
+  --viewport-mobile: 640px;
+  --viewport-tablet: 768px;
+  --viewport-desktop: 1024px;
+  --viewport-wide: 1280px;
+
+  /* Focus & Accessibility Tokens */
+  --focus-ring: 0 0 0 2px var(--color-bg-obsidian), 0 0 0 4px var(--color-accent-purple);
 }
