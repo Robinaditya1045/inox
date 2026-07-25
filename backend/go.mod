@@ -6,7 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hibiken/asynq v0.26.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.7.2
 	github.com/pion/webrtc/v3 v3.3.6
 	github.com/redis/go-redis/v9 v9.14.1
 	golang.org/x/crypto v0.35.0
