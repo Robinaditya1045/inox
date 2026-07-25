@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/inox/inox/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,11 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByUsername(ctx context.Context, username string) (*domain.User, error)
+	UpdateAvatar(ctx context.Context, userID string, avatarURL string) error
+	CreatePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
+	GetPasswordResetToken(ctx context.Context, tokenHash string) (string, error)
+	DeletePasswordResetToken(ctx context.Context, tokenHash string) error
+	UpdatePassword(ctx context.Context, userID, passwordHash string) error
 }
 
 type postgresUserRepository struct {
@@ -66,7 +72,7 @@ func (r *postgresUserRepository) Create(ctx context.Context, user *domain.User) 
 // GetByEmail fetches a user by their unique email address.
 func (r *postgresUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `
-		SELECT id, username, email, password_hash, created_at, updated_at
+		SELECT id, username, email, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -77,6 +83,7 @@ func (r *postgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		&user.Username,
 		&user.Email,
 		&user.PasswordHash,
+		&user.AvatarURL,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -93,7 +100,7 @@ func (r *postgresUserRepository) GetByEmail(ctx context.Context, email string) (
 // GetByID fetches a user by their UUID primary key.
 func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	query := `
-		SELECT id, username, email, password_hash, created_at, updated_at
+		SELECT id, username, email, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -104,6 +111,7 @@ func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*domai
 		&user.Username,
 		&user.Email,
 		&user.PasswordHash,
+		&user.AvatarURL,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -120,7 +128,7 @@ func (r *postgresUserRepository) GetByID(ctx context.Context, id string) (*domai
 // GetByUsername fetches a user by their unique username.
 func (r *postgresUserRepository) GetByUsername(ctx context.Context, username string) (*domain.User, error) {
 	query := `
-		SELECT id, username, email, password_hash, created_at, updated_at
+		SELECT id, username, email, password_hash, avatar_url, created_at, updated_at
 		FROM users
 		WHERE username = $1
 	`
@@ -131,6 +139,7 @@ func (r *postgresUserRepository) GetByUsername(ctx context.Context, username str
 		&user.Username,
 		&user.Email,
 		&user.PasswordHash,
+		&user.AvatarURL,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -142,4 +151,52 @@ func (r *postgresUserRepository) GetByUsername(ctx context.Context, username str
 	}
 
 	return &user, nil
+}
+
+// UpdateAvatar updates the user's avatar URL.
+func (r *postgresUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL string) error {
+	query := `
+		UPDATE users 
+		SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+	`
+	tag, err := r.db.Exec(ctx, query, avatarURL, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update avatar: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *postgresUserRepository) CreatePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	query := `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`
+	_, err := r.db.Exec(ctx, query, userID, tokenHash, expiresAt)
+	return err
+}
+
+func (r *postgresUserRepository) GetPasswordResetToken(ctx context.Context, tokenHash string) (string, error) {
+	query := `SELECT user_id FROM password_reset_tokens WHERE token_hash = $1 AND expires_at > NOW()`
+	var userID string
+	err := r.db.QueryRow(ctx, query, tokenHash).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", errors.New("invalid or expired token")
+		}
+		return "", err
+	}
+	return userID, nil
+}
+
+func (r *postgresUserRepository) DeletePasswordResetToken(ctx context.Context, tokenHash string) error {
+	query := `DELETE FROM password_reset_tokens WHERE token_hash = $1`
+	_, err := r.db.Exec(ctx, query, tokenHash)
+	return err
+}
+
+func (r *postgresUserRepository) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.Exec(ctx, query, passwordHash, userID)
+	return err
 }

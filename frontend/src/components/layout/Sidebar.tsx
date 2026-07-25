@@ -4,11 +4,13 @@ import { useAuth } from '../../hooks/useAuth';
 import { useRoom } from '../../hooks/useRoom';
 import { Button } from '../common/Button';
 import { CreateRoomModal } from '../room/CreateRoomModal';
+import { UserAvatarSettingsModal } from '../profile/UserAvatarSettingsModal';
 import styles from './Sidebar.module.css';
 import { Tv, Plus, LogOut, Compass, Lock, Globe, Sparkles, Bell, Check, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { user, logout, isLoading: isAuthLoading } = useAuth();
   const { rooms, activeRoom, leaveRoom, invitations, acceptInvitation, declineInvitation } = useRoom();
@@ -184,10 +186,22 @@ export const Sidebar: React.FC = () => {
                 flexShrink: 0,
               }}
             >
-              {user?.username?.[0]?.toUpperCase() || 'U'}
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user.username}
+                  style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                />
+              ) : (
+                user?.username?.[0]?.toUpperCase() || 'U'
+              )}
             </div>
             {!isCollapsed && (
-              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: 'pointer' }}
+                onClick={() => setIsProfileModalOpen(true)}
+                title="Edit Profile"
+              >
                 <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user?.username}
                 </span>
@@ -229,6 +243,7 @@ export const Sidebar: React.FC = () => {
       </aside>
 
       <CreateRoomModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+      <UserAvatarSettingsModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
     </>
   );
 };

@@ -30,14 +30,16 @@ type mediaService struct {
 	repo      Repository
 	storage   storage.Service
 	processor *Processor
+	queue     QueueClient
 }
 
 // NewService initializes the media library business service.
-func NewService(repo Repository, storage storage.Service, processor *Processor) Service {
+func NewService(repo Repository, storage storage.Service, processor *Processor, queue QueueClient) Service {
 	return &mediaService{
 		repo:      repo,
 		storage:   storage,
 		processor: processor,
+		queue:     queue,
 	}
 }
 
@@ -84,9 +86,11 @@ func (s *mediaService) UploadMedia(ctx context.Context, title, description strin
 		return nil, fmt.Errorf("failed to save asset in database: %w", err)
 	}
 
-	// Trigger asynchronous HLS transcoding ladder generation
-	if s.processor != nil {
-		go s.processor.ProcessAsset(asset.ID, key, url)
+	// Trigger asynchronous HLS transcoding ladder generation via Redis job queue
+	if s.queue != nil {
+		_ = s.queue.EnqueueTranscodeMedia(ctx, asset.ID, key)
+	} else if s.processor != nil {
+		go s.processor.ProcessAsset(context.Background(), asset) // Fallback for testing/local
 	} else {
 		// If processor not wired, mark as ready for direct playback
 		_ = s.repo.UpdateAssetStatus(context.Background(), asset.ID, domain.MediaStatusReady, url)
@@ -146,8 +150,10 @@ func (s *mediaService) CompleteDirectUpload(ctx context.Context, assetID string,
 		return nil, fmt.Errorf("failed to update asset status: %w", err)
 	}
 
-	if s.processor != nil {
-		go s.processor.ProcessAsset(asset.ID, key, streamURL)
+	if s.queue != nil {
+		_ = s.queue.EnqueueTranscodeMedia(ctx, asset.ID, key)
+	} else if s.processor != nil {
+		go s.processor.ProcessAsset(context.Background(), asset)
 	} else {
 		_ = s.repo.UpdateAssetStatus(context.Background(), asset.ID, domain.MediaStatusReady, streamURL)
 	}
@@ -222,10 +228,12 @@ func (s *mediaService) ReconcileOrphanedAssets(ctx context.Context) {
 		}
 		reader.Close()
 
-		// Source file exists! We can cleanly resume background HLS processing.
+		// Source file exists! We can cleanly resume background HLS processing via the queue.
 		slog.Info("resuming background HLS processing for orphaned asset", "asset_id", asset.ID, "key", key)
-		if s.processor != nil {
-			go s.processor.ProcessAsset(asset.ID, key, asset.SourceURL)
+		if s.queue != nil {
+			_ = s.queue.EnqueueTranscodeMedia(ctx, asset.ID, key)
+		} else if s.processor != nil {
+			go s.processor.ProcessAsset(context.Background(), asset)
 		} else {
 			_ = s.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusReady, asset.SourceURL)
 		}

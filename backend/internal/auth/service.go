@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,6 +23,10 @@ type AuthService interface {
 	Login(ctx context.Context, email, password string) (*domain.Session, error)
 	Logout(ctx context.Context, sessionID string) error
 	ValidateSession(ctx context.Context, sessionID string) (*domain.Session, error)
+	UpdateAvatar(ctx context.Context, userID, avatarURL string, sessionID string) error
+	GetProfile(ctx context.Context, userID string) (*domain.User, error)
+	GeneratePasswordResetToken(ctx context.Context, email string) (string, error)
+	ResetPasswordWithToken(ctx context.Context, token, newPassword string) error
 }
 
 type authService struct {
@@ -116,12 +122,19 @@ func (s *authService) createSessionForUser(ctx context.Context, user *domain.Use
 		return nil, fmt.Errorf("failed to generate session id: %w", err)
 	}
 
+	role := user.Role
+	if role == "" {
+		role = domain.SystemRoleUser
+	}
+
 	now := time.Now()
 	session := &domain.Session{
 		ID:        sessionID,
 		UserID:    user.ID,
 		Username:  user.Username,
 		Email:     user.Email,
+		Role:      role,
+		AvatarURL: user.AvatarURL,
 		CreatedAt: now,
 		ExpiresAt: now.Add(DefaultSessionDuration),
 	}
@@ -131,4 +144,83 @@ func (s *authService) createSessionForUser(ctx context.Context, user *domain.Use
 	}
 
 	return session, nil
+}
+
+// UpdateAvatar updates a user's avatar URL and updates the active session if sessionID is provided.
+func (s *authService) UpdateAvatar(ctx context.Context, userID, avatarURL string, sessionID string) error {
+	if avatarURL == "" {
+		return errors.New("avatar URL cannot be empty")
+	}
+	if err := s.userRepo.UpdateAvatar(ctx, userID, avatarURL); err != nil {
+		return err
+	}
+	// Update session seamlessly
+	if sessionID != "" {
+		if session, err := s.sessionStore.Get(ctx, sessionID); err == nil {
+			session.AvatarURL = &avatarURL
+			_ = s.sessionStore.Create(ctx, session) // Overwrites with same TTL
+		}
+	}
+	return nil
+}
+
+// GetProfile retrieves a user's profile information.
+func (s *authService) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
+	return s.userRepo.GetByID(ctx, userID)
+}
+
+// GeneratePasswordResetToken generates a secure token for password reset.
+func (s *authService) GeneratePasswordResetToken(ctx context.Context, email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return "", nil // Return nil to avoid email enumeration
+		}
+		return "", err
+	}
+
+	token, err := s.sessionStore.GenerateSessionID()
+	if err != nil {
+		return "", err
+	}
+
+	// Hash with SHA256 so we can query it directly in the DB
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	expiresAt := time.Now().Add(1 * time.Hour)
+	if err := s.userRepo.CreatePasswordResetToken(ctx, user.ID, tokenHash, expiresAt); err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+// ResetPasswordWithToken validates a token and resets the user's password.
+func (s *authService) ResetPasswordWithToken(ctx context.Context, token, newPassword string) error {
+	if len(newPassword) < 8 {
+		return ErrInvalidInput
+	}
+	
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	userID, err := s.userRepo.GetPasswordResetToken(ctx, tokenHash)
+	if err != nil {
+		return err
+	}
+
+	passwordHash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := s.userRepo.UpdatePassword(ctx, userID, passwordHash); err != nil {
+		return err
+	}
+
+	_ = s.userRepo.DeletePasswordResetToken(ctx, tokenHash)
+	
+	return nil
 }

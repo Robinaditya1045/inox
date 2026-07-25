@@ -146,7 +146,14 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
     if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       wsEnvUrl = wsEnvUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
     }
-    const targetUrl = url || wsEnvUrl
+    let targetUrl = url || wsEnvUrl
+    
+    // Inject session ID for cross-origin WebSocket authentication
+    const storedSessionId = localStorage.getItem('inox_session_id');
+    if (storedSessionId) {
+      const char = targetUrl.includes('?') ? '&' : '?';
+      targetUrl = `${targetUrl}${char}session_id=${storedSessionId}`;
+    }
 
     const connect = () => {
       if (!isSubscribed) return

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/inox/inox/backend/internal/api"
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
@@ -52,7 +53,11 @@ func (a *App) Run() error {
 
 	// 2. Initialize business logic services
 	authService := auth.NewAuthService(userRepo, sessionStore)
-	roomService := room.NewRoomService(roomRepo, userRepo)
+	var stateRepo room.StateRepository
+	if a.Redis != nil {
+		stateRepo = room.NewRedisStateRepository(a.Redis)
+	}
+	roomService := room.NewRoomService(roomRepo, userRepo, stateRepo)
 	chatService := room.NewChatService(chatRepo, roomRepo)
 
 	obsRepo := observability.NewRepository(a.DB)
@@ -64,6 +69,12 @@ func (a *App) Run() error {
 	hub.SetChatService(chatService)
 	hub.SetRoomService(roomService)
 	hub.SetEventAggregator(eventAggregator)
+	if a.Redis != nil {
+		redisEventBus := ws.NewRedisEventBus(a.Redis)
+		redisEventBus.SetHub(hub)
+		hub.SetRedisEventBus(redisEventBus)
+		hub.SetStateRepository(stateRepo)
+	}
 	sfuMgr := sfu.NewManager()
 	hub.SetSFUManager(sfuMgr)
 	go hub.Run()
@@ -97,7 +108,14 @@ func (a *App) Run() error {
 		storageSvc = minioSvc
 	}
 	mediaProcessor := media.NewProcessor(mediaRepo, storageSvc)
-	mediaService := media.NewService(mediaRepo, storageSvc, mediaProcessor)
+	var queueClient media.QueueClient
+	if a.Redis != nil {
+		redisOpt, err := asynq.ParseRedisURI(a.Config.RedisURL)
+		if err == nil {
+			queueClient = media.NewAsynqQueueClient(redisOpt)
+		}
+	}
+	mediaService := media.NewService(mediaRepo, storageSvc, mediaProcessor, queueClient)
 	mediaHandler := handler.NewMediaHandler(mediaService, a.Config.MediaStreamBaseURL)
 
 	// Reconcile stuck or orphaned transcode jobs from previous server sessions in the background
@@ -109,7 +127,7 @@ func (a *App) Run() error {
 	middleware.SetAllowedOrigins(a.Config.CORSAllowedOrigins)
 
 	// 6. Register router with wired handlers & middleware
-	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler)
+	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, a.DB, a.Redis)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),

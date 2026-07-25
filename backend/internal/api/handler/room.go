@@ -259,3 +259,50 @@ func (h *RoomHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) 
 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"status": "declined"})
 }
+
+// LeaveRoom allows a non-owner member to permanently leave a room.
+func (h *RoomHandler) LeaveRoom(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	roomID := r.PathValue("id")
+	if roomID == "" {
+		respond.WriteError(w, http.StatusBadRequest, "missing room id")
+		return
+	}
+
+	if err := h.roomService.LeaveRoom(r.Context(), roomID, session.UserID); err != nil {
+		if errors.Is(err, room.ErrCannotAlterOwner) {
+			respond.WriteError(w, http.StatusBadRequest, "owners cannot leave the room, they must delete it")
+			return
+		}
+		respond.WriteError(w, http.StatusInternalServerError, "failed to leave room")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "left room successfully"})
+}
+
+// DeleteRoom handles room deletion by the owner.
+func (h *RoomHandler) DeleteRoom(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	roomID := r.PathValue("id")
+	if err := h.roomService.DeleteRoom(r.Context(), roomID, session.UserID); err != nil {
+		if errors.Is(err, room.ErrPermissionDenied) {
+			respond.WriteError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		respond.WriteError(w, http.StatusInternalServerError, "failed to delete room")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "room deleted successfully"})
+}

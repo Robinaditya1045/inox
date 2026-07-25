@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useWS } from './useWS';
+import { useRoomSocket } from './useRoomSocket';
 import { usePermissions } from './usePermissions';
 import { chatService } from '../services/chat/chat.service';
 import type { ChatMessage } from '../types/chat';
@@ -18,7 +18,7 @@ export const useChat = (roomId: string | undefined): UseChatReturn => {
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { send, subscribe } = useWS();
+  const { send, subscribe } = useRoomSocket();
   const permissions = usePermissions();
 
   // Load historical messages via REST API when room changes

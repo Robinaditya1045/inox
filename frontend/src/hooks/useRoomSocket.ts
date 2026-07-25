@@ -1,16 +1,9 @@
-import React, { useState, useEffect, useCallback, type ReactNode } from 'react';
-import { WSContext } from '../contexts/ws.context';
+import { useState, useEffect, useCallback } from 'react';
 import { wsService, type WSStatus } from '../services/ws/ws.service';
 import type { WSEventType, WSMessage } from '../types/ws';
-import { useRoom } from '../hooks/useRoom';
 
-interface WSProviderProps {
-  children: ReactNode;
-}
-
-export const WSProvider: React.FC<WSProviderProps> = ({ children }) => {
+export const useRoomSocket = (roomId?: string) => {
   const [status, setStatus] = useState<WSStatus>(wsService.getStatus());
-  const { activeRoom } = useRoom();
 
   useEffect(() => {
     const unsubscribe = wsService.onStatusChange((newStatus) => {
@@ -19,16 +12,19 @@ export const WSProvider: React.FC<WSProviderProps> = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
+  // Encapsulate connection lifecycle if a roomId is provided
   useEffect(() => {
-    if (activeRoom?.id) {
-      wsService.connect(activeRoom.id);
-    } else {
-      wsService.disconnect();
+    if (roomId) {
+      wsService.connect(roomId);
     }
     return () => {
-      // Don't disconnect on unmount if still in room, but clean up on room leave
+      if (roomId) {
+        // wsService.disconnect() is intentionally not called here to avoid 
+        // disconnecting when the component unmounts but the user is still in the room.
+        // Disconnection should happen on explicitly leaving the room.
+      }
     };
-  }, [activeRoom?.id]);
+  }, [roomId]);
 
   const send = useCallback(<T = unknown>(type: WSEventType, payload?: T, targetId?: string) => {
     wsService.send<T>(type, payload, targetId);
@@ -38,12 +34,10 @@ export const WSProvider: React.FC<WSProviderProps> = ({ children }) => {
     return wsService.on(type, callback);
   }, []);
 
-  const value = {
+  return {
     status,
     isConnected: status === 'OPEN',
     send,
     subscribe,
   };
-
-  return <WSContext.Provider value={value}>{children}</WSContext.Provider>;
 };

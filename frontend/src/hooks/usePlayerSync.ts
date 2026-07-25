@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useWS } from './useWS';
+import { useRoomSocket } from './useRoomSocket';
 import { usePermissions } from './usePermissions';
 import { useRoom } from './useRoom';
 import type { WSPlaybackPayload } from '../types/ws';
@@ -31,7 +31,7 @@ export const usePlayerSync = (): PlayerSyncState => {
   // Flag to prevent echo loops when video updates from remote WebSocket events
   const isRemoteUpdateRef = useRef<boolean>(false);
 
-  const { send, subscribe } = useWS();
+  const { send, subscribe } = useRoomSocket();
   const permissions = usePermissions();
 
   useEffect(() => {
