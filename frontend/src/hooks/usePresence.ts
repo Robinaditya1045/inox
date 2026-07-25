@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRoom } from './useRoom';
-import { useWS } from './useWS';
+import { useRoomSocket } from './useRoomSocket';
 import { usePermissions } from './usePermissions';
 import { roomService, DEFAULT_PERMISSIONS } from '../services/room/room.service';
 import type { RoomMember, RoomRole } from '../types/room';
@@ -16,7 +16,7 @@ export interface UsePresenceReturn {
 
 export const usePresence = (): UsePresenceReturn => {
   const { activeRoom } = useRoom();
-  const { subscribe } = useWS();
+  const { subscribe } = useRoomSocket();
   const permissions = usePermissions();
 
   const [members, setMembers] = useState<RoomMember[]>(activeRoom?.members || []);

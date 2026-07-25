@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inox-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inox-worker
+  template:
+    metadata:
+      labels:
+        app: inox-worker
+    spec:
+      containers:
+      - name: worker
+        image: inox-worker:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: inox-config
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "200m"
+            memory: "512Mi"

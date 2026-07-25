@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { RTCContext } from '../contexts/rtc.context';
-import { useWS } from '../hooks/useWS';
+import { useRoomSocket } from '../hooks/useRoomSocket';
 import { usePermissions } from '../hooks/usePermissions';
 import { useRoom } from '../hooks/useRoom';
 import { rtcService } from '../services/rtc/rtc.service';
@@ -20,7 +20,7 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
 
-  const { send, subscribe } = useWS();
+  const { send, subscribe } = useRoomSocket();
   const permissions = usePermissions();
   const { activeRoom } = useRoom();
   const roomId = activeRoom?.id;

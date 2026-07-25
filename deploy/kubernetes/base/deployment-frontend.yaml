@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inox-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inox-frontend
+  template:
+    metadata:
+      labels:
+        app: inox-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: inox-frontend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"

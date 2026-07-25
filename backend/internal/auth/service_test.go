@@ -56,6 +56,26 @@ func (m *mockUserRepository) GetByID(ctx context.Context, id string) (*domain.Us
 	return nil, auth.ErrUserNotFound
 }
 
+func (m *mockUserRepository) CreatePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	return nil
+}
+
+func (m *mockUserRepository) GetPasswordResetToken(ctx context.Context, tokenHash string) (string, error) {
+	return "user-mock-uuid-1234", nil
+}
+
+func (m *mockUserRepository) DeletePasswordResetToken(ctx context.Context, tokenHash string) error {
+	return nil
+}
+
+func (m *mockUserRepository) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	return nil
+}
+
+func (m *mockUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL string) error {
+	return nil
+}
+
 // mockSessionStore implements auth.SessionStore in memory.
 type mockSessionStore struct {
 	sessions map[string]*domain.Session

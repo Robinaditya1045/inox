@@ -109,10 +109,15 @@ func (m *mockRoomRepository) UpdateRoomMediaURL(ctx context.Context, roomID, med
 	return nil
 }
 
+func (m *mockRoomRepository) DeleteRoom(ctx context.Context, roomID string) error {
+	delete(m.rooms, roomID)
+	return nil
+}
+
 func TestRoomCreationAndRBACWorkflow(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRoomRepository()
-	service := room.NewRoomService(repo, nil)
+	service := room.NewRoomService(repo, nil, nil)
 
 	ownerID := "user-owner-1"
 	viewerID := "user-viewer-2"

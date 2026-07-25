@@ -30,15 +30,18 @@ type RoomService interface {
 	RespondToInvitation(ctx context.Context, invID, userID string, accept bool) (*domain.Room, *domain.RoomMember, error)
 	GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error)
 	UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error
+	DeleteRoom(ctx context.Context, roomID, requesterID string) error
+	LeaveRoom(ctx context.Context, roomID, userID string) error
 }
 
 type roomService struct {
-	repo     RoomRepository
-	userRepo auth.UserRepository
+	repo      RoomRepository
+	userRepo  auth.UserRepository
+	stateRepo StateRepository
 }
 
-func NewRoomService(repo RoomRepository, userRepo auth.UserRepository) RoomService {
-	return &roomService{repo: repo, userRepo: userRepo}
+func NewRoomService(repo RoomRepository, userRepo auth.UserRepository, stateRepo StateRepository) RoomService {
+	return &roomService{repo: repo, userRepo: userRepo, stateRepo: stateRepo}
 }
 
 // CreateRoom validates input and atomically creates a room with the creator as RoleOwner.
@@ -160,7 +163,14 @@ func (s *roomService) KickMember(ctx context.Context, roomID, requesterID, targe
 		return ErrCannotAlterOwner
 	}
 
-	return s.repo.RemoveMember(ctx, roomID, targetUserID)
+	if err := s.repo.RemoveMember(ctx, roomID, targetUserID); err != nil {
+		return err
+	}
+
+	if s.stateRepo != nil {
+		_ = s.stateRepo.InvalidateMemberVerification(ctx, roomID, targetUserID)
+	}
+	return nil
 }
 
 // CheckPlaybackPermission verifies if a user is permitted to pause, play, or seek video playback.
@@ -285,4 +295,32 @@ func (s *roomService) UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL s
 
 func (s *roomService) GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error) {
 	return s.repo.GetRoomByID(ctx, roomID)
+}
+
+func (s *roomService) DeleteRoom(ctx context.Context, roomID, requesterID string) error {
+	room, err := s.repo.GetRoomByID(ctx, roomID)
+	if err != nil {
+		return err
+	}
+	if room.OwnerID != requesterID {
+		return ErrPermissionDenied
+	}
+	return s.repo.DeleteRoom(ctx, roomID)
+}
+
+func (s *roomService) LeaveRoom(ctx context.Context, roomID, userID string) error {
+	member, err := s.repo.GetMember(ctx, roomID, userID)
+	if err != nil {
+		return err
+	}
+	if member.Role == domain.RoleOwner {
+		return ErrCannotAlterOwner
+	}
+	if err := s.repo.RemoveMember(ctx, roomID, userID); err != nil {
+		return err
+	}
+	if s.stateRepo != nil {
+		_ = s.stateRepo.InvalidateMemberVerification(ctx, roomID, userID)
+	}
+	return nil
 }

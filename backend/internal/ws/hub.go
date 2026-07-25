@@ -6,19 +6,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/inox/inox/backend/internal/domain"
 	"github.com/inox/inox/backend/internal/observability"
 	"github.com/inox/inox/backend/internal/room"
 	"github.com/inox/inox/backend/internal/sfu"
 	"github.com/pion/webrtc/v3"
 )
-
-// RoomPlaybackState maintains the authoritative real-time media state of an active watch party room.
-type RoomPlaybackState struct {
-	MediaURL         string  `json:"media_url"`
-	IsPlaying        bool    `json:"is_playing"`
-	MediaTimeSeconds float64 `json:"media_time_seconds"`
-	LastUpdated      int64   `json:"last_updated"` // Epoch millis
-}
 
 // Hub maintains the pool of active WebSocket clients partitioned by room IDs,
 // and coordinates real-time event broadcasting across connections.
@@ -44,24 +37,34 @@ type Hub struct {
 	// Optional room service to query and update persisted room media URLs.
 	roomService room.RoomService
 
-	// Authoritative in-memory watch party playback state for active rooms.
-	playbackStates map[string]*RoomPlaybackState
+	// Optional state repository to persist playback state to Redis.
+	stateRepo room.StateRepository
+
+	// Authoritative watch party playback state for active rooms.
+	playbackStates map[string]*domain.RoomPlaybackState
 
 	// Optional SFU manager to route WebRTC voice and screen share media streams.
 	sfuManager *sfu.Manager
 	// Optional event aggregator for background analytics persistence.
 	eventAggregator *observability.EventAggregator
+
+	// Redis Pub/Sub adapter for scaling horizontally across multiple nodes.
+	redisEventBus *RedisEventBus
+
+	// Cancels the Redis subscription for a room when it becomes empty.
+	roomCancelFuncs map[string]context.CancelFunc
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
 func NewHub() *Hub {
 	return &Hub{
-		rooms:          make(map[string]map[*Client]bool),
-		playbackStates: make(map[string]*RoomPlaybackState),
-		Register:       make(chan *Client),
-		Unregister:     make(chan *Client),
-		Broadcast:      make(chan *Event, 256),
-		Stop:           make(chan struct{}),
+		rooms:           make(map[string]map[*Client]bool),
+		playbackStates:  make(map[string]*domain.RoomPlaybackState),
+		roomCancelFuncs: make(map[string]context.CancelFunc),
+		Register:        make(chan *Client),
+		Unregister:      make(chan *Client),
+		Broadcast:       make(chan *Event, 256),
+		Stop:            make(chan struct{}),
 	}
 }
 
@@ -80,6 +83,11 @@ func (h *Hub) SetRoomService(rs room.RoomService) {
 	h.roomService = rs
 }
 
+// SetStateRepository wires the Redis state repository for room playback state.
+func (h *Hub) SetStateRepository(sr room.StateRepository) {
+	h.stateRepo = sr
+}
+
 // SetSFUManager wires the Selective Forwarding Unit for voice chat and video routing.
 func (h *Hub) SetSFUManager(mgr *sfu.Manager) {
 	h.sfuManager = mgr
@@ -90,22 +98,42 @@ func (h *Hub) SetEventAggregator(ea *observability.EventAggregator) {
 	h.eventAggregator = ea
 }
 
-func (h *Hub) getOrCreatePlaybackState(roomID string) *RoomPlaybackState {
+// SetRedisEventBus wires the Redis Pub/Sub event bus.
+func (h *Hub) SetRedisEventBus(bus *RedisEventBus) {
+	h.redisEventBus = bus
+}
+
+func (h *Hub) getOrCreatePlaybackState(roomID string) *domain.RoomPlaybackState {
 	state, ok := h.playbackStates[roomID]
 	if !ok {
+		// 1. Try to load from Redis state repository
+		if h.stateRepo != nil {
+			if s, err := h.stateRepo.GetPlaybackState(context.Background(), roomID); err == nil && s != nil {
+				h.playbackStates[roomID] = s
+				return s
+			}
+		}
+
+		// 2. Fallback to database media URL if not in Redis
 		mediaURL := "https://media.w3.org/2010/05/bunny/movie.mp4"
 		if h.roomService != nil {
 			if r, err := h.roomService.GetRoomByID(context.Background(), roomID); err == nil && r != nil && r.CurrentMediaURL != "" {
 				mediaURL = r.CurrentMediaURL
 			}
 		}
-		state = &RoomPlaybackState{
+		state = &domain.RoomPlaybackState{
 			MediaURL:         mediaURL,
 			IsPlaying:        false,
 			MediaTimeSeconds: 0,
 			LastUpdated:      time.Now().UnixMilli(),
 		}
 		h.playbackStates[roomID] = state
+
+		if h.stateRepo != nil {
+			go func(rID string, st *domain.RoomPlaybackState) {
+				_ = h.stateRepo.SetPlaybackState(context.Background(), rID, st)
+			}(roomID, state)
+		}
 	}
 	return state
 }
@@ -145,6 +173,10 @@ func (h *Hub) shutdownAll() {
 				_ = client.Conn.Close()
 			}
 		}
+		if cancel, ok := h.roomCancelFuncs[roomID]; ok {
+			cancel()
+			delete(h.roomCancelFuncs, roomID)
+		}
 		delete(h.rooms, roomID)
 	}
 	slog.Info("websocket hub shutdown complete")
@@ -154,6 +186,12 @@ func (h *Hub) registerClient(client *Client) {
 	if h.rooms[client.RoomID] == nil {
 		h.rooms[client.RoomID] = make(map[*Client]bool)
 		observability.Global().IncActiveRooms()
+
+		if h.redisEventBus != nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			h.roomCancelFuncs[client.RoomID] = cancel
+			h.redisEventBus.Subscribe(ctx, client.RoomID)
+		}
 	}
 	h.rooms[client.RoomID][client] = true
 	observability.Global().IncActiveWSConnections()
@@ -216,6 +254,12 @@ func (h *Hub) unregisterClient(client *Client) {
 		if len(roomClients) == 0 {
 			delete(h.rooms, client.RoomID)
 			delete(h.playbackStates, client.RoomID)
+			
+			if cancel, ok := h.roomCancelFuncs[client.RoomID]; ok {
+				cancel()
+				delete(h.roomCancelFuncs, client.RoomID)
+			}
+			
 			observability.Global().DecActiveRooms()
 			if h.sfuManager != nil {
 				h.sfuManager.RemoveRoom(client.RoomID)
@@ -244,6 +288,41 @@ func (h *Hub) dispatchEvent(event *Event) {
 		return
 	}
 
+	// 1. Verify sender is still an active member using Redis cache to eliminate DB round-trips
+	verified := false
+	if h.stateRepo != nil {
+		v, err := h.stateRepo.IsMemberVerified(context.Background(), event.RoomID, event.SenderID)
+		if err == nil && v {
+			verified = true
+		}
+	}
+
+	// 2. Fallback to DB if not in cache (and populate cache)
+	if !verified && h.roomService != nil {
+		_, _, err := h.roomService.GetRoomAndMember(context.Background(), event.RoomID, event.SenderID)
+		if err != nil {
+			slog.Warn("dropping websocket event from unauthorized or kicked user", "user_id", event.SenderID, "room_id", event.RoomID)
+			return
+		}
+		if h.stateRepo != nil {
+			_ = h.stateRepo.CacheMemberVerification(context.Background(), event.RoomID, event.SenderID)
+		}
+	}
+
+	if h.redisEventBus != nil {
+		err := h.redisEventBus.Publish(context.Background(), event)
+		if err != nil {
+			slog.Error("failed to publish event to redis", "error", err)
+		}
+		// Event will loop back via Subscribe() and hit dispatchLocal
+		return
+	}
+
+	h.dispatchLocal(event)
+}
+
+// dispatchLocal handles processing and sending an event to local connections.
+func (h *Hub) dispatchLocal(event *Event) {
 	roomClients, ok := h.rooms[event.RoomID]
 	if !ok || len(roomClients) == 0 {
 		return
@@ -266,6 +345,7 @@ func (h *Hub) dispatchEvent(event *Event) {
 	}
 
 	// Update authoritative in-memory playback state when media control events occur
+	var stateUpdated bool
 	if event.Type == EventPlay {
 		var payload VideoControlPayload
 		if err := json.Unmarshal(event.Payload, &payload); err == nil {
@@ -273,6 +353,7 @@ func (h *Hub) dispatchEvent(event *Event) {
 			state.IsPlaying = true
 			state.MediaTimeSeconds = payload.MediaTimeSeconds
 			state.LastUpdated = time.Now().UnixMilli()
+			stateUpdated = true
 		}
 	} else if event.Type == EventPause {
 		var payload VideoControlPayload
@@ -281,6 +362,7 @@ func (h *Hub) dispatchEvent(event *Event) {
 			state.IsPlaying = false
 			state.MediaTimeSeconds = payload.MediaTimeSeconds
 			state.LastUpdated = time.Now().UnixMilli()
+			stateUpdated = true
 		}
 	} else if event.Type == EventSeek {
 		var payload VideoControlPayload
@@ -288,6 +370,7 @@ func (h *Hub) dispatchEvent(event *Event) {
 			state := h.getOrCreatePlaybackState(event.RoomID)
 			state.MediaTimeSeconds = payload.MediaTimeSeconds
 			state.LastUpdated = time.Now().UnixMilli()
+			stateUpdated = true
 		}
 	} else if event.Type == EventChangeMedia {
 		var payload VideoControlPayload
@@ -297,6 +380,7 @@ func (h *Hub) dispatchEvent(event *Event) {
 			state.IsPlaying = false
 			state.MediaTimeSeconds = 0
 			state.LastUpdated = time.Now().UnixMilli()
+			stateUpdated = true
 			if h.roomService != nil && payload.MediaURL != "" {
 				go func(roomID, url string) {
 					_ = h.roomService.UpdateRoomMediaURL(context.Background(), roomID, url)
@@ -308,6 +392,14 @@ func (h *Hub) dispatchEvent(event *Event) {
 				"action": string(event.Type),
 			})
 		}
+	}
+
+	if stateUpdated && h.stateRepo != nil {
+		go func(rID string, st *domain.RoomPlaybackState) {
+			// make a copy for thread-safety before passing to goroutine
+			stCopy := *st
+			_ = h.stateRepo.SetPlaybackState(context.Background(), rID, &stCopy)
+		}(event.RoomID, h.playbackStates[event.RoomID])
 	}
 
 	for client := range roomClients {

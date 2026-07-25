@@ -2,17 +2,21 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
-	"github.com/inox/inox/backend/internal/api/respond"
+
 	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/observability"
 	"github.com/inox/inox/backend/internal/room"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 // NewRouter initializes Go 1.22 standard library ServeMux and registers application routes.
@@ -23,17 +27,22 @@ func NewRouter(
 	chatHandler *handler.ChatHandler,
 	adminHandler *handler.AdminHandler,
 	mediaHandler *handler.MediaHandler,
+	dbPool *pgxpool.Pool,
+	redisClient *redis.Client,
 ) http.Handler {
 	mux := http.NewServeMux()
 
 	// Register liveness check endpoint for Kubernetes / Docker health probes.
-	mux.HandleFunc("GET /healthz", healthCheckHandler)
+	mux.HandleFunc("GET /healthz", healthCheckHandler(dbPool, redisClient))
 
 	if authHandler != nil {
-		// Public Auth Endpoints
-		mux.HandleFunc("POST /api/v1/auth/signup", authHandler.Signup)
-		mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
+		// Public Auth Endpoints (rate-limited to 5 req/min per IP to mitigate brute force attacks)
+		authRateLimit := middleware.RateLimit(5, time.Minute)
+		mux.Handle("POST /api/v1/auth/signup", authRateLimit(http.HandlerFunc(authHandler.Signup)))
+		mux.Handle("POST /api/v1/auth/login", authRateLimit(http.HandlerFunc(authHandler.Login)))
 		mux.HandleFunc("POST /api/v1/auth/logout", authHandler.Logout)
+		mux.Handle("POST /api/v1/auth/forgot-password", authRateLimit(http.HandlerFunc(authHandler.ForgotPassword)))
+		mux.Handle("POST /api/v1/auth/reset-password", authRateLimit(http.HandlerFunc(authHandler.ResetPassword)))
 	}
 
 	if mediaHandler != nil {
@@ -60,7 +69,10 @@ func NewRouter(
 	if authService != nil {
 		// Protected Endpoints requiring explicit Redis session authentication
 		requireAuth := middleware.RequireAuth(authService)
-		mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(meHandler)))
+		if authHandler != nil {
+			mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(authHandler.Me)))
+			mux.Handle("PUT /api/v1/users/profile/avatar", requireAuth(http.HandlerFunc(authHandler.UpdateAvatar)))
+		}
 
 		if roomHandler != nil && roomService != nil {
 			requireMember := middleware.RequireRoomMembership(roomService)
@@ -80,6 +92,10 @@ func NewRouter(
 			mux.Handle("GET /api/v1/rooms/{id}", requireAuth(requireMember(http.HandlerFunc(roomHandler.GetRoom))))
 			mux.Handle("PUT /api/v1/rooms/{id}/members/{user_id}/role", requireAuth(http.HandlerFunc(roomHandler.AssignRole)))
 			mux.Handle("DELETE /api/v1/rooms/{id}/members/{user_id}", requireAuth(http.HandlerFunc(roomHandler.KickMember)))
+			
+			// Room deletion and leaving
+			mux.Handle("DELETE /api/v1/rooms/{id}", requireAuth(requireMember(http.HandlerFunc(roomHandler.DeleteRoom))))
+			mux.Handle("DELETE /api/v1/rooms/{id}/members/me", requireAuth(requireMember(http.HandlerFunc(roomHandler.LeaveRoom))))
 
 			if wsHandler != nil {
 				// Real-time WebSocket upgrade endpoint (Requires both login AND room membership)
@@ -92,24 +108,24 @@ func NewRouter(
 			}
 		}
 
-		// Protected Admin Endpoints (requires authenticated session)
+		// Protected Admin Endpoints (requires authenticated session and system admin privileges)
 		if adminHandler != nil {
-			mux.Handle("GET /metrics", requireAuth(http.HandlerFunc(adminHandler.ServePrometheus)))
-			mux.Handle("GET /api/v1/admin/telemetry", requireAuth(http.HandlerFunc(adminHandler.GetSnapshot)))
-			mux.Handle("GET /api/v1/admin/telemetry/ws", requireAuth(http.HandlerFunc(adminHandler.ServeTelemetryWS)))
+			mux.Handle("GET /metrics", middleware.RequireMetricsAccess(authService)(http.HandlerFunc(adminHandler.ServePrometheus)))
+			mux.Handle("GET /api/v1/admin/telemetry", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(adminHandler.GetSnapshot))))
+			mux.Handle("GET /api/v1/admin/telemetry/ws", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(adminHandler.ServeTelemetryWS))))
 		}
 
-		// Protected Admin Media Endpoints (requires authenticated session)
+		// Protected Admin Media Endpoints (requires authenticated session and system admin privileges)
 		if mediaHandler != nil {
-			mux.Handle("POST /api/v1/admin/media/upload", requireAuth(http.HandlerFunc(mediaHandler.Upload)))
-			mux.Handle("POST /api/v1/admin/media/presigned-url", requireAuth(http.HandlerFunc(mediaHandler.CreatePresignedUpload)))
-			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(http.HandlerFunc(mediaHandler.CompleteDirectUpload)))
-			mux.Handle("POST /api/v1/admin/media/register", requireAuth(http.HandlerFunc(mediaHandler.Register)))
-			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(http.HandlerFunc(mediaHandler.Delete)))
+			mux.Handle("POST /api/v1/admin/media/upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Upload))))
+			mux.Handle("POST /api/v1/admin/media/presigned-url", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CreatePresignedUpload))))
+			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CompleteDirectUpload))))
+			mux.Handle("POST /api/v1/admin/media/register", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Register))))
+			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Delete))))
 		}
 	}
 
-	return middleware.CORS(withMetrics(mux))
+	return middleware.CORS(middleware.RequestLogger(withMetrics(mux)))
 }
 
 func withMetrics(next http.Handler) http.Handler {
@@ -151,24 +167,35 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 	return r.ResponseWriter
 }
 
-// meHandler returns the authenticated user's profile retrieved from Redis session context.
-func meHandler(w http.ResponseWriter, r *http.Request) {
-	session, ok := middleware.GetSessionFromContext(r.Context())
-	if !ok {
-		respond.WriteError(w, http.StatusUnauthorized, "session context missing")
-		return
+// healthCheckHandler responds with HTTP 200/503 and JSON status indicating the server and infrastructure are alive.
+func healthCheckHandler(dbPool *pgxpool.Pool, redisClient *redis.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		status := http.StatusOK
+		response := map[string]string{
+			"status": "ok",
+		}
+
+		if dbPool == nil || dbPool.Ping(ctx) == nil {
+			response["database"] = "ok"
+		} else {
+			status = http.StatusServiceUnavailable
+			response["status"] = "error"
+			response["database"] = "down"
+		}
+
+		if redisClient == nil || redisClient.Ping(ctx).Err() == nil {
+			response["redis"] = "ok"
+		} else {
+			status = http.StatusServiceUnavailable
+			response["status"] = "error"
+			response["redis"] = "down"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(response)
 	}
-	respond.WriteJSON(w, http.StatusOK, session)
-}
-
-// healthCheckHandler responds with HTTP 200 and JSON status indicating the server is alive.
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	response := map[string]string{
-		"status": "ok",
-	}
-
-	_ = json.NewEncoder(w).Encode(response)
 }

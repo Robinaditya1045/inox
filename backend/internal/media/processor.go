@@ -49,72 +49,73 @@ func NewProcessor(repo Repository, storage storage.Service) *Processor {
 }
 
 // ProcessAsset executes background video transcoding or instant proxy stream setup.
-func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) error {
+	// Fallback to internal context if canceled externally
+	ctx, cancel := context.WithCancel(ctx)
 	p.mu.Lock()
 	if p.activeJobs == nil {
 		p.activeJobs = make(map[string]context.CancelFunc)
 	}
-	p.activeJobs[assetID] = cancel
+	p.activeJobs[asset.ID] = cancel
 	p.wg.Add(1)
 	p.mu.Unlock()
 
 	defer func() {
 		cancel()
 		p.mu.Lock()
-		delete(p.activeJobs, assetID)
+		delete(p.activeJobs, asset.ID)
 		p.mu.Unlock()
 		p.wg.Done()
 	}()
 
-	slog.Info("starting asynchronous media processing", "asset_id", assetID, "source_url", sourceURL)
+	slog.Info("starting asynchronous media processing", "asset_id", asset.ID, "source_url", asset.SourceURL)
 
-	if err := p.repo.UpdateAssetProgress(ctx, assetID, 1, domain.MediaStatusProcessing); err != nil {
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusProcessing, "")
+	if err := p.repo.UpdateAssetProgress(ctx, asset.ID, 1, domain.MediaStatusProcessing); err != nil {
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusProcessing, "")
 	}
 
 	// If FFmpeg is not installed or available, use Instant Direct-Stream Proxy Mode
 	if p.ffmpegPath == "" {
-		slog.Info("using instant direct-stream mode for asset", "asset_id", assetID)
+		slog.Info("using instant direct-stream mode for asset", "asset_id", asset.ID)
 		select {
 		case <-time.After(1 * time.Second):
 		case <-ctx.Done():
-			slog.Info("processing interrupted by shutdown during direct-stream validation", "asset_id", assetID)
-			_ = p.repo.UpdateAssetProgress(context.Background(), assetID, 0, domain.MediaStatusPending)
-			return
+			slog.Info("processing interrupted by shutdown during direct-stream validation", "asset_id", asset.ID)
+			_ = p.repo.UpdateAssetProgress(context.Background(), asset.ID, 0, domain.MediaStatusPending)
+			return nil
 		}
 
 		// Add default high-def rendition record pointing to direct video URL
 		rendition := &domain.MediaRendition{
-			MediaAssetID: assetID,
+			MediaAssetID: asset.ID,
 			Resolution:   "1080p (Direct)",
 			BitrateKbps:  4500,
-			PlaylistURL:  sourceURL,
+			PlaylistURL:  asset.SourceURL,
 		}
 		_ = p.repo.AddRendition(ctx, rendition)
 
-		if err := p.repo.UpdateAssetProgress(ctx, assetID, 100, domain.MediaStatusReady); err != nil {
-			_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusReady, sourceURL)
+		if err := p.repo.UpdateAssetProgress(ctx, asset.ID, 100, domain.MediaStatusReady); err != nil {
+			_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusReady, asset.SourceURL)
 		}
-		return
+		return nil
 	}
 
 	// FFmpeg Transcoding Pipeline
 	tmpDir, err := os.MkdirTemp("", "inox-hls-*")
 	if err != nil {
 		slog.Error("failed to create temp dir for transcoding", "error", err)
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusFailed, "")
-		return
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusFailed, "")
+		return err
 	}
 	defer os.RemoveAll(tmpDir)
 
-	hasAudio := p.hasAudioStream(sourceURL)
+	hasAudio := p.hasAudioStream(asset.SourceURL)
 
 	// Optimized FFmpeg command for 3-tier Adaptive Bitrate HLS ladder (1080p, 720p, 480p)
 	// Using pad=ceil(iw/2)*2:ceil(ih/2)*2 ensures both width and height are even integers,
 	// preventing 'width not divisible by 2' encoder errors when force_original_aspect_ratio produces odd dimensions.
 	args := []string{
-		"-i", sourceURL,
+		"-i", asset.SourceURL,
 		"-filter_complex",
 		"[0:v]split=3[v1][v2][v3];[v1]scale=w=1920:h=1080:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v1out];[v2]scale=w=1280:h=720:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v2out];[v3]scale=w=854:h=480:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v3out]",
 		"-map", "[v1out]", "-c:v:0", "libx264", "-profile:v:0", "main", "-pix_fmt:v:0", "yuv420p", "-b:v:0", "4500k", "-maxrate:v:0", "5000k", "-bufsize:v:0", "6000k",
@@ -151,8 +152,8 @@ func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		slog.Error("failed to create stdout pipe for ffmpeg progress", "error", err)
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusFailed, "")
-		return
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusFailed, "")
+		return err
 	}
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
@@ -160,11 +161,11 @@ func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
 	slog.Info("executing ffmpeg transcoding ladder", "cmd", cmd.String())
 	if err := cmd.Start(); err != nil {
 		slog.Error("failed to start ffmpeg", "error", err)
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusFailed, "")
-		return
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusFailed, "")
+		return err
 	}
 
-	totalDurationUs := p.getVideoDurationUs(sourceURL)
+	totalDurationUs := p.getVideoDurationUs(asset.SourceURL)
 	lastReportedPct := 1
 	scanner := bufio.NewScanner(stdoutPipe)
 	for scanner.Scan() {
@@ -178,8 +179,8 @@ func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
 				}
 				if pct-lastReportedPct >= 5 || pct == 95 {
 					lastReportedPct = pct
-					slog.Info("transcoding progression", "asset_id", assetID, "progress_percent", pct, "status", domain.MediaStatusProcessing)
-					_ = p.repo.UpdateAssetProgress(ctx, assetID, pct, domain.MediaStatusProcessing)
+					slog.Info("transcoding progression", "asset_id", asset.ID, "progress_percent", pct, "status", domain.MediaStatusProcessing)
+					_ = p.repo.UpdateAssetProgress(ctx, asset.ID, pct, domain.MediaStatusProcessing)
 				}
 			}
 		}
@@ -187,24 +188,24 @@ func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
 
 	if err := cmd.Wait(); err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
-			slog.Info("ffmpeg transcoding interrupted by server shutdown; resetting status to pending", "asset_id", assetID)
-			_ = p.repo.UpdateAssetProgress(context.Background(), assetID, 0, domain.MediaStatusPending)
-			return
+			slog.Info("ffmpeg transcoding interrupted by server shutdown; resetting status to pending", "asset_id", asset.ID)
+			_ = p.repo.UpdateAssetProgress(context.Background(), asset.ID, 0, domain.MediaStatusPending)
+			return err
 		}
 		slog.Error("ffmpeg transcoding failed", "error", err, "stderr", stderrBuf.String())
-		_ = p.repo.UpdateAssetStatus(context.Background(), assetID, domain.MediaStatusFailed, "")
-		return
+		_ = p.repo.UpdateAssetStatus(context.Background(), asset.ID, domain.MediaStatusFailed, "")
+		return err
 	}
 
 	// Transcoding finished, updating to 96% while uploading HLS segments to MinIO
-	_ = p.repo.UpdateAssetProgress(ctx, assetID, 96, domain.MediaStatusProcessing)
+	_ = p.repo.UpdateAssetProgress(ctx, asset.ID, 96, domain.MediaStatusProcessing)
 
 	// Upload generated HLS manifests and video chunks to object storage
 	files, err := os.ReadDir(tmpDir)
 	if err != nil {
 		slog.Error("failed to read transcoded files", "error", err)
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusFailed, "")
-		return
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusFailed, "")
+		return err
 	}
 
 	var masterURL string
@@ -225,7 +226,7 @@ func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
 			contentType = "application/vnd.apple.mpegurl"
 		}
 
-		storageKey := fmt.Sprintf("hls/%s/%s", assetID, file.Name())
+		storageKey := fmt.Sprintf("hls/%s/%s", asset.ID, file.Name())
 		url, err := p.storage.SaveFile(ctx, storageKey, f, info.Size(), contentType)
 		f.Close()
 		if err != nil {
@@ -237,27 +238,29 @@ func (p *Processor) ProcessAsset(assetID, storageKey, sourceURL string) {
 		if file.Name() == "master.m3u8" {
 			masterURL = url
 		} else if file.Name() == "stream_1080p.m3u8" {
-			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: assetID, Resolution: "1080p", BitrateKbps: 4500, PlaylistURL: url})
+			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: "1080p", BitrateKbps: 4500, PlaylistURL: url})
 		} else if file.Name() == "stream_720p.m3u8" {
-			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: assetID, Resolution: "720p", BitrateKbps: 2500, PlaylistURL: url})
+			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: "720p", BitrateKbps: 2500, PlaylistURL: url})
 		} else if file.Name() == "stream_480p.m3u8" {
-			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: assetID, Resolution: "480p", BitrateKbps: 1000, PlaylistURL: url})
+			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: "480p", BitrateKbps: 1000, PlaylistURL: url})
 		}
 	}
 
 	if uploadErrors > 0 || masterURL == "" {
-		slog.Error("hls segment/manifest upload failed; marking asset transcoding as failed", "asset_id", assetID, "upload_errors", uploadErrors)
-		_ = p.repo.UpdateAssetProgress(ctx, assetID, 0, domain.MediaStatusFailed)
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusFailed, "")
-		return
+		slog.Error("hls segment/manifest upload failed; marking asset transcoding as failed", "asset_id", asset.ID, "upload_errors", uploadErrors)
+		_ = p.repo.UpdateAssetProgress(ctx, asset.ID, 0, domain.MediaStatusFailed)
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusFailed, "")
+		return errors.New("hls segment upload failed")
 	}
 
-	if err := p.repo.UpdateAssetProgress(ctx, assetID, 100, domain.MediaStatusReady); err != nil {
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusReady, masterURL)
+	if err := p.repo.UpdateAssetProgress(ctx, asset.ID, 100, domain.MediaStatusReady); err != nil {
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusReady, masterURL)
 	} else {
-		_ = p.repo.UpdateAssetStatus(ctx, assetID, domain.MediaStatusReady, masterURL)
+		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusReady, masterURL)
 	}
-	slog.Info("media transcoding and hls upload complete", "asset_id", assetID, "master_url", masterURL, "progress_percent", 100)
+	slog.Info("media transcoding and hls upload complete", "asset_id", asset.ID, "master_url", masterURL, "progress_percent", 100)
+	
+	return nil
 }
 
 func (p *Processor) hasAudioStream(sourceURL string) bool {

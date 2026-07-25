@@ -10,23 +10,12 @@ import { ChatPanel } from '../components/chat/ChatPanel';
 import { MemberList } from '../components/room/MemberList';
 import { VoiceChannelBar } from '../components/rtc/VoiceChannelBar';
 import { AudioRenderer } from '../components/rtc/AudioRenderer';
+import { RoomSidebar } from '../components/room/RoomSidebar';
+import { RoomHeader } from '../components/room/RoomHeader';
 import { useRTC } from '../hooks/useRTC';
 import { usePlayerSync } from '../hooks/usePlayerSync';
-import {
-  Tv,
-  Users,
-  MessageSquare,
-  Shield,
-  LogOut,
-  Lock,
-  Globe,
-  ChevronDown,
-  Hash,
-  Volume2,
-  Film,
-  Copy,
-  Check,
-} from 'lucide-react';
+import { useRoomSocket } from '../hooks/useRoomSocket';
+import { Shield } from 'lucide-react';
 
 export const RoomPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
@@ -36,8 +25,11 @@ export const RoomPage: React.FC = () => {
 
   const [activeSection, setActiveSection] = useState<'chat' | 'members' | 'player'>('player');
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
+
   const [isMobileViewport, setIsMobileViewport] = useState(window.innerWidth < 1024);
+
+  // Initialize room WebSocket connection
+  useRoomSocket(activeRoom?.id);
 
   const rtc = useRTC(activeRoom?.id);
   const { setMediaUrl, mediaUrl } = usePlayerSync();
@@ -48,14 +40,6 @@ export const RoomPage: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleCopyInvite = () => {
-    if (!activeRoom) return;
-    const inviteUrl = `${window.location.origin}/room/${activeRoom.id}`;
-    navigator.clipboard.writeText(inviteUrl).then(() => {
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-    }).catch(() => {});
-  };
 
   useEffect(() => {
     if (roomId && activeRoom?.id !== roomId) {
@@ -95,419 +79,23 @@ export const RoomPage: React.FC = () => {
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', flex: 1, overflow: 'hidden', background: 'var(--color-bg-obsidian)' }}>
       {/* ── Left Sidebar (Discord-style channel list) ──────────────────── */}
-      <aside
-        style={{
-          width: '220px',
-          flexShrink: 0,
-          background: 'rgba(5,7,10,0.7)',
-          borderRight: '1px solid var(--color-border-glass)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Room Header */}
-        <div
-          style={{
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--color-border-glass)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            <Tv size={16} color="var(--color-accent-purple)" style={{ flexShrink: 0 }} />
-            <span
-              style={{
-                fontWeight: 700,
-                fontSize: '0.92rem',
-                color: 'var(--color-text-primary)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {activeRoom?.name}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-            {activeRoom?.is_private ? (
-              <Lock size={12} color="var(--color-accent-rose)" />
-            ) : (
-              <Globe size={12} color="var(--color-accent-cyan)" />
-            )}
-          </div>
-        </div>
-
-        {/* Channels / Sections */}
-        <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
-          {/* Text Channels */}
-          <div style={{ marginBottom: '4px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 6px',
-                color: 'var(--color-text-muted)',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                cursor: 'default',
-              }}
-            >
-              <ChevronDown size={12} />
-              Text Channels
-            </div>
-
-            <button
-              onClick={() => setActiveSection('chat')}
-              style={{
-                width: '100%',
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: activeSection === 'chat' ? 'rgba(170,59,255,0.2)' : 'transparent',
-                color: activeSection === 'chat' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontSize: '0.875rem',
-                fontWeight: activeSection === 'chat' ? 600 : 400,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                border: 'none',
-                transition: 'all 0.12s',
-                textAlign: 'left',
-              }}
-              onMouseEnter={(e) => {
-                if (activeSection !== 'chat') e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-              }}
-              onMouseLeave={(e) => {
-                if (activeSection !== 'chat') e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <Hash size={16} color={activeSection === 'chat' ? 'var(--color-accent-purple)' : 'var(--color-text-muted)'} />
-              general
-            </button>
-          </div>
-
-          {/* Voice Channels */}
-          <div style={{ marginBottom: '4px', marginTop: '12px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 6px',
-                color: 'var(--color-text-muted)',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                cursor: 'default',
-              }}
-            >
-              <ChevronDown size={12} />
-              Voice Channels
-            </div>
-
-            <div
-              style={{
-                padding: '5px 8px',
-                borderRadius: '6px',
-                color: 'var(--color-text-secondary)',
-                fontSize: '0.875rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              <Volume2 size={16} color="var(--color-text-muted)" />
-              voice
-            </div>
-          </div>
-
-          {/* Watch Party */}
-          <div style={{ marginTop: '12px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 6px',
-                color: 'var(--color-text-muted)',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                cursor: 'default',
-              }}
-            >
-              <ChevronDown size={12} />
-              Watch Party
-            </div>
-
-            <button
-              onClick={() => setActiveSection('player')}
-              style={{
-                width: '100%',
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: activeSection === 'player' ? 'rgba(170,59,255,0.2)' : 'transparent',
-                color: activeSection === 'player' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontSize: '0.875rem',
-                fontWeight: activeSection === 'player' ? 600 : 400,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                border: 'none',
-                transition: 'all 0.12s',
-                textAlign: 'left',
-              }}
-              onMouseEnter={(e) => {
-                if (activeSection !== 'player') e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-              }}
-              onMouseLeave={(e) => {
-                if (activeSection !== 'player') e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <Film size={16} color={activeSection === 'player' ? 'var(--color-accent-purple)' : 'var(--color-text-muted)'} />
-              watch-party
-            </button>
-
-            <button
-              onClick={() => setActiveSection('members')}
-              style={{
-                width: '100%',
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: activeSection === 'members' ? 'rgba(170,59,255,0.2)' : 'transparent',
-                color: activeSection === 'members' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontSize: '0.875rem',
-                fontWeight: activeSection === 'members' ? 600 : 400,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                border: 'none',
-                transition: 'all 0.12s',
-                textAlign: 'left',
-                marginTop: '2px',
-              }}
-              onMouseEnter={(e) => {
-                if (activeSection !== 'members') e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-              }}
-              onMouseLeave={(e) => {
-                if (activeSection !== 'members') e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <Users size={16} color={activeSection === 'members' ? 'var(--color-accent-purple)' : 'var(--color-text-muted)'} />
-              members ({activeRoom?.members?.length || 1})
-            </button>
-          </div>
-        </nav>
-
-        {/* Current User / Leave */}
-        <div
-          style={{
-            padding: '8px 10px',
-            borderTop: '1px solid var(--color-border-glass)',
-            background: 'rgba(5,7,10,0.5)',
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div
-              style={{
-                width: '26px',
-                height: '26px',
-                borderRadius: '50%',
-                background: permissions.isOwner ? 'rgba(170,59,255,0.3)' : 'rgba(0,240,255,0.2)',
-                color: permissions.isOwner ? 'var(--color-accent-purple)' : 'var(--color-accent-cyan)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-              }}
-            >
-              {permissions.role?.charAt(0).toUpperCase()}
-            </div>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
-              {permissions.role}
-            </span>
-          </div>
-          <button
-            onClick={handleLeave}
-            title="Leave Room"
-            style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '6px',
-              background: 'rgba(244,63,94,0.15)',
-              border: '1px solid rgba(244,63,94,0.3)',
-              color: 'var(--color-accent-rose)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(244,63,94,0.3)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(244,63,94,0.15)';
-            }}
-          >
-            <LogOut size={13} />
-          </button>
-        </div>
-      </aside>
+      <RoomSidebar
+        activeRoom={activeRoom}
+        permissions={permissions}
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+        onLeave={handleLeave}
+      />
 
       {/* ── Main Content Area ──────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         {/* Top Channel Header */}
-        <header
-          style={{
-            height: '40px',
-            padding: '0 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid var(--color-border-glass)',
-            background: 'rgba(8,10,16,0.7)',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {activeSection === 'chat' && (
-              <>
-                <Hash size={15} color="var(--color-text-muted)" />
-                <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>general</span>
-                <span style={{ color: 'var(--color-border-hover)', fontSize: '0.75rem' }}>│</span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>Room chat for {activeRoom?.name}</span>
-              </>
-            )}
-            {activeSection === 'player' && (
-              <>
-                <Film size={15} color="var(--color-text-muted)" />
-                <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>watch-party</span>
-                <span style={{ color: 'var(--color-border-hover)', fontSize: '0.75rem' }}>│</span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
-                  {mediaUrl ? mediaUrl.split('/').pop() : 'No media selected'}
-                </span>
-              </>
-            )}
-            {activeSection === 'members' && (
-              <>
-                <Users size={15} color="var(--color-text-muted)" />
-                <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>members</span>
-              </>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {/* Copy Invite Link Button */}
-            <button
-              onClick={handleCopyInvite}
-              aria-label="Copy Room Invite Link"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '5px 12px',
-                borderRadius: '6px',
-                background: copiedLink ? 'rgba(16, 185, 129, 0.2)' : 'var(--color-bg-surface)',
-                border: `1px solid ${copiedLink ? 'rgba(16, 185, 129, 0.5)' : 'var(--color-border-glass)'}`,
-                color: copiedLink ? 'var(--color-accent-emerald)' : 'var(--color-text-secondary)',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
-            >
-              {copiedLink ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copiedLink ? 'Copied Link!' : 'Invite'}</span>
-            </button>
-
-            {/* Quick nav pills */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--color-bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--color-border-glass)' }}>
-              <button
-                onClick={() => setActiveSection('chat')}
-                title="Chat Panel"
-                aria-label="Switch to Chat Panel"
-                style={{
-                  padding: '5px 10px',
-                  borderRadius: '6px',
-                  background: activeSection === 'chat' ? 'var(--color-accent-purple)' : 'transparent',
-                  color: activeSection === 'chat' ? '#FFF' : 'var(--color-text-secondary)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  transition: 'all 0.15s',
-                }}
-              >
-                <MessageSquare size={14} />
-                <span>Chat</span>
-              </button>
-              <button
-                onClick={() => setActiveSection('player')}
-                title="Theater / Full Player"
-                aria-label="Switch to Theater Player"
-                style={{
-                  padding: '5px 10px',
-                  borderRadius: '6px',
-                  background: activeSection === 'player' ? 'var(--color-accent-purple)' : 'transparent',
-                  color: activeSection === 'player' ? '#FFF' : 'var(--color-text-secondary)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  transition: 'all 0.15s',
-                }}
-              >
-                <Tv size={14} />
-                <span>Theater</span>
-              </button>
-              <button
-                onClick={() => setActiveSection('members')}
-                title="Members Panel"
-                aria-label="Switch to Members Panel"
-                style={{
-                  padding: '5px 10px',
-                  borderRadius: '6px',
-                  background: activeSection === 'members' ? 'var(--color-accent-purple)' : 'transparent',
-                  color: activeSection === 'members' ? '#FFF' : 'var(--color-text-secondary)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  transition: 'all 0.15s',
-                }}
-              >
-                <Users size={14} />
-                <span>Members</span>
-              </button>
-            </div>
-          </div>
-        </header>
+        <RoomHeader
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+          activeRoom={activeRoom}
+          mediaUrl={mediaUrl}
+        />
 
         {/* ── Content Body (Responsive Multi-Panel Layout) ──────── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: isMobileViewport ? 'column' : 'row', width: '100%', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>

@@ -10,6 +10,8 @@ type Session struct {
 	UserID    string    `json:"user_id"`
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	AvatarURL *string   `json:"avatar_url"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }

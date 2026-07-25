@@ -31,6 +31,7 @@ type RoomRepository interface {
 	ListPendingInvitationsForUser(ctx context.Context, userID string) ([]*domain.RoomInvitation, error)
 	UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error
 	UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error
+	DeleteRoom(ctx context.Context, roomID string) error
 }
 
 type postgresRoomRepository struct {
@@ -284,13 +285,53 @@ func (r *postgresRoomRepository) ListRooms(ctx context.Context, userID string) (
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows iteration failed: %w", err)
 	}
-	if rooms == nil {
-		rooms = []*domain.Room{}
+	if len(rooms) == 0 {
+		return []*domain.Room{}, nil
 	}
+
+	roomIDs := make([]string, len(rooms))
+	for i, room := range rooms {
+		roomIDs[i] = room.ID
+	}
+
+	memberQuery := `
+		SELECT rm.room_id, rm.user_id, u.username, rm.role,
+			rm.can_control_playback, rm.can_stream_audio, rm.can_stream_video,
+			rm.can_share_screen, rm.can_send_messages, rm.can_invite_users,
+			rm.can_kick_users, rm.can_manage_roles, rm.joined_at
+		FROM room_members rm
+		JOIN users u ON rm.user_id = u.id
+		WHERE rm.room_id = ANY($1)
+		ORDER BY rm.joined_at ASC
+	`
+	memberRows, err := r.db.Query(ctx, memberQuery, roomIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query batched room members: %w", err)
+	}
+	defer memberRows.Close()
+
+	membersByRoom := make(map[string][]*domain.RoomMember)
+	for memberRows.Next() {
+		var m domain.RoomMember
+		if err := memberRows.Scan(
+			&m.RoomID, &m.UserID, &m.Username, &m.Role,
+			&m.Permissions.CanControlPlayback, &m.Permissions.CanStreamAudio, &m.Permissions.CanStreamVideo,
+			&m.Permissions.CanShareScreen, &m.Permissions.CanSendMessages, &m.Permissions.CanInviteUsers,
+			&m.Permissions.CanKickUsers, &m.Permissions.CanManageRoles, &m.JoinedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan batched room member: %w", err)
+		}
+		membersByRoom[m.RoomID] = append(membersByRoom[m.RoomID], &m)
+	}
+	if err := memberRows.Err(); err != nil {
+		return nil, fmt.Errorf("batched rows iteration failed: %w", err)
+	}
+
 	for _, room := range rooms {
-		members, err := r.ListRoomMembers(ctx, room.ID)
-		if err == nil {
+		if members, ok := membersByRoom[room.ID]; ok {
 			room.Members = members
+		} else {
+			room.Members = []*domain.RoomMember{}
 		}
 	}
 	return rooms, nil
@@ -392,6 +433,19 @@ func (r *postgresRoomRepository) UpdateRoomMediaURL(ctx context.Context, roomID,
 	_, err := r.db.Exec(ctx, query, roomID, mediaURL)
 	if err != nil {
 		return fmt.Errorf("failed to update room media url: %w", err)
+	}
+	return nil
+}
+
+// DeleteRoom removes a room and all associated records (via cascading).
+func (r *postgresRoomRepository) DeleteRoom(ctx context.Context, roomID string) error {
+	query := `DELETE FROM rooms WHERE id = $1`
+	res, err := r.db.Exec(ctx, query, roomID)
+	if err != nil {
+		return fmt.Errorf("failed to delete room: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return ErrRoomNotFound
 	}
 	return nil
 }

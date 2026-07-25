@@ -69,6 +69,9 @@ func Load() (*Config, error) {
 	if isProd && cfg.SessionSecret == defaultSecret {
 		return nil, fmt.Errorf("SESSION_SECRET must be explicitly configured in production/staging environments (do not use the default value)")
 	}
+	if isProd && len(cfg.SessionSecret) < 32 {
+		return nil, fmt.Errorf("SESSION_SECRET must be at least 32 characters long in production/staging environments (current length: %d)", len(cfg.SessionSecret))
+	}
 
 	return cfg, nil
 }

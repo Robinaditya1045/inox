@@ -67,6 +67,22 @@ func (m *mockAuthService) ValidateSession(ctx context.Context, sessionID string)
 	return s, nil
 }
 
+func (m *mockAuthService) GeneratePasswordResetToken(ctx context.Context, email string) (string, error) {
+	return "mock_token", nil
+}
+
+func (m *mockAuthService) ResetPasswordWithToken(ctx context.Context, token, newPassword string) error {
+	return nil
+}
+
+func (m *mockAuthService) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
+	return &domain.User{}, nil
+}
+
+func (m *mockAuthService) UpdateAvatar(ctx context.Context, userID, avatarURL string, sessionID string) error {
+	return nil
+}
+
 func TestSignupHTTPHandler(t *testing.T) {
 	mockSvc := newMockAuthService()
 	authHandler := handler.NewAuthHandler(mockSvc, false)

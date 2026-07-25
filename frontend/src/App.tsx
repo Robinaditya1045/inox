@@ -2,7 +2,6 @@ import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './providers/AuthProvider';
 import { RoomProvider } from './providers/RoomProvider';
-import { WSProvider } from './providers/WSProvider';
 import { RTCProvider } from './providers/RTCProvider';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
@@ -13,6 +12,8 @@ const LoginPage = React.lazy(() => import('./pages/LoginPage').then((m) => ({ de
 const SignupPage = React.lazy(() => import('./pages/SignupPage').then((m) => ({ default: m.SignupPage })));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const RoomPage = React.lazy(() => import('./pages/RoomPage').then((m) => ({ default: m.RoomPage })));
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
 
 // Full-screen layout for the room — no global sidebar, the room has its own channel sidebar
 function RoomLayout({ children }: { children: React.ReactNode }) {
@@ -45,13 +46,14 @@ function App() {
   return (
     <AuthProvider>
       <RoomProvider>
-        <WSProvider>
-          <RTCProvider>
+        <RTCProvider>
             <BrowserRouter>
               <Suspense fallback={<GlobalLoadingFallback />}>
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/signup" element={<SignupPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
                   <Route
                     path="/"
                     element={
@@ -76,7 +78,6 @@ function App() {
               </Suspense>
             </BrowserRouter>
           </RTCProvider>
-        </WSProvider>
       </RoomProvider>
     </AuthProvider>
   );

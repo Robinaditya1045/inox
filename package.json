@@ -1,0 +1,24 @@
+{
+  "name": "inox-root",
+  "private": true,
+  "scripts": {
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "husky": "^8.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.0.0"
+  },
+  "lint-staged": {
+    "backend/**/*.go": [
+      "gofmt -w",
+      "goimports -w"
+    ],
+    "frontend/**/*.{ts,tsx,js,jsx,css,md}": [
+      "prettier --write"
+    ],
+    "admin-portal/**/*.{ts,tsx,js,jsx,css,md}": [
+      "prettier --write"
+    ]
+  }
+}

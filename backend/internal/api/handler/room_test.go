@@ -68,6 +68,14 @@ func (m *mockRoomService) UpdateRoomMediaURL(ctx context.Context, roomID, mediaU
 	return nil
 }
 
+func (m *mockRoomService) DeleteRoom(ctx context.Context, roomID, userID string) error {
+	return nil
+}
+
+func (m *mockRoomService) LeaveRoom(ctx context.Context, roomID, userID string) error {
+	return nil
+}
+
 func TestCreateRoomHTTPHandler(t *testing.T) {
 	mockSvc := &mockRoomService{}
 	roomHandler := handler.NewRoomHandler(mockSvc)

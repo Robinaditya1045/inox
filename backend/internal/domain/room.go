@@ -25,6 +25,14 @@ type Permissions struct {
 	CanManageRoles     bool `json:"can_manage_roles"`     // Assign roles and update permissions
 }
 
+// RoomPlaybackState maintains the authoritative real-time media state of an active watch party room.
+type RoomPlaybackState struct {
+	MediaURL         string  `json:"media_url"`
+	IsPlaying        bool    `json:"is_playing"`
+	MediaTimeSeconds float64 `json:"media_time_seconds"`
+	LastUpdated      int64   `json:"last_updated"` // Epoch millis
+}
+
 // Room represents a Watch Party workspace where users gather to watch synchronized video.
 type Room struct {
 	ID              string        `json:"id"`

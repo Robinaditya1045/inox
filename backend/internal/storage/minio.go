@@ -184,10 +184,8 @@ func (s *MinioStorage) GetStreamURL(ctx context.Context, key string) (string, er
 	if strings.HasPrefix(cleanKey, s.bucket+"/") {
 		cleanKey = strings.TrimPrefix(cleanKey, s.bucket+"/")
 	}
-	if s.streamBaseURL != "" {
-		base := strings.TrimSuffix(s.streamBaseURL, "/")
-		return fmt.Sprintf("%s/%s", base, cleanKey), nil
-	}
+	// Always return the direct MinIO URL so internal services (like FFmpeg) can use Range requests.
+	// The API handler will normalize this to the proxy URL for the frontend.
 	return fmt.Sprintf("%s://%s/%s/%s", s.getScheme(), s.endpoint, s.bucket, cleanKey), nil
 }
 

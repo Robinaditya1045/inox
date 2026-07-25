@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { usePlayerSync } from '../../hooks/usePlayerSync';
 import { usePermissions } from '../../hooks/usePermissions';
-import { useWS } from '../../hooks/useWS';
+import { useRoomSocket } from '../../hooks/useRoomSocket';
 import { normalizeMediaUrl } from '../../utils/mediaUrl';
 import { PlayerScrubber } from './PlayerScrubber';
 import {
@@ -53,7 +53,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
   } = usePlayerSync();
 
   const permissions = usePermissions();
-  const { isConnected } = useWS();
+  const { isConnected } = useRoomSocket();
 
   // Attach Hls.js or native video whenever mediaUrl changes
   useEffect(() => {
