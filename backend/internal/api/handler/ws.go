@@ -14,9 +14,12 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	// CheckOrigin prevents Cross-Site WebSocket Hijacking (CSWSH).
-	// In local development we allow all origins; in production compare r.Header.Get("Origin") against allowed hosts.
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		return middleware.IsOriginAllowed(origin)
 	},
 }
 

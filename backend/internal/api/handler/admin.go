@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/observability"
 )
@@ -13,7 +14,11 @@ var telemetryUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // In production, enforce origin checks against admin dashboard domain
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		return middleware.IsOriginAllowed(origin)
 	},
 }
 

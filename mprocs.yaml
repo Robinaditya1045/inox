@@ -4,6 +4,9 @@ procs:
   backend:
     cwd: "backend"
     shell: "go run ./cmd/server"
+  worker:
+    cwd: "backend"
+    shell: "go run ./cmd/worker"
   frontend:
     cwd: "frontend"
     shell: "npm run dev -- --host 0.0.0.0 --port 5173"

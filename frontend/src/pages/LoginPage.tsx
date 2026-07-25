@@ -123,15 +123,32 @@ export const LoginPage: React.FC = () => {
             required
           />
 
-          <Input
-            label="Password"
-            type="password"
-            placeholder="••••••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            icon={<Lock size={18} />}
-            required
-          />
+          <div>
+            <Input
+              label="Password"
+              type="password"
+              placeholder="••••••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              icon={<Lock size={18} />}
+              required
+            />
+            <div style={{ textAlign: 'right', marginTop: '6px' }}>
+              <Link
+                to="/forgot-password"
+                style={{
+                  color: 'var(--color-text-muted)',
+                  fontSize: '0.85rem',
+                  textDecoration: 'none',
+                  transition: 'color 0.2s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-accent-purple)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+              >
+                Forgot password?
+              </Link>
+            </div>
+          </div>
 
           <Button type="submit" variant="primary" size="lg" fullWidth isLoading={isLoading} style={{ marginTop: '8px' }}>
             Sign In

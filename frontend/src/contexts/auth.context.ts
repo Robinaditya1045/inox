@@ -9,6 +9,7 @@ export interface AuthContextValue {
   signup: (data: SignupRequest) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  mutateUser: (user: User) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

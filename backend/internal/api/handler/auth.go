@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/auth"
 )
@@ -110,4 +111,95 @@ func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, sessionID string, 
 		Secure:   h.isProd, // true in production (HTTPS), false in local development (HTTP)
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// Me returns the authenticated user's profile retrieved from the database.
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok || session == nil {
+		respond.WriteError(w, http.StatusUnauthorized, "session context missing")
+		return
+	}
+
+	user, err := h.authService.GetProfile(r.Context(), session.UserID)
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to load profile")
+		return
+	}
+
+	// Mask sensitive data
+	user.PasswordHash = ""
+
+	respond.WriteJSON(w, http.StatusOK, user)
+}
+
+// UpdateAvatar handles user profile avatar updates.
+func (h *AuthHandler) UpdateAvatar(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AvatarURL string `json:"avatar_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "invalid request json payload")
+		return
+	}
+
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok || session == nil {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.authService.UpdateAvatar(r.Context(), session.UserID, req.AvatarURL, session.ID); err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to update avatar")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "avatar updated successfully"})
+}
+
+// ForgotPassword handles initiating the password reset flow.
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "invalid request json payload")
+		return
+	}
+
+	token, err := h.authService.GeneratePasswordResetToken(r.Context(), req.Email)
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to process request")
+		return
+	}
+
+	// In a real application, send this token via email.
+	// For this demo, we return it in the API response.
+	respond.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "If an account exists, a reset token has been generated.",
+		"token":   token, // Development only
+	})
+}
+
+// ResetPassword handles completing the password reset flow.
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "invalid request json payload")
+		return
+	}
+
+	if err := h.authService.ResetPasswordWithToken(r.Context(), req.Token, req.Password); err != nil {
+		if errors.Is(err, auth.ErrInvalidInput) {
+			respond.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respond.WriteError(w, http.StatusBadRequest, "invalid or expired token")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
 }

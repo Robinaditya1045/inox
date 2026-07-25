@@ -16,10 +16,11 @@ RUN go mod download
 # Copy the rest of the backend source code.
 COPY . .
 
-# Compile the binary:
-# CGO_ENABLED=0 creates a pure static Go binary without dynamic C library dependencies.
+# Compile the binaries:
+# CGO_ENABLED=0 creates pure static Go binaries without dynamic C library dependencies.
 # -ldflags="-s -w" strips debugging symbols, reducing binary file size by ~25%.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /app/bin/server ./cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /app/bin/server ./cmd/server/main.go && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /app/bin/migrate ./cmd/migrate/main.go
 
 # ==========================================
 # Stage 2: Minimal Production Runtime
@@ -41,8 +42,9 @@ RUN apk add --no-cache ffmpeg
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
-# Copy only the compiled binary from Stage 1
+# Copy compiled binaries from Stage 1
 COPY --from=builder /app/bin/server ./server
+COPY --from=builder /app/bin/migrate ./migrate
 
 # Copy SQL migration files so the server can run them on startup
 COPY --from=builder /app/migrations ./migrations
