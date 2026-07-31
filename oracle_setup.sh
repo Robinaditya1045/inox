@@ -11,8 +11,9 @@ echo "Starting Inox Oracle Cloud Setup..."
 
 # 1. Update and Install Prerequisites
 echo "Updating system and installing dependencies..."
-sudo apt-get update && sudo apt-get upgrade -y
-sudo apt-get install -y curl wget git jq ufw build-essential
+sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update
+sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get upgrade -y -q -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -q curl wget git jq ufw build-essential
 
 # 2. Setup Swap (Crucial for 1GB RAM instance)
 # We will create a 4GB swap file to prevent Out-Of-Memory (OOM) errors when 
