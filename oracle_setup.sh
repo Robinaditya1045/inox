@@ -90,6 +90,8 @@ sudo ufw allow 9000/tcp  # Minio API (for local transcoding worker and frontend)
 sudo ufw allow 8080/tcp  # Go Backend Server API
 sudo ufw allow 5050/tcp  # PGAdmin (if used, consider disabling in production)
 sudo ufw allow 9001/tcp  # Minio Console
+sudo ufw allow 80/tcp    # HTTP (for Caddy/SSL setup)
+sudo ufw allow 443/tcp   # HTTPS (for Caddy/SSL setup)
 
 echo "y" | sudo ufw enable
 
@@ -128,7 +130,7 @@ echo "SETUP COMPLETED SUCCESSFULLY!"
 echo "======================================================================"
 echo "IMPORTANT NEXT STEPS:"
 echo "1. Log out and log back in so the Docker group permissions take effect."
-echo "2. Oracle Cloud Firewall: You MUST open ports (5432, 6379, 9000, 8080) in the Oracle Cloud VCN Security List!"
+echo "2. Oracle Cloud Firewall: You MUST open ports (80, 443, 5432, 6379, 9000, 8080) in the Oracle Cloud VCN Security List!"
 echo "3. Copy /home/ubuntu/inox-env.template to $PROJECT_DIR/.env and SET SECURE PASSWORDS."
 echo "4. In your docker-compose.yml, add the redis password to the redis command if exposing it."
 echo "5. CD into $PROJECT_DIR and start infrastructure: docker compose up -d"
