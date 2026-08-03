@@ -1,26 +1,30 @@
 import React, { type ReactNode } from 'react';
-import { Sidebar } from './Sidebar';
+import { AppRail } from './AppRail';
+import { HomeSidebar } from './HomeSidebar';
+import styles from './AppLayout.module.css';
 
 interface AppLayoutProps {
   children: ReactNode;
+  /** Pass 'room' to suppress the HomeSidebar (room has its own sidebar) */
+  variant?: 'home' | 'room';
 }
 
-export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
+export const AppLayout: React.FC<AppLayoutProps> = ({ children, variant = 'home' }) => {
   return (
-    <div
-      style={{
-        display: 'flex',
-        minHeight: '100vh',
-        width: '100vw',
-        background: 'var(--color-bg-obsidian)',
-        color: 'var(--color-text-primary)',
-        overflow: 'hidden',
-      }}
-    >
-      <Sidebar />
-      <div style={{ flex: 1, height: '100vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-        {children}
+    <div className={`${styles.shell} ${variant === 'room' ? styles.shellRoom : ''}`}>
+      <div className={styles.railArea}>
+        <AppRail />
       </div>
+
+      {variant === 'home' && (
+        <div className={styles.sidebarArea}>
+          <HomeSidebar />
+        </div>
+      )}
+
+      <main className={styles.workspaceArea}>
+        {children}
+      </main>
     </div>
   );
 };

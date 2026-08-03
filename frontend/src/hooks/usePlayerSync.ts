@@ -10,7 +10,6 @@ export interface PlayerSyncState {
   isPlaying: boolean;
   currentTime: number;
   lastSyncTimestamp: number;
-  isRemoteUpdate: boolean;
   setMediaUrl: (url: string) => void;
   play: (time: number) => void;
   pause: (time: number) => void;
@@ -179,7 +178,6 @@ export const usePlayerSync = (): PlayerSyncState => {
     isPlaying,
     currentTime,
     lastSyncTimestamp,
-    isRemoteUpdate: isRemoteUpdateRef.current,
     setMediaUrl,
     play,
     pause,
