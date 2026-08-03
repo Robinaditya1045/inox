@@ -44,9 +44,6 @@ export const authService = {
       logger.debug('AuthService: Fetching current user session');
       const response = await apiClient.get<any>('/users/me');
       if (response && (response.user_id || response.id || response.user)) {
-        if (response.id) {
-          localStorage.setItem('inox_session_id', response.id);
-        }
         return mapSessionToUser(response);
       }
       return null;
