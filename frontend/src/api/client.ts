@@ -2,6 +2,11 @@ import { logger } from '../utils/logger';
 
 function resolveBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+  
+  if (import.meta.env.PROD) {
+    return envUrl;
+  }
+
   if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     return envUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
   }

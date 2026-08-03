@@ -5,6 +5,7 @@ import type { Room, CreateRoomRequest, RoomRole, RoomInvitation } from '../types
 import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
 import { APIError } from '../api/client';
+import { wsService } from '../services/ws/ws.service';
 
 interface RoomProviderProps {
   children: ReactNode;
@@ -128,6 +129,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     } catch (err) {
       logger.warn('RoomProvider: Error while leaving room', { err });
     } finally {
+      wsService.disconnect();
       setActiveRoom(null);
       setIsLoadingRoom(false);
       await refreshRooms();

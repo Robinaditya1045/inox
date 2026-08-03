@@ -1,0 +1,68 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail-width) var(--sidebar-left-width) 1fr;
+  grid-template-rows: 100vh;
+  grid-template-areas: "rail sidebar workspace";
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+}
+
+/* Room layout — no sidebar in the shell, room has its own sidebar */
+.shellRoom {
+  grid-template-columns: var(--rail-width) 1fr;
+  grid-template-areas: "rail workspace";
+}
+
+.railArea {
+  grid-area: rail;
+}
+
+.sidebarArea {
+  grid-area: sidebar;
+  overflow: hidden;
+}
+
+.workspaceArea {
+  grid-area: workspace;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tablet */
+@media (max-width: 1023px) {
+  .shell {
+    grid-template-columns: var(--rail-width) 1fr;
+    grid-template-areas: "rail workspace";
+  }
+
+  .sidebarArea {
+    display: none;
+  }
+}
+
+/* Mobile */
+@media (max-width: 767px) {
+  .shell,
+  .shellRoom {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    grid-template-areas:
+      "workspace"
+      "rail";
+    height: 100dvh;
+  }
+
+  .railArea {
+    grid-area: rail;
+    height: auto;
+  }
+
+  .sidebarArea {
+    display: none;
+  }
+}

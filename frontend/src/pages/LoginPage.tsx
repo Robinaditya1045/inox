@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Input } from '../components/common/Input';
+import { TextField as Input } from "../components/common/TextField";
 import { Button } from '../components/common/Button';
 import { Mail, Lock, AlertCircle, Sparkles } from 'lucide-react';
 

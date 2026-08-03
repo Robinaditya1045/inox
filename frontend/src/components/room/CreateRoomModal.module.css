@@ -1,0 +1,114 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.errorBox {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-danger-subtle);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  color: var(--color-danger);
+  font-size: var(--text-meta);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.privacyBtn {
+  width: 100%;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+.privacyBtn:hover {
+  background: var(--color-surface-2);
+}
+
+.privacyContent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.privacyIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.privacyIconPrivate {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+.privacyIconPublic {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+.privacyText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.privacyTitle {
+  font-weight: 600;
+  font-size: var(--text-compact);
+  color: var(--color-text-primary);
+}
+
+.privacyDesc {
+  font-size: var(--text-meta);
+  color: var(--color-text-secondary);
+}
+
+.switchTrack {
+  width: 44px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
+  position: relative;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.switchTrackPrivate {
+  background: var(--color-accent);
+}
+
+.switchThumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #FFF;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.switchThumbPrivate {
+  left: 23px;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}

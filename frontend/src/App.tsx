@@ -15,29 +15,24 @@ const RoomPage = React.lazy(() => import('./pages/RoomPage').then((m) => ({ defa
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
 
-// Full-screen layout for the room — no global sidebar, the room has its own channel sidebar
-function RoomLayout({ children }: { children: React.ReactNode }) {
+function GlobalLoadingFallback() {
   return (
     <div
       style={{
         display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         height: '100vh',
         width: '100vw',
-        background: 'var(--color-bg-obsidian)',
-        color: 'var(--color-text-primary)',
-        overflow: 'hidden',
+        background: 'var(--color-canvas)',
+        flexDirection: 'column',
+        gap: 'var(--space-3)',
       }}
     >
-      {children}
-    </div>
-  );
-}
-
-function GlobalLoadingFallback() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', background: 'var(--color-bg-obsidian)', flexDirection: 'column', gap: '12px' }}>
-      <Spinner size={32} color="var(--color-accent-purple)" />
-      <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Loading Inox WatchParty...</span>
+      <Spinner size={28} />
+      <span style={{ fontSize: 'var(--text-compact)', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+        Loading…
+      </span>
     </div>
   );
 }
@@ -47,37 +42,42 @@ function App() {
     <AuthProvider>
       <RoomProvider>
         <RTCProvider>
-            <BrowserRouter>
-              <Suspense fallback={<GlobalLoadingFallback />}>
-                <Routes>
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/signup" element={<SignupPage />} />
-                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                  <Route path="/reset-password" element={<ResetPasswordPage />} />
-                  <Route
-                    path="/"
-                    element={
-                      <ProtectedRoute>
-                        <AppLayout>
-                          <DashboardPage />
-                        </AppLayout>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/room/:roomId"
-                    element={
-                      <ProtectedRoute>
-                        <RoomLayout>
-                          <RoomPage />
-                        </RoomLayout>
-                      </ProtectedRoute>
-                    }
-                  />
-                </Routes>
-              </Suspense>
-            </BrowserRouter>
-          </RTCProvider>
+          <BrowserRouter>
+            <Suspense fallback={<GlobalLoadingFallback />}>
+              <Routes>
+                {/* Auth routes — no app shell */}
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/signup" element={<SignupPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+                {/* Dashboard — AppLayout with HomeSidebar */}
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <AppLayout variant="home">
+                        <DashboardPage />
+                      </AppLayout>
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* Room — AppLayout with rail only (room manages its own sidebar) */}
+                <Route
+                  path="/room/:roomId"
+                  element={
+                    <ProtectedRoute>
+                      <AppLayout variant="room">
+                        <RoomPage />
+                      </AppLayout>
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </RTCProvider>
       </RoomProvider>
     </AuthProvider>
   );
