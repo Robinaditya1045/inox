@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMediaLibrary } from '../../hooks/useMediaLibrary';
 import { Modal } from '../common/Modal';
-import { Input } from '../common/Input';
+import { TextField as Input } from "../common/TextField";
 import { Button } from '../common/Button';
 import { Spinner } from '../common/Spinner';
 import type { MediaAsset } from '../../types/media';

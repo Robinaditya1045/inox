@@ -3,11 +3,13 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-bg-obsidian);
+  background-color: var(--color-canvas);
   color: var(--color-text-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  font-size: var(--text-body);
+  line-height: 1.5;
 }
 
 /* Custom Scrollbar */
@@ -17,31 +19,57 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-obsidian);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-hover);
-  border-radius: 3px;
+  background: var(--color-border-strong);
+  border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
 }
 
-/* Utility classes for Frosted Glass Panels */
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Live announcer region (aria-live) */
+#room-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Legacy compat — glass-panel kept during transition, will be removed phase by phase */
 .glass-panel {
-  background: var(--color-bg-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--color-border-glass);
-  box-shadow: var(--shadow-glass);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-default);
 }
 
 .glass-panel-heavy {
-  background: var(--color-bg-glass-heavy);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid var(--color-border-glass);
-  box-shadow: var(--shadow-glass);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-default);
+  box-shadow: var(--shadow-menu);
+}
+
+/* Spin animation (used by Spinner) */
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

@@ -4,7 +4,7 @@ import { usePlayerSync } from '../../hooks/usePlayerSync';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useRoomSocket } from '../../hooks/useRoomSocket';
 import { normalizeMediaUrl } from '../../utils/mediaUrl';
-import { PlayerScrubber } from './PlayerScrubber';
+import { PlayerScrubber } from "./PlayerScrubber";
 import {
   Play,
   Pause,
@@ -18,6 +18,7 @@ import {
   Layers,
   ChevronUp,
 } from 'lucide-react';
+import styles from './WatchPartyPlayer.module.css';
 
 interface WatchPartyPlayerProps {
   onOpenLibrary?: () => void;
@@ -44,7 +45,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     mediaUrl,
     isPlaying: isPlayingRemote,
     currentTime: remoteTime,
-    isRemoteUpdate,
+    lastSyncTimestamp,
     play: emitPlay,
     pause: emitPause,
     seek: emitSeek,
@@ -120,10 +121,10 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     };
   }, [mediaUrl]);
 
-  // Sync from remote WebSocket events
+  // Sync from remote WebSocket events — triggered by lastSyncTimestamp changing
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !isRemoteUpdate) return;
+    if (!video || !lastSyncTimestamp) return;
 
     if (Math.abs(video.currentTime - remoteTime) > 0.5) {
       video.currentTime = remoteTime;
@@ -140,7 +141,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
 
     const timer = setTimeout(() => clearRemoteFlag(), 300);
     return () => clearTimeout(timer);
-  }, [remoteTime, isPlayingRemote, isRemoteUpdate, clearRemoteFlag]);
+  }, [lastSyncTimestamp, clearRemoteFlag]);
 
   const handleTimeUpdate = () => {
     const video = videoRef.current;
@@ -153,7 +154,8 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     const video = videoRef.current;
     if (!video) return;
     setDuration(video.duration);
-    if (isRemoteUpdate && Math.abs(video.currentTime - remoteTime) > 0.5) {
+    // Apply any pending remote sync on initial load
+    if (remoteTime > 0 && Math.abs(video.currentTime - remoteTime) > 0.5) {
       video.currentTime = remoteTime;
       setProgress(remoteTime);
       if (isPlayingRemote && video.paused) {
@@ -278,68 +280,23 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       onMouseMove={handleMouseMove}
       role="region"
       aria-label="Inox WatchParty Video Player"
-      style={{
-        width: '100%',
-        height: '100%',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        background: '#05070A',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        border: '1px solid var(--color-border-hover)',
-        outline: 'none',
-      }}
+      className={styles.container}
     >
       {/* Top Status Bar */}
       <div
+        className={styles.topBar}
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          padding: '10px 14px',
-          background: 'linear-gradient(180deg, rgba(5,7,10,0.9) 0%, transparent 100%)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          zIndex: 10,
           opacity: showControls || !isPlayingLocal ? 1 : 0,
-          transition: 'opacity 0.3s',
           pointerEvents: showControls || !isPlayingLocal ? 'auto' : 'none',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div
-            style={{
-              padding: '3px 8px',
-              borderRadius: '12px',
-              background: isConnected ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
-              border: `1px solid ${isConnected ? 'rgba(16,185,129,0.4)' : 'rgba(244,63,94,0.4)'}`,
-              color: isConnected ? 'var(--color-accent-emerald)' : 'var(--color-accent-rose)',
-              fontSize: '0.7rem',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div className={`${styles.statusIndicator} ${isConnected ? styles.statusSynced : styles.statusOffline}`}>
             {isConnected ? <Wifi size={11} /> : <WifiOff size={11} />}
             <span>{isConnected ? 'SYNCED' : 'OFFLINE'}</span>
           </div>
           {levels.length > 0 && (
-            <div
-              style={{
-                padding: '3px 8px',
-                borderRadius: '12px',
-                background: 'rgba(170,59,255,0.15)',
-                border: '1px solid rgba(170,59,255,0.4)',
-                color: 'var(--color-accent-purple)',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-              }}
-            >
+            <div className={styles.abrIndicator}>
               ABR · {currentQualityLabel}
             </div>
           )}
@@ -349,20 +306,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
           <button
             onClick={onOpenLibrary}
             aria-label="Open Media Library"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 10px',
-              borderRadius: '8px',
-              background: 'rgba(170,59,255,0.2)',
-              border: '1px solid rgba(170,59,255,0.5)',
-              color: 'var(--color-accent-purple)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
+            className={styles.libraryBtn}
           >
             <Layers size={13} />
             <span>Library</span>
@@ -377,36 +321,19 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         onLoadedMetadata={handleLoadedMetadata}
         onPlay={() => setIsPlayingLocal(true)}
         onPause={() => setIsPlayingLocal(false)}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'contain',
-          cursor: permissions.can_control_playback ? 'pointer' : 'default',
-        }}
+        className={styles.video}
+        style={{ cursor: permissions.can_control_playback ? 'pointer' : 'default' }}
         onClick={handlePlayClick}
         playsInline
       />
 
       {/* Bottom Controls */}
       <div
+        className={styles.bottomBar}
         style={{
-          position: 'absolute',
-          bottom: '10px',
-          left: '10px',
-          right: '10px',
-          padding: '10px 14px',
-          borderRadius: '10px',
-          background: 'rgba(5,7,10,0.85)',
-          backdropFilter: 'blur(12px)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          zIndex: 10,
           opacity: showControls || !isPlayingLocal ? 1 : 0,
           transform: showControls || !isPlayingLocal ? 'translateY(0)' : 'translateY(6px)',
-          transition: 'all 0.3s',
           pointerEvents: showControls || !isPlayingLocal ? 'auto' : 'none',
-          border: '1px solid var(--color-border-hover)',
         }}
       >
         {/* Progress Scrubber (Memoized Child) */}
@@ -419,53 +346,29 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
 
         {/* Action Row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {/* Play/Pause */}
             <button
               onClick={handlePlayClick}
               disabled={!permissions.can_control_playback}
               aria-label={isPlayingLocal ? 'Pause Video' : 'Play Video'}
-              style={{
-                width: '34px',
-                height: '34px',
-                borderRadius: '8px',
-                background: permissions.can_control_playback
-                  ? 'linear-gradient(135deg, var(--color-accent-purple), #8B5CF6)'
-                  : 'var(--color-bg-surface)',
-                color: '#FFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: 'none',
-                cursor: permissions.can_control_playback ? 'pointer' : 'not-allowed',
-                transition: 'all 0.15s',
-                flexShrink: 0,
-              }}
+              className={`${styles.playBtn} ${permissions.can_control_playback ? styles.playBtnCanControl : styles.playBtnDisabled}`}
             >
               {!permissions.can_control_playback ? (
-                <Lock size={15} color="var(--color-text-muted)" />
+                <Lock size={15} />
               ) : isPlayingLocal ? (
-                <Pause size={16} fill="#FFF" />
+                <Pause size={16} fill="currentColor" />
               ) : (
-                <Play size={16} fill="#FFF" style={{ marginLeft: '2px' }} />
+                <Play size={16} fill="currentColor" style={{ marginLeft: 2 }} />
               )}
             </button>
 
             {/* Volume */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               <button
                 onClick={toggleMute}
                 aria-label={isMuted || volume === 0 ? 'Unmute Audio' : 'Mute Audio'}
-                style={{
-                  color: isMuted || volume === 0 ? 'var(--color-accent-rose)' : 'var(--color-text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '4px',
-                  borderRadius: '6px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
+                className={`${styles.iconBtn} ${isMuted || volume === 0 ? styles.iconBtnDanger : ''}`}
               >
                 {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
@@ -477,73 +380,32 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
                 aria-label="Volume Slider"
+                className={styles.volumeSlider}
                 style={{
-                  width: '64px',
-                  height: '3px',
-                  borderRadius: '2px',
-                  background: `linear-gradient(to right, var(--color-accent-cyan) 0%, var(--color-accent-cyan) ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.15) ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.15) 100%)`,
-                  appearance: 'none',
-                  cursor: 'pointer',
-                  outline: 'none',
+                  background: `linear-gradient(to right, var(--color-accent) 0%, var(--color-accent) ${(isMuted ? 0 : volume) * 100}%, var(--color-border-default) ${(isMuted ? 0 : volume) * 100}%, var(--color-border-default) 100%)`,
                 }}
               />
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             {/* Quality Selector */}
             {levels.length > 0 && (
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowQuality((p) => !p)}
                   aria-label="Video Quality Settings"
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    background: 'var(--color-bg-surface)',
-                    border: '1px solid var(--color-border-glass)',
-                    color: 'var(--color-text-secondary)',
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
+                  className={styles.qualityBtn}
                 >
                   <ChevronUp size={12} />
                   {currentQualityLabel}
                 </button>
 
                 {showQuality && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 'calc(100% + 6px)',
-                      right: 0,
-                      background: 'rgba(5,7,10,0.95)',
-                      border: '1px solid var(--color-border-hover)',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      minWidth: '90px',
-                      backdropFilter: 'blur(12px)',
-                      zIndex: 20,
-                    }}
-                  >
+                  <div className={styles.qualityMenu}>
                     <button
                       onClick={() => setQualityLevel(-1)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 12px',
-                        background: currentLevel === -1 ? 'rgba(170,59,255,0.2)' : 'transparent',
-                        color: currentLevel === -1 ? 'var(--color-accent-purple)' : 'var(--color-text-secondary)',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        textAlign: 'left',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}
+                      className={`${styles.qualityMenuItem} ${currentLevel === -1 ? styles.qualityMenuItemActive : ''}`}
                     >
                       Auto ABR
                     </button>
@@ -551,18 +413,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
                       <button
                         key={l.index}
                         onClick={() => setQualityLevel(l.index)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 12px',
-                          background: currentLevel === l.index ? 'rgba(170,59,255,0.2)' : 'transparent',
-                          color: currentLevel === l.index ? 'var(--color-accent-purple)' : 'var(--color-text-secondary)',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          textAlign: 'left',
-                          border: 'none',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                        }}
+                        className={`${styles.qualityMenuItem} ${currentLevel === l.index ? styles.qualityMenuItemActive : ''}`}
                       >
                         {l.height ? `${l.height}p` : `Level ${l.index}`} · {Math.round(l.bitrate / 1000)}k
                       </button>
@@ -576,16 +427,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             <button
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-              style={{
-                padding: '5px',
-                borderRadius: '6px',
-                color: 'var(--color-text-secondary)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-              }}
+              className={styles.iconBtn}
             >
               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>

@@ -1,34 +1,24 @@
 import React, { useState } from 'react';
 import type { Room } from '../../types/room';
-import {
-  Hash,
-  Film,
-  Users,
-  Copy,
-  Check,
-  MessageSquare,
-  Tv,
-} from 'lucide-react';
+import { Hash, Film, Users, Copy, Check } from 'lucide-react';
 
 interface RoomHeaderProps {
-  activeSection: 'chat' | 'members' | 'player';
-  setActiveSection: (section: 'chat' | 'members' | 'player') => void;
   activeRoom: Room | null;
-  mediaUrl: string | null;
+  activePanel: 'chat' | 'members' | null;
+  mediaUrl?: string;
 }
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
-  activeSection,
-  setActiveSection,
   activeRoom,
+  activePanel,
   mediaUrl,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
 
   const handleCopyInvite = () => {
     if (!activeRoom) return;
-    const inviteUrl = `${window.location.origin}/room/${activeRoom.id}`;
-    navigator.clipboard.writeText(inviteUrl).then(() => {
+    const url = `${window.location.origin}/room/${activeRoom.id}`;
+    navigator.clipboard.writeText(url).then(() => {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     }).catch(() => {});
@@ -37,135 +27,81 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
   return (
     <header
       style={{
-        height: '40px',
-        padding: '0 16px',
+        height: 'var(--header-height)',
+        padding: '0 var(--space-4)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottom: '1px solid var(--color-border-glass)',
-        background: 'rgba(8,10,16,0.7)',
+        borderBottom: '1px solid var(--color-border-subtle)',
+        background: 'var(--color-canvas)',
         flexShrink: 0,
+        gap: 'var(--space-3)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {activeSection === 'chat' && (
+      {/* Current context label */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', overflow: 'hidden' }}>
+        {activePanel === 'chat' && (
           <>
-            <Hash size={15} color="var(--color-text-muted)" />
-            <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>general</span>
-            <span style={{ color: 'var(--color-border-hover)', fontSize: '0.75rem' }}>│</span>
-            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>Room chat for {activeRoom?.name}</span>
-          </>
-        )}
-        {activeSection === 'player' && (
-          <>
-            <Film size={15} color="var(--color-text-muted)" />
-            <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>watch-party</span>
-            <span style={{ color: 'var(--color-border-hover)', fontSize: '0.75rem' }}>│</span>
-            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
-              {mediaUrl ? mediaUrl.split('/').pop() : 'No media selected'}
+            <Hash size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-hidden="true" />
+            <span style={{ fontWeight: 600, fontSize: 'var(--text-compact)', color: 'var(--color-text-primary)' }}>
+              general
+            </span>
+            <span style={{ color: 'var(--color-border-default)', fontSize: 'var(--text-meta)' }} aria-hidden="true">│</span>
+            <span style={{ fontSize: 'var(--text-meta)', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeRoom?.name}
             </span>
           </>
         )}
-        {activeSection === 'members' && (
+        {activePanel === 'members' && (
           <>
-            <Users size={15} color="var(--color-text-muted)" />
-            <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>members</span>
+            <Users size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-hidden="true" />
+            <span style={{ fontWeight: 600, fontSize: 'var(--text-compact)', color: 'var(--color-text-primary)' }}>
+              members
+            </span>
+          </>
+        )}
+        {activePanel === null && (
+          <>
+            <Film size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-hidden="true" />
+            <span style={{ fontWeight: 600, fontSize: 'var(--text-compact)', color: 'var(--color-text-primary)' }}>
+              watch-party
+            </span>
+            {mediaUrl && (
+              <>
+                <span style={{ color: 'var(--color-border-default)', fontSize: 'var(--text-meta)' }} aria-hidden="true">│</span>
+                <span style={{ fontSize: 'var(--text-meta)', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+                  {mediaUrl.split('/').pop() || mediaUrl}
+                </span>
+              </>
+            )}
           </>
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <button
-          onClick={handleCopyInvite}
-          aria-label="Copy Room Invite Link"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            background: copiedLink ? 'rgba(16, 185, 129, 0.2)' : 'var(--color-bg-surface)',
-            border: `1px solid ${copiedLink ? 'rgba(16, 185, 129, 0.5)' : 'var(--color-border-glass)'}`,
-            color: copiedLink ? 'var(--color-accent-emerald)' : 'var(--color-text-secondary)',
-            fontSize: '0.78rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}
-        >
-          {copiedLink ? <Check size={14} /> : <Copy size={14} />}
-          <span>{copiedLink ? 'Copied Link!' : 'Invite'}</span>
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--color-bg-surface)', padding: '3px', borderRadius: '8px', border: '1px solid var(--color-border-glass)' }}>
-          <button
-            onClick={() => setActiveSection('chat')}
-            title="Chat Panel"
-            aria-label="Switch to Chat Panel"
-            style={{
-              padding: '5px 10px',
-              borderRadius: '6px',
-              background: activeSection === 'chat' ? 'var(--color-accent-purple)' : 'transparent',
-              color: activeSection === 'chat' ? '#FFF' : 'var(--color-text-secondary)',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              transition: 'all 0.15s',
-            }}
-          >
-            <MessageSquare size={14} />
-            <span>Chat</span>
-          </button>
-          <button
-            onClick={() => setActiveSection('player')}
-            title="Theater / Full Player"
-            aria-label="Switch to Theater Player"
-            style={{
-              padding: '5px 10px',
-              borderRadius: '6px',
-              background: activeSection === 'player' ? 'var(--color-accent-purple)' : 'transparent',
-              color: activeSection === 'player' ? '#FFF' : 'var(--color-text-secondary)',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              transition: 'all 0.15s',
-            }}
-          >
-            <Tv size={14} />
-            <span>Theater</span>
-          </button>
-          <button
-            onClick={() => setActiveSection('members')}
-            title="Members Panel"
-            aria-label="Switch to Members Panel"
-            style={{
-              padding: '5px 10px',
-              borderRadius: '6px',
-              background: activeSection === 'members' ? 'var(--color-accent-purple)' : 'transparent',
-              color: activeSection === 'members' ? '#FFF' : 'var(--color-text-secondary)',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              transition: 'all 0.15s',
-            }}
-          >
-            <Users size={14} />
-            <span>Members</span>
-          </button>
-        </div>
-      </div>
+      {/* Invite copy button */}
+      <button
+        onClick={handleCopyInvite}
+        aria-label="Copy room invite link"
+        title="Copy invite link"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-1)',
+          padding: '4px var(--space-3)',
+          borderRadius: 'var(--radius-md)',
+          background: copiedLink ? 'var(--color-success-subtle)' : 'var(--color-surface-1)',
+          border: `1px solid ${copiedLink ? 'var(--color-success-border)' : 'var(--color-border-default)'}`,
+          color: copiedLink ? 'var(--color-success)' : 'var(--color-text-secondary)',
+          fontSize: 'var(--text-meta)',
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'all var(--transition-fast)',
+          flexShrink: 0,
+        }}
+      >
+        {copiedLink ? <Check size={13} /> : <Copy size={13} />}
+        <span>{copiedLink ? 'Copied!' : 'Invite'}</span>
+      </button>
     </header>
   );
 };
