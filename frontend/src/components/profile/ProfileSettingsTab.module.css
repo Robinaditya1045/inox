@@ -1,0 +1,95 @@
+.profileTab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 600px;
+}
+
+.avatarSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.avatarPreviewContainer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.avatarWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.avatarImage {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid var(--color-surface-2);
+  box-shadow: var(--shadow-floating);
+}
+
+.avatarPlaceholder {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--color-surface-3);
+  border: 4px solid var(--color-border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 2.5rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-floating);
+}
+
+.cameraIconWrapper {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  box-shadow: 0 4px 8px rgba(170, 59, 255, 0.4);
+}
+
+.formSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sectionHeading {
+  font-size: var(--text-heading);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.errorBox {
+  padding: var(--space-3);
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-meta);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}

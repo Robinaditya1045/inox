@@ -1,0 +1,137 @@
+.bar {
+  display: flex;
+  align-items: center;
+  height: var(--call-bar-height);
+  padding: 0 var(--space-4);
+  gap: var(--space-2);
+  background: var(--color-canvas);
+}
+
+.divider {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border-default);
+  flex-shrink: 0;
+  margin: 0 var(--space-1);
+}
+
+.connectionStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-1);
+  flex-shrink: 0;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.statusConnected    { background: var(--color-live); }
+.statusConnecting   { background: var(--color-warning); }
+.statusDisconnected { background: var(--color-offline); }
+.statusFailed       { background: var(--color-danger); }
+
+.controlBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.controlBtn:hover:not(:disabled) {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.controlBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+/* Active: muted mic, deafened headphones, screen sharing ON */
+.controlBtnActive {
+  background-color: var(--color-danger-subtle);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+.controlBtnActive:hover:not(:disabled) {
+  background-color: var(--color-danger);
+  color: var(--color-text-on-accent);
+  border-color: transparent;
+}
+
+/* Accent active: screen share, chat open */
+.controlBtnAccent {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+}
+.controlBtnAccent:hover:not(:disabled) {
+  background-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+  border-color: transparent;
+}
+
+/* Leave button */
+.leaveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-danger-border);
+  cursor: pointer;
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.leaveBtn:hover {
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
+  border-color: transparent;
+}
+
+/* "Connect Audio" prompt — shown when not yet connected */
+.connectPrompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+/* Screen share label */
+.sharingLabel {
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-accent);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-subtle);
+}

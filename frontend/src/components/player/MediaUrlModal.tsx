@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal } from '../common/Modal';
-import { Input } from '../common/Input';
+import { TextField as Input } from "../common/TextField";
 import { Button } from '../common/Button';
 import { Film, Link2, Sparkles, Check } from 'lucide-react';
 
