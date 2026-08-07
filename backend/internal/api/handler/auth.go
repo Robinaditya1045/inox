@@ -87,6 +87,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		_ = h.authService.Logout(r.Context(), cookie.Value)
 	}
 
+	sameSite := http.SameSiteLaxMode
+	if h.isProd {
+		sameSite = http.SameSiteNoneMode
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "inox_session",
 		Value:    "",
@@ -94,7 +99,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   h.isProd,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 	})
 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out successfully"})
@@ -102,6 +107,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // setSessionCookie applies secure attributes (HttpOnly, Secure, SameSite) to protect session identity.
 func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, sessionID string, expiresAt time.Time) {
+	sameSite := http.SameSiteLaxMode
+	if h.isProd {
+		sameSite = http.SameSiteNoneMode
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "inox_session",
 		Value:    sessionID,
@@ -109,7 +119,7 @@ func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, sessionID string, 
 		Expires:  expiresAt,
 		HttpOnly: true,
 		Secure:   h.isProd, // true in production (HTTPS), false in local development (HTTP)
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 	})
 }
 
