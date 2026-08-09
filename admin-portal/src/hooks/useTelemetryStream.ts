@@ -153,6 +153,13 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
     if (storedSessionId) {
       const char = targetUrl.includes('?') ? '&' : '?';
       targetUrl = `${targetUrl}${char}session_id=${storedSessionId}`;
+    } else {
+      // If there's no session ID, don't even attempt to connect to the backend
+      // because it will return a 401 Unauthorized and clutter the console with errors.
+      console.warn("No inox_session_id found in localStorage. Falling back to Demo Mode.");
+      setIsDemoMode(true);
+      setError("No authentication session found. Running interactive Demo Mode.");
+      return;
     }
 
     const connect = () => {
