@@ -1,5 +1,5 @@
-import { useRoom } from './useRoom';
-import type { RoomRole, RoomPermissions } from '../types';
+import { useRoom } from "./useRoom";
+import type { RoomRole, RoomPermissions } from "../types";
 
 export interface PermissionsState extends RoomPermissions {
   role: RoomRole | null;
@@ -26,9 +26,9 @@ export const usePermissions = (): PermissionsState => {
   return {
     ...base,
     role: userRole,
-    isOwner: userRole === 'owner',
-    isModerator: userRole === 'moderator',
-    isMember: userRole === 'member',
-    isGuest: userRole === 'guest',
+    isOwner: userRole === "owner",
+    isModerator: userRole === "moderator",
+    isMember: userRole === "member",
+    isGuest: userRole === "guest",
   };
 };

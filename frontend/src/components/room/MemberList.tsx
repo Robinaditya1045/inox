@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { usePresence } from '../../hooks/usePresence';
-import { useAuth } from '../../hooks/useAuth';
-import type { RoomRole } from '../../types/room';
-import { Shield, UserMinus, Crown, ShieldAlert, UserCheck, MoreVertical, UserPlus, Check, AlertCircle } from 'lucide-react';
-import { useRoom } from '../../hooks/useRoom';
-import styles from './MemberList.module.css';
+import React, { useState } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { usePresence } from "../../hooks/usePresence";
+import { useAuth } from "../../hooks/useAuth";
+import type { RoomRole } from "../../types/room";
+import {
+  Shield,
+  UserMinus,
+  Crown,
+  ShieldAlert,
+  UserCheck,
+  MoreVertical,
+  UserPlus,
+  Check,
+  AlertCircle,
+} from "lucide-react";
+import { useRoom } from "../../hooks/useRoom";
+import { useRTC } from "../../hooks/useRTC";
+import styles from "./MemberList.module.css";
 
 export const MemberList: React.FC = () => {
-  const { members, isLoadingMembers, kickMember, updateRole, canModerate } = usePresence();
+  const { members, isLoadingMembers, kickMember, updateRole, canModerate } =
+    usePresence();
   const { user } = useAuth();
   const { permissions, inviteUser, activeRoom } = useRoom();
-  
-  const [inviteUsername, setInviteUsername] = useState('');
+  const { remoteStreams, connectionState } = useRTC(activeRoom?.id);
+
+  const [inviteUsername, setInviteUsername] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -26,10 +39,10 @@ export const MemberList: React.FC = () => {
     try {
       await inviteUser(inviteUsername.trim());
       setInviteSuccess(`Invited @${inviteUsername.trim()}`);
-      setInviteUsername('');
+      setInviteUsername("");
       setTimeout(() => setInviteSuccess(null), 4000);
     } catch (err: any) {
-      setInviteError(err?.message || 'Failed to invite user');
+      setInviteError(err?.message || "Failed to invite user");
     } finally {
       setIsInviting(false);
     }
@@ -37,36 +50,36 @@ export const MemberList: React.FC = () => {
 
   const getRoleBadge = (role: RoomRole) => {
     switch (role) {
-      case 'owner':
+      case "owner":
         return {
-          label: 'Owner',
-          color: 'var(--color-accent)',
-          bg: 'var(--color-accent-subtle)',
-          border: 'var(--color-accent-border)',
+          label: "Owner",
+          color: "var(--color-accent)",
+          bg: "var(--color-accent-subtle)",
+          border: "var(--color-accent-border)",
           icon: <Crown size={12} color="currentColor" />,
         };
-      case 'moderator':
+      case "moderator":
         return {
-          label: 'Mod',
-          color: 'var(--color-accent-cyan)',
-          bg: 'rgba(6, 182, 212, 0.15)',
-          border: 'rgba(6, 182, 212, 0.4)',
+          label: "Mod",
+          color: "var(--color-accent-cyan)",
+          bg: "rgba(6, 182, 212, 0.15)",
+          border: "rgba(6, 182, 212, 0.4)",
           icon: <ShieldAlert size={12} color="currentColor" />,
         };
-      case 'member':
+      case "member":
         return {
-          label: 'Member',
-          color: 'var(--color-success)',
-          bg: 'var(--color-success-subtle)',
-          border: 'var(--color-success-border)',
+          label: "Member",
+          color: "var(--color-success)",
+          bg: "var(--color-success-subtle)",
+          border: "var(--color-success-border)",
           icon: <UserCheck size={12} color="currentColor" />,
         };
       default:
         return {
-          label: 'Guest',
-          color: 'var(--color-text-secondary)',
-          bg: 'var(--color-surface-3)',
-          border: 'var(--color-border-default)',
+          label: "Guest",
+          color: "var(--color-text-secondary)",
+          bg: "var(--color-surface-3)",
+          border: "var(--color-border-default)",
           icon: null,
         };
     }
@@ -74,9 +87,9 @@ export const MemberList: React.FC = () => {
 
   const getInitials = (name: string): string => {
     return name
-      .split(' ')
+      .split(" ")
       .map((part) => part[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
@@ -96,6 +109,31 @@ export const MemberList: React.FC = () => {
       // Error handled in hook
     }
   };
+
+  // Grouped the way a call-first client should read: who is audible right now,
+  // then everyone else by role, then the people who aren't here.
+  const voiceUserIds = new Set(remoteStreams.keys());
+  if (connectionState === "connected" && user?.id) {
+    voiceUserIds.add(user.id);
+  }
+
+  const inVoice = members.filter((m) => voiceUserIds.has(m.user_id));
+  const rest = members.filter((m) => !voiceUserIds.has(m.user_id));
+  const rank: Record<RoomRole, number> = {
+    owner: 0,
+    moderator: 1,
+    member: 2,
+    guest: 3,
+  };
+  const byRank = [...rest].sort(
+    (a, b) =>
+      rank[a.role] - rank[b.role] || a.username.localeCompare(b.username),
+  );
+
+  const groups = [
+    { key: "voice", label: "In Voice", members: inVoice },
+    { key: "room", label: "In Room", members: byRank },
+  ];
 
   return (
     <div className={styles.container}>
@@ -120,7 +158,7 @@ export const MemberList: React.FC = () => {
               disabled={isInviting || !inviteUsername.trim()}
               className={styles.inviteBtn}
             >
-              {isInviting ? '...' : 'Invite'}
+              {isInviting ? "..." : "Invite"}
             </button>
           </form>
           {inviteSuccess && (
@@ -136,98 +174,132 @@ export const MemberList: React.FC = () => {
         </div>
       )}
 
-      <div className={styles.header}>
-        <span className={styles.headerTitle}>
-          Active Participants ({members.length})
-        </span>
-        {isLoadingMembers && <span className={styles.loadingText}>Updating...</span>}
-      </div>
+      {isLoadingMembers && (
+        <div className={styles.header}>
+          <span className={styles.loadingText}>Updating...</span>
+        </div>
+      )}
 
       <div className={styles.list}>
-        {members.map((member) => {
-          const badge = getRoleBadge(member.role);
-          const isSelf = member.user_id === user?.id;
-          const showAdminControls = !isSelf && canModerate(member);
-
-          return (
-            <div key={member.user_id} className={styles.memberItem}>
-              <div className={styles.memberInfo}>
-                {/* Avatar with Online Pulse */}
-                <div className={styles.avatarWrapper}>
-                  <div className={`${styles.avatar} ${isSelf ? styles.avatarSelf : styles.avatarOther}`}>
-                    {getInitials(member.username)}
-                  </div>
-                  <div className={styles.onlineBadge} />
-                </div>
-
-                {/* Name and Role */}
-                <div className={styles.memberDetails}>
-                  <span className={styles.memberName}>
-                    {member.username} {isSelf && <span className={styles.selfLabel}>(You)</span>}
-                  </span>
-                  <div
-                    className={styles.roleBadge}
-                    style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}
-                  >
-                    {badge.icon}
-                    <span>{badge.label}</span>
-                  </div>
-                </div>
+        {groups.map((group) =>
+          group.members.length === 0 ? null : (
+            <div key={group.key} className={styles.group}>
+              <div className={styles.groupLabel}>
+                {group.label} — {group.members.length}
               </div>
+              {group.members.map((member) => {
+                const badge = getRoleBadge(member.role);
+                const isSelf = member.user_id === user?.id;
+                const showAdminControls = !isSelf && canModerate(member);
 
-              {/* Moderation Actions Menu */}
-              {showAdminControls && (
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                    <button className={styles.actionBtn} aria-label="Manage member">
-                      <MoreVertical size={16} />
-                    </button>
-                  </DropdownMenu.Trigger>
+                return (
+                  <div key={member.user_id} className={styles.memberItem}>
+                    <div className={styles.memberInfo}>
+                      {/* Avatar with Online Pulse */}
+                      <div className={styles.avatarWrapper}>
+                        <div
+                          className={`${styles.avatar} ${isSelf ? styles.avatarSelf : styles.avatarOther}`}
+                        >
+                          {getInitials(member.username)}
+                        </div>
+                        <div className={styles.onlineBadge} />
+                      </div>
 
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content className={styles.dropdownContent} sideOffset={4} align="end">
-                      <DropdownMenu.Label className={styles.dropdownLabel}>
-                        Change Role
-                      </DropdownMenu.Label>
-                      
-                      <DropdownMenu.Item
-                        className={styles.dropdownItem}
-                        onClick={() => handleRoleChange(member.user_id, 'moderator')}
-                        style={{ color: 'var(--color-accent-cyan)' }}
-                      >
-                        <ShieldAlert size={14} /> Promote to Mod
-                      </DropdownMenu.Item>
-                      
-                      <DropdownMenu.Item
-                        className={styles.dropdownItem}
-                        onClick={() => handleRoleChange(member.user_id, 'member')}
-                        style={{ color: 'var(--color-success)' }}
-                      >
-                        <UserCheck size={14} /> Set as Member
-                      </DropdownMenu.Item>
-                      
-                      <DropdownMenu.Item
-                        className={styles.dropdownItem}
-                        onClick={() => handleRoleChange(member.user_id, 'guest')}
-                      >
-                        <Shield size={14} /> Demote to Guest
-                      </DropdownMenu.Item>
-                      
-                      <DropdownMenu.Separator className={styles.dropdownSeparator} />
-                      
-                      <DropdownMenu.Item
-                        className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`}
-                        onClick={() => handleKick(member.user_id)}
-                      >
-                        <UserMinus size={14} /> Kick from Room
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-              )}
+                      {/* Name and Role */}
+                      <div className={styles.memberDetails}>
+                        <span className={styles.memberName}>
+                          {member.username}{" "}
+                          {isSelf && (
+                            <span className={styles.selfLabel}>(You)</span>
+                          )}
+                        </span>
+                        <div
+                          className={styles.roleBadge}
+                          style={{
+                            background: badge.bg,
+                            border: `1px solid ${badge.border}`,
+                            color: badge.color,
+                          }}
+                        >
+                          {badge.icon}
+                          <span>{badge.label}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Moderation Actions Menu */}
+                    {showAdminControls && (
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger asChild>
+                          <button
+                            className={styles.actionBtn}
+                            aria-label="Manage member"
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+                        </DropdownMenu.Trigger>
+
+                        <DropdownMenu.Portal>
+                          <DropdownMenu.Content
+                            className={styles.dropdownContent}
+                            sideOffset={4}
+                            align="end"
+                          >
+                            <DropdownMenu.Label
+                              className={styles.dropdownLabel}
+                            >
+                              Change Role
+                            </DropdownMenu.Label>
+
+                            <DropdownMenu.Item
+                              className={styles.dropdownItem}
+                              onClick={() =>
+                                handleRoleChange(member.user_id, "moderator")
+                              }
+                              style={{ color: "var(--color-accent-cyan)" }}
+                            >
+                              <ShieldAlert size={14} /> Promote to Mod
+                            </DropdownMenu.Item>
+
+                            <DropdownMenu.Item
+                              className={styles.dropdownItem}
+                              onClick={() =>
+                                handleRoleChange(member.user_id, "member")
+                              }
+                              style={{ color: "var(--color-success)" }}
+                            >
+                              <UserCheck size={14} /> Set as Member
+                            </DropdownMenu.Item>
+
+                            <DropdownMenu.Item
+                              className={styles.dropdownItem}
+                              onClick={() =>
+                                handleRoleChange(member.user_id, "guest")
+                              }
+                            >
+                              <Shield size={14} /> Demote to Guest
+                            </DropdownMenu.Item>
+
+                            <DropdownMenu.Separator
+                              className={styles.dropdownSeparator}
+                            />
+
+                            <DropdownMenu.Item
+                              className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`}
+                              onClick={() => handleKick(member.user_id)}
+                            >
+                              <UserMinus size={14} /> Kick from Room
+                            </DropdownMenu.Item>
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                      </DropdownMenu.Root>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          ),
+        )}
       </div>
     </div>
   );

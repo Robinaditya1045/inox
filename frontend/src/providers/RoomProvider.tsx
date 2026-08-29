@@ -1,11 +1,25 @@
-import React, { useState, useEffect, useCallback, type ReactNode } from 'react';
-import { RoomContext } from '../contexts/room.context';
-import { roomService, DEFAULT_PERMISSIONS } from '../services/room/room.service';
-import type { Room, CreateRoomRequest, RoomRole, RoomInvitation } from '../types';
-import { useAuth } from '../hooks/useAuth';
-import { logger } from '../utils/logger';
-import { APIError } from '../api/client';
-import { wsService } from '../services/ws/ws.service';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
+import { RoomContext } from "../contexts/room.context";
+import {
+  roomService,
+  DEFAULT_PERMISSIONS,
+} from "../services/room/room.service";
+import type {
+  Room,
+  CreateRoomRequest,
+  RoomRole,
+  RoomInvitation,
+} from "../types";
+import { useAuth } from "../hooks/useAuth";
+import { logger } from "../utils/logger";
+import { APIError } from "../api/client";
+import { wsService } from "../services/ws/ws.service";
 
 interface RoomProviderProps {
   children: ReactNode;
@@ -20,6 +34,10 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
   const { user } = useAuth();
 
+  // Guards against out-of-order joins: a slow join for room A must not overwrite
+  // a later, faster join for room B.
+  const joinSeqRef = useRef(0);
+
   const clearRoomError = useCallback(() => {
     setRoomError(null);
   }, []);
@@ -33,7 +51,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
       const fetchedRooms = await roomService.listRooms();
       setRooms(fetchedRooms);
     } catch (err) {
-      logger.warn('RoomProvider: Failed to refresh room list', { err });
+      logger.warn("RoomProvider: Failed to refresh room list", { err });
     }
   }, [user]);
 
@@ -46,7 +64,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
       const fetched = await roomService.getPendingInvitations();
       setInvitations(fetched);
     } catch (err) {
-      logger.warn('RoomProvider: Failed to refresh invitations', { err });
+      logger.warn("RoomProvider: Failed to refresh invitations", { err });
     }
   }, [user]);
 
@@ -63,7 +81,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
     if (activeRoom.owner_id === user.id) {
       return {
-        userRole: 'owner' as RoomRole,
+        userRole: "owner" as RoomRole,
         permissions: DEFAULT_PERMISSIONS.owner,
       };
     }
@@ -76,58 +94,87 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
       };
     }
 
-    // Default fallback if not found in member list yet
+    // Not in the member list: fall back to guest, not member. Granting full member
+    // permissions here silently hid non-membership.
     return {
-      userRole: 'member' as RoomRole,
-      permissions: DEFAULT_PERMISSIONS.member,
+      userRole: "guest" as RoomRole,
+      permissions: DEFAULT_PERMISSIONS.guest,
     };
   }, [activeRoom, user]);
 
-  const createRoom = useCallback(async (data: CreateRoomRequest): Promise<Room> => {
-    setIsLoadingRoom(true);
-    setRoomError(null);
-    try {
-      const newRoom = await roomService.createRoom(data);
-      setActiveRoom(newRoom);
-      await refreshRooms();
-      logger.info('RoomProvider: Room created and joined', { roomId: newRoom.id });
-      return newRoom;
-    } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to create room.';
-      setRoomError(msg);
-      logger.error('RoomProvider: Create room error', { err });
-      throw err;
-    } finally {
-      setIsLoadingRoom(false);
-    }
-  }, [refreshRooms]);
+  const createRoom = useCallback(
+    async (data: CreateRoomRequest): Promise<Room> => {
+      setIsLoadingRoom(true);
+      setRoomError(null);
+      try {
+        const newRoom = await roomService.createRoom(data);
+        setActiveRoom(newRoom);
+        await refreshRooms();
+        logger.info("RoomProvider: Room created and joined", {
+          roomId: newRoom.id,
+        });
+        return newRoom;
+      } catch (err) {
+        const msg =
+          err instanceof APIError ? err.message : "Failed to create room.";
+        setRoomError(msg);
+        logger.error("RoomProvider: Create room error", { err });
+        throw err;
+      } finally {
+        setIsLoadingRoom(false);
+      }
+    },
+    [refreshRooms],
+  );
 
   const joinRoom = useCallback(async (roomId: string): Promise<Room> => {
+    const seq = ++joinSeqRef.current;
     setIsLoadingRoom(true);
     setRoomError(null);
     try {
       const joinedRoom = await roomService.joinRoom(roomId);
+      if (seq !== joinSeqRef.current) {
+        logger.info("RoomProvider: Discarding superseded join result", {
+          roomId,
+        });
+        return joinedRoom;
+      }
       setActiveRoom(joinedRoom);
-      logger.info('RoomProvider: Successfully joined room', { roomId });
+      logger.info("RoomProvider: Successfully joined room", { roomId });
       return joinedRoom;
     } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to join room.';
-      setRoomError(msg);
-      logger.error('RoomProvider: Join room error', { err });
+      const msg =
+        err instanceof APIError ? err.message : "Failed to join room.";
+      if (seq === joinSeqRef.current) {
+        setRoomError(msg);
+      }
+      logger.error("RoomProvider: Join room error", { err });
       throw err;
     } finally {
-      setIsLoadingRoom(false);
+      if (seq === joinSeqRef.current) {
+        setIsLoadingRoom(false);
+      }
     }
   }, []);
 
   const leaveRoom = useCallback(async () => {
-    if (!activeRoom || !user) return;
+    // Always tear local state down, even if there is nothing to tell the server about —
+    // otherwise a stale activeRoom keeps the lobby thinking you are still in a room.
+    if (!activeRoom || !user) {
+      joinSeqRef.current++;
+      wsService.disconnect();
+      setActiveRoom(null);
+      return;
+    }
+    joinSeqRef.current++;
     setIsLoadingRoom(true);
     try {
       await roomService.kickMember(activeRoom.id, user.id);
-      logger.info('RoomProvider: Left room successfully', { roomId: activeRoom.id });
+      logger.info("RoomProvider: Left room successfully", {
+        roomId: activeRoom.id,
+      });
     } catch (err) {
-      logger.warn('RoomProvider: Error while leaving room', { err });
+      logger.warn("RoomProvider: Error while leaving room", { err });
     } finally {
       wsService.disconnect();
       setActiveRoom(null);
@@ -136,76 +183,102 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     }
   }, [activeRoom, user, refreshRooms]);
 
-  const updateMemberRole = useCallback(async (userId: string, role: RoomRole) => {
-    if (!activeRoom) return;
-    try {
-      await roomService.updateMemberRole(activeRoom.id, userId, role);
-      // Refresh room details
-      const updated = await roomService.getRoom(activeRoom.id);
-      setActiveRoom(updated);
-    } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to update role.';
-      setRoomError(msg);
-      throw err;
-    }
-  }, [activeRoom]);
+  const updateMemberRole = useCallback(
+    async (userId: string, role: RoomRole) => {
+      if (!activeRoom) return;
+      try {
+        await roomService.updateMemberRole(activeRoom.id, userId, role);
+        // Refresh room details
+        const updated = await roomService.getRoom(activeRoom.id);
+        setActiveRoom(updated);
+      } catch (err) {
+        const msg =
+          err instanceof APIError ? err.message : "Failed to update role.";
+        setRoomError(msg);
+        throw err;
+      }
+    },
+    [activeRoom],
+  );
 
-  const kickMember = useCallback(async (userId: string) => {
-    if (!activeRoom) return;
-    try {
-      await roomService.kickMember(activeRoom.id, userId);
-      const updated = await roomService.getRoom(activeRoom.id);
-      setActiveRoom(updated);
-    } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to kick member.';
-      setRoomError(msg);
-      throw err;
-    }
-  }, [activeRoom]);
+  const kickMember = useCallback(
+    async (userId: string) => {
+      if (!activeRoom) return;
+      try {
+        await roomService.kickMember(activeRoom.id, userId);
+        const updated = await roomService.getRoom(activeRoom.id);
+        setActiveRoom(updated);
+      } catch (err) {
+        const msg =
+          err instanceof APIError ? err.message : "Failed to kick member.";
+        setRoomError(msg);
+        throw err;
+      }
+    },
+    [activeRoom],
+  );
 
-  const inviteUser = useCallback(async (username: string): Promise<RoomInvitation> => {
-    if (!activeRoom) throw new Error('No active room');
-    try {
-      const inv = await roomService.inviteUser(activeRoom.id, username);
-      logger.info('RoomProvider: Invited user successfully', { username });
-      return inv;
-    } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to invite user.';
-      setRoomError(msg);
-      throw err;
-    }
-  }, [activeRoom]);
+  const inviteUser = useCallback(
+    async (username: string): Promise<RoomInvitation> => {
+      if (!activeRoom) throw new Error("No active room");
+      try {
+        const inv = await roomService.inviteUser(activeRoom.id, username);
+        logger.info("RoomProvider: Invited user successfully", { username });
+        return inv;
+      } catch (err) {
+        const msg =
+          err instanceof APIError ? err.message : "Failed to invite user.";
+        setRoomError(msg);
+        throw err;
+      }
+    },
+    [activeRoom],
+  );
 
-  const acceptInvitation = useCallback(async (invId: string): Promise<Room> => {
-    setIsLoadingRoom(true);
-    setRoomError(null);
-    try {
-      const { room } = await roomService.acceptInvitation(invId);
-      setActiveRoom(room);
-      await refreshRooms();
-      await refreshInvitations();
-      logger.info('RoomProvider: Accepted invitation and joined room', { roomId: room.id });
-      return room;
-    } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to accept invitation.';
-      setRoomError(msg);
-      throw err;
-    } finally {
-      setIsLoadingRoom(false);
-    }
-  }, [refreshRooms, refreshInvitations]);
+  const acceptInvitation = useCallback(
+    async (invId: string): Promise<Room> => {
+      setIsLoadingRoom(true);
+      setRoomError(null);
+      try {
+        const { room } = await roomService.acceptInvitation(invId);
+        setActiveRoom(room);
+        await refreshRooms();
+        await refreshInvitations();
+        logger.info("RoomProvider: Accepted invitation and joined room", {
+          roomId: room.id,
+        });
+        return room;
+      } catch (err) {
+        const msg =
+          err instanceof APIError
+            ? err.message
+            : "Failed to accept invitation.";
+        setRoomError(msg);
+        throw err;
+      } finally {
+        setIsLoadingRoom(false);
+      }
+    },
+    [refreshRooms, refreshInvitations],
+  );
 
-  const declineInvitation = useCallback(async (invId: string): Promise<void> => {
-    try {
-      await roomService.declineInvitation(invId);
-      await refreshInvitations();
-      logger.info('RoomProvider: Declined invitation', { invId });
-    } catch (err) {
-      const msg = err instanceof APIError ? err.message : 'Failed to decline invitation.';
-      setRoomError(msg);
-      throw err;
-    }
-  }, [refreshInvitations]);
+  const declineInvitation = useCallback(
+    async (invId: string): Promise<void> => {
+      try {
+        await roomService.declineInvitation(invId);
+        await refreshInvitations();
+        logger.info("RoomProvider: Declined invitation", { invId });
+      } catch (err) {
+        const msg =
+          err instanceof APIError
+            ? err.message
+            : "Failed to decline invitation.";
+        setRoomError(msg);
+        throw err;
+      }
+    },
+    [refreshInvitations],
+  );
 
   const value = {
     activeRoom,

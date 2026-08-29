@@ -1,8 +1,8 @@
-import React, { type ButtonHTMLAttributes } from 'react';
-import styles from './IconButton.module.css';
+import React, { type ButtonHTMLAttributes } from "react";
+import styles from "./IconButton.module.css";
 
-export type IconButtonVariant = 'default' | 'ghost' | 'danger' | 'active';
-export type IconButtonSize = 'sm' | 'md' | 'lg';
+export type IconButtonVariant = "default" | "ghost" | "danger" | "active";
+export type IconButtonSize = "sm" | "md" | "lg";
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Required: accessible label for screen readers */
@@ -18,10 +18,10 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  */
 export const IconButton: React.FC<IconButtonProps> = ({
   label,
-  variant = 'default',
-  size = 'md',
+  variant = "default",
+  size = "md",
   isActive = false,
-  className = '',
+  className = "",
   children,
   ...props
 }) => {
@@ -32,15 +32,10 @@ export const IconButton: React.FC<IconButtonProps> = ({
     className,
   ]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 
   return (
-    <button
-      aria-label={label}
-      title={label}
-      className={cls}
-      {...props}
-    >
+    <button aria-label={label} title={label} className={cls} {...props}>
       {children}
     </button>
   );

@@ -21,11 +21,31 @@
 }
 
 /* Sizes */
-.xs  { width: 20px; height: 20px; font-size: 0.6rem; }
-.sm  { width: 28px; height: 28px; font-size: 0.7rem; }
-.md  { width: 36px; height: 36px; font-size: 0.85rem; }
-.lg  { width: 44px; height: 44px; font-size: 1rem; }
-.xl  { width: 56px; height: 56px; font-size: 1.25rem; }
+.xs {
+  width: 20px;
+  height: 20px;
+  font-size: 0.6rem;
+}
+.sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.7rem;
+}
+.md {
+  width: 36px;
+  height: 36px;
+  font-size: 0.85rem;
+}
+.lg {
+  width: 44px;
+  height: 44px;
+  font-size: 1rem;
+}
+.xl {
+  width: 56px;
+  height: 56px;
+  font-size: 1.25rem;
+}
 
 /* Square variant (for room icons, etc.) */
 .square {
@@ -43,5 +63,9 @@
   border: 2px solid var(--color-canvas);
 }
 
-.online  { background-color: var(--color-live); }
-.offline { background-color: var(--color-offline); }
+.online {
+  background-color: var(--color-live);
+}
+.offline {
+  background-color: var(--color-offline);
+}

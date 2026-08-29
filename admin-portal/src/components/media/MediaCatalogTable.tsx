@@ -24,11 +24,15 @@ export function MediaCatalogTable({
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
 
   const filteredAssets = React.useMemo(() => {
+    const query = searchQuery.toLowerCase()
     return assets.filter(asset => {
+      // The API omits/nulls description and thumbnail on some rows, so these are
+      // coerced before .toLowerCase() — searching used to throw on such an asset
+      // and blank the whole table.
       const matchesSearch =
-        asset.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.id.toLowerCase().includes(searchQuery.toLowerCase())
+        (asset.title ?? "").toLowerCase().includes(query) ||
+        (asset.description ?? "").toLowerCase().includes(query) ||
+        (asset.id ?? "").toLowerCase().includes(query)
 
       const matchesStatus = statusFilter === "all" || asset.status === statusFilter
       return matchesSearch && matchesStatus

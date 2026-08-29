@@ -1,0 +1,217 @@
+.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-1);
+}
+
+.feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--space-2);
+}
+
+.feed::-webkit-scrollbar {
+  width: 10px;
+}
+.feed::-webkit-scrollbar-track {
+  background: transparent;
+}
+.feed::-webkit-scrollbar-thumb {
+  background: var(--color-canvas-deep);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-surface-1);
+}
+
+/* Channel intro, shown once above the oldest message */
+.intro {
+  padding: var(--space-8) var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.introIcon {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-1);
+}
+
+.introTitle {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.introBody {
+  margin: 0;
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* Date divider */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+
+.dividerRule {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-subtle);
+}
+
+.dividerLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  letter-spacing: 0.03em;
+  user-select: none;
+}
+
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.centeredText {
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+}
+
+.jumpBtn {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px var(--space-3);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-family: inherit;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-shadow: var(--shadow-menu);
+  cursor: pointer;
+  z-index: var(--z-sticky);
+}
+
+/* ── Composer ─────────────────────────────────────────── */
+.composerWrap {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-4) var(--space-5);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-border-subtle);
+  transition: border-color var(--transition-fast);
+}
+
+.composer:focus-within {
+  border-color: var(--color-accent-border);
+}
+
+.input {
+  flex: 1;
+  min-height: 24px;
+  max-height: 180px;
+  padding: 2px 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--text-compact);
+  line-height: 1.5;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.sendBtn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.sendBtnReady {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.sendBtnReady:hover {
+  background: var(--color-accent-hover);
+}
+
+.sendBtn:disabled {
+  cursor: default;
+}
+
+.hint {
+  padding: var(--space-1) var(--space-1) 0;
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.restricted {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-muted);
+  font-size: var(--text-meta);
+  font-weight: 600;
+}

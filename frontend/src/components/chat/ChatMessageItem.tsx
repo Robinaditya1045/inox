@@ -1,95 +1,135 @@
-import React from 'react';
-import type { ChatMessage } from '../../types/chat';
-import { Avatar } from '../common/Avatar';
+import React, { useState } from "react";
+import type { ChatMessage } from "../../types/chat";
+import type { RoomRole } from "../../types/room";
+import { Avatar } from "../common/Avatar";
+import { Copy, Check, Crown, Shield } from "lucide-react";
+import styles from "./ChatMessageItem.module.css";
 
 interface MessageItemProps {
   message: ChatMessage;
   isOwn: boolean;
-  /** If true, show avatar + username + timestamp. If false (grouped), show body only with left gutter. */
+  /** If true, show avatar + username + timestamp. If false (grouped), body only. */
   isGroupLeader: boolean;
+  /** Author's role in this room, resolved from the presence list. */
+  authorRole?: RoomRole;
+  /** Current user's name, used to highlight @mentions of them. */
+  currentUsername?: string;
 }
 
 function formatTime(isoString: string): string {
   try {
-    return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(isoString).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   } catch {
-    return '';
+    return "";
   }
 }
 
+/** Splits body text so @mentions can be highlighted without dangerouslySetInnerHTML. */
+function renderBody(text: string, currentUsername?: string): React.ReactNode {
+  const parts = text.split(/(@[A-Za-z0-9_.-]+)/g);
+  return parts.map((part, i) => {
+    if (!part.startsWith("@")) return part;
+    const isMe =
+      !!currentUsername &&
+      part.slice(1).toLowerCase() === currentUsername.toLowerCase();
+    return (
+      <span key={i} className={styles.mention} data-self={isMe || undefined}>
+        {part}
+      </span>
+    );
+  });
+}
+
 export const MessageItem: React.FC<MessageItemProps> = React.memo(
-  ({ message, isOwn, isGroupLeader }) => {
+  ({ message, isOwn, isGroupLeader, authorRole, currentUsername }) => {
+    const [copied, setCopied] = useState(false);
+
+    const mentionsMe =
+      !!currentUsername &&
+      new RegExp(`@${currentUsername}\\b`, "i").test(message.message);
+
+    const handleCopy = () => {
+      navigator.clipboard
+        .writeText(message.message)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        })
+        .catch(() => {});
+    };
+
     return (
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          gap: 'var(--space-3)',
-          paddingLeft: 'var(--space-4)',
-          paddingRight: 'var(--space-4)',
-          paddingTop: isGroupLeader ? 'var(--space-3)' : 2,
-          paddingBottom: 0,
-          width: '100%',
-        }}
+        className={[
+          styles.row,
+          isGroupLeader ? styles.rowLeader : "",
+          mentionsMe ? styles.rowMention : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
-        {/* Avatar gutter — always 36px wide for alignment, visible only on leader */}
-        <div style={{ width: 36, flexShrink: 0, paddingTop: isGroupLeader ? 2 : 0 }}>
-          {isGroupLeader && (
-            <Avatar
-              username={message.username || 'U'}
-              size="sm"
-              shape={isOwn ? 'square' : 'circle'}
-            />
+        <div className={styles.gutter}>
+          {isGroupLeader ? (
+            <Avatar username={message.username || "U"} size="sm" />
+          ) : (
+            <span className={styles.hoverTime}>
+              {formatTime(message.created_at)}
+            </span>
           )}
         </div>
 
-        {/* Message content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className={styles.body}>
           {isGroupLeader && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 'var(--space-2)',
-                marginBottom: 2,
-              }}
-            >
+            <div className={styles.meta}>
               <span
-                style={{
-                  fontSize: 'var(--text-compact)',
-                  fontWeight: 600,
-                  color: isOwn ? 'var(--color-accent)' : 'var(--color-text-primary)',
-                  lineHeight: 1,
-                }}
+                className={`${styles.username} ${isOwn ? styles.usernameOwn : ""}`}
               >
-                {isOwn ? 'You' : message.username}
+                {message.username}
               </span>
-              <span style={{ fontSize: 'var(--text-meta)', color: 'var(--color-text-muted)', lineHeight: 1 }}>
+
+              {authorRole === "owner" && (
+                <span className={`${styles.badge} ${styles.badgeOwner}`}>
+                  <Crown size={9} aria-hidden="true" />
+                  OWNER
+                </span>
+              )}
+              {authorRole === "moderator" && (
+                <span className={`${styles.badge} ${styles.badgeMod}`}>
+                  <Shield size={9} aria-hidden="true" />
+                  MOD
+                </span>
+              )}
+
+              <span className={styles.time}>
                 {formatTime(message.created_at)}
               </span>
             </div>
           )}
 
-          <p
-            style={{
-              fontSize: 'var(--text-compact)',
-              lineHeight: 1.45,
-              color: 'var(--color-text-primary)',
-              wordBreak: 'break-word',
-              margin: 0,
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {message.message}
+          <p className={styles.text}>
+            {renderBody(message.message, currentUsername)}
           </p>
+        </div>
+
+        <div className={styles.actions}>
+          <button
+            className={styles.actionBtn}
+            onClick={handleCopy}
+            aria-label="Copy message text"
+            title={copied ? "Copied" : "Copy text"}
+          >
+            {copied ? <Check size={15} /> : <Copy size={15} />}
+          </button>
         </div>
       </div>
     );
-  }
+  },
 );
 
-MessageItem.displayName = 'MessageItem';
+MessageItem.displayName = "MessageItem";
 
 // Legacy export alias for backwards compatibility with ChatPanel
 export { MessageItem as ChatMessageItem };

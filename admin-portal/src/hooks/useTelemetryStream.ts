@@ -1,4 +1,5 @@
 import * as React from "react"
+import { getSessionId, telemetryWsUrl } from "@/lib/api"
 import type { SystemTelemetry, TelemetryHistoryPoint } from "@/types/telemetry"
 
 export interface UseTelemetryStreamResult {
@@ -25,6 +26,13 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
   const retryCountRef = React.useRef<number>(0)
   const watchdogTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
   const reconnectTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Last time *this* socket saw traffic. Seeded at open so a healthy but
+  // briefly quiet connection is not mistaken for a dead one.
+  const lastActivityRef = React.useRef<number>(0)
+  // Whether the current live connection ever delivered a payload. Kept separate
+  // from latestPayloadRef because demo mode writes mock snapshots into that ref,
+  // which would otherwise make a genuinely dead backend look alive.
+  const receivedLiveDataRef = React.useRef<boolean>(false)
 
   const generateMockSnapshot = React.useCallback((): SystemTelemetry => {
     const now = Date.now()
@@ -131,36 +139,42 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
 
   React.useEffect(() => {
     if (isDemoMode) {
-      setIsConnected(true)
-      setError(null)
+      // Simulated data is not a live stream. Reporting isConnected here made the
+      // dashboard render "LIVE WEBSOCKET STREAM / 5Hz LIVE" over mock numbers.
+      setIsConnected(false)
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
       }
+      if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current)
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
+      // Drop live samples so the mock series starts clean.
+      latestPayloadRef.current = null
+      hasNewPayloadRef.current = false
+      setHistory([])
       return
     }
 
     let isSubscribed = true
-    let wsEnvUrl = import.meta.env.VITE_TELEMETRY_WS_URL || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//localhost:8080/api/v1/admin/telemetry/ws`;
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      wsEnvUrl = wsEnvUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+
+    if (!getSessionId()) {
+      // Without a session the backend replies 401 to the upgrade request, so
+      // don't even attempt it — just surface how to authenticate.
+      console.warn("No inox_session_id found. Falling back to Demo Mode.")
+      setIsDemoMode(true)
+      setError("No admin session found. Open this portal with ?session_id=<id> to stream live telemetry.")
+      return
     }
-    let targetUrl = url || wsEnvUrl
-    
-    // Inject session ID for cross-origin WebSocket authentication
-    const storedSessionId = localStorage.getItem('inox_session_id');
-    if (storedSessionId) {
-      const char = targetUrl.includes('?') ? '&' : '?';
-      targetUrl = `${targetUrl}${char}session_id=${storedSessionId}`;
-    } else {
-      // If there's no session ID, don't even attempt to connect to the backend
-      // because it will return a 401 Unauthorized and clutter the console with errors.
-      console.warn("No inox_session_id found in localStorage. Falling back to Demo Mode.");
-      setIsDemoMode(true);
-      setError("No authentication session found. Running interactive Demo Mode.");
-      return;
-    }
+
+    const targetUrl = telemetryWsUrl(url)
+
+    // Entering live mode: drop any simulated samples so the charts never mix
+    // mock and real series into one line.
+    latestPayloadRef.current = null
+    hasNewPayloadRef.current = false
+    receivedLiveDataRef.current = false
+    setCurrent(null)
+    setHistory([])
 
     const connect = () => {
       if (!isSubscribed) return
@@ -173,11 +187,15 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
           setIsConnected(true)
           setError(null)
           retryCountRef.current = 0
+          lastActivityRef.current = Date.now()
 
           if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current)
           watchdogTimerRef.current = setInterval(() => {
-            const lastTime = latestPayloadRef.current ? latestPayloadRef.current.timestamp : 0
-            if (Date.now() - lastTime > 10000 && ws.readyState === WebSocket.OPEN) {
+            // The backend pushes a snapshot every 2s; 10s of silence means the
+            // socket is wedged. Comparing against the connection open time (not
+            // a zeroed payload timestamp) keeps a fresh connection from being
+            // torn down before its first snapshot arrives.
+            if (Date.now() - lastActivityRef.current > 10000 && ws.readyState === WebSocket.OPEN) {
               ws.close()
             }
           }, 5000)
@@ -189,6 +207,8 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
             const data: SystemTelemetry = JSON.parse(event.data)
             latestPayloadRef.current = data
             hasNewPayloadRef.current = true
+            lastActivityRef.current = Date.now()
+            receivedLiveDataRef.current = true
           } catch (err) {
             console.error("Failed to parse telemetry JSON:", err)
           }
@@ -204,9 +224,9 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
           if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current)
           wsRef.current = null
 
-          if (retryCountRef.current >= 1 && !latestPayloadRef.current) {
+          if (retryCountRef.current >= 2 && !receivedLiveDataRef.current) {
             setIsDemoMode(true)
-            setError("Backend offline (ws connection reset). Running interactive Demo Mode.")
+            setError("Backend unreachable after 3 attempts. Running interactive Demo Mode.")
             return
           }
 
@@ -219,6 +239,7 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
         }
       } catch (err) {
         if (isSubscribed) {
+          console.error("Failed to initialize telemetry WebSocket:", err)
           setIsConnected(false)
           setError("Failed to initialize WebSocket. Running interactive Demo Mode.")
           setIsDemoMode(true)
@@ -240,13 +261,12 @@ export function useTelemetryStream(url?: string): UseTelemetryStreamResult {
   }, [url, isDemoMode])
 
   const toggleDemoMode = React.useCallback(() => {
-    setIsDemoMode(prev => {
-      if (prev) {
-        retryCountRef.current = 0
-        setError(null)
-      }
-      return !prev
-    })
+    // State updaters must stay pure — React may invoke them twice in StrictMode,
+    // so the reset side effects live here rather than inside setIsDemoMode.
+    setIsDemoMode(prev => !prev)
+    retryCountRef.current = 0
+    receivedLiveDataRef.current = false
+    setError(null)
   }, [])
 
   return {

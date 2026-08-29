@@ -1,106 +1,110 @@
-import React, { useState } from 'react';
-import type { Room } from '../../types/room';
-import { Hash, Film, Users, Copy, Check } from 'lucide-react';
+import React, { useState } from "react";
+import type { Room } from "../../types/room";
+import type { RoomChannel } from "./RoomSidebar";
+import { Hash, Volume2, Film, Users, Copy, Check, LogOut } from "lucide-react";
+import styles from "./RoomHeader.module.css";
 
 interface RoomHeaderProps {
   activeRoom: Room | null;
-  activePanel: 'chat' | 'members' | null;
+  activeChannel: RoomChannel;
+  showMembers: boolean;
+  onToggleMembers: () => void;
+  onLeave: () => void;
   mediaUrl?: string;
+  memberCount?: number;
 }
+
+const CHANNEL_ICON: Record<
+  RoomChannel,
+  React.ComponentType<{ size?: number; style?: React.CSSProperties }>
+> = {
+  general: Hash,
+  voice: Volume2,
+  "watch-party": Film,
+};
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
   activeRoom,
-  activePanel,
+  activeChannel,
+  showMembers,
+  onToggleMembers,
+  onLeave,
   mediaUrl,
+  memberCount,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
 
   const handleCopyInvite = () => {
     if (!activeRoom) return;
     const url = `${window.location.origin}/room/${activeRoom.id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-    }).catch(() => {});
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
+      })
+      .catch(() => {});
   };
 
+  const Icon = CHANNEL_ICON[activeChannel];
+
+  let topic = "";
+  if (activeChannel === "general") {
+    topic = memberCount
+      ? `${memberCount} member${memberCount === 1 ? "" : "s"}`
+      : "";
+  } else if (activeChannel === "voice") {
+    topic = "Voice & screen share";
+  } else if (mediaUrl) {
+    topic = decodeURIComponent(mediaUrl.split("/").pop() || "");
+  }
+
   return (
-    <header
-      style={{
-        height: 'var(--header-height)',
-        padding: '0 var(--space-4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid var(--color-border-subtle)',
-        background: 'var(--color-canvas)',
-        flexShrink: 0,
-        gap: 'var(--space-3)',
-      }}
-    >
-      {/* Current context label */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', overflow: 'hidden' }}>
-        {activePanel === 'chat' && (
+    <header className={styles.header}>
+      <div className={styles.context}>
+        <Icon
+          size={20}
+          style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
+        />
+        <span className={styles.channelName}>{activeChannel}</span>
+        {topic && (
           <>
-            <Hash size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-hidden="true" />
-            <span style={{ fontWeight: 600, fontSize: 'var(--text-compact)', color: 'var(--color-text-primary)' }}>
-              general
-            </span>
-            <span style={{ color: 'var(--color-border-default)', fontSize: 'var(--text-meta)' }} aria-hidden="true">│</span>
-            <span style={{ fontSize: 'var(--text-meta)', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {activeRoom?.name}
-            </span>
-          </>
-        )}
-        {activePanel === 'members' && (
-          <>
-            <Users size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-hidden="true" />
-            <span style={{ fontWeight: 600, fontSize: 'var(--text-compact)', color: 'var(--color-text-primary)' }}>
-              members
-            </span>
-          </>
-        )}
-        {activePanel === null && (
-          <>
-            <Film size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-hidden="true" />
-            <span style={{ fontWeight: 600, fontSize: 'var(--text-compact)', color: 'var(--color-text-primary)' }}>
-              watch-party
-            </span>
-            {mediaUrl && (
-              <>
-                <span style={{ color: 'var(--color-border-default)', fontSize: 'var(--text-meta)' }} aria-hidden="true">│</span>
-                <span style={{ fontSize: 'var(--text-meta)', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
-                  {mediaUrl.split('/').pop() || mediaUrl}
-                </span>
-              </>
-            )}
+            <span className={styles.rule} aria-hidden="true" />
+            <span className={styles.topic}>{topic}</span>
           </>
         )}
       </div>
 
-      {/* Invite copy button */}
+      <div className={styles.spacer} />
+
       <button
+        className={`${styles.iconBtn} ${showMembers ? styles.iconBtnActive : ""}`}
+        onClick={onToggleMembers}
+        aria-label={showMembers ? "Hide member list" : "Show member list"}
+        aria-pressed={showMembers}
+        title="Members"
+      >
+        <Users size={18} />
+      </button>
+
+      <button
+        className={`${styles.action} ${copiedLink ? styles.actionCopied : ""}`}
         onClick={handleCopyInvite}
         aria-label="Copy room invite link"
         title="Copy invite link"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-1)',
-          padding: '4px var(--space-3)',
-          borderRadius: 'var(--radius-md)',
-          background: copiedLink ? 'var(--color-success-subtle)' : 'var(--color-surface-1)',
-          border: `1px solid ${copiedLink ? 'var(--color-success-border)' : 'var(--color-border-default)'}`,
-          color: copiedLink ? 'var(--color-success)' : 'var(--color-text-secondary)',
-          fontSize: 'var(--text-meta)',
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'all var(--transition-fast)',
-          flexShrink: 0,
-        }}
       >
-        {copiedLink ? <Check size={13} /> : <Copy size={13} />}
-        <span>{copiedLink ? 'Copied!' : 'Invite'}</span>
+        {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+        <span>{copiedLink ? "Copied" : "Invite"}</span>
+      </button>
+
+      <button
+        className={styles.leave}
+        onClick={onLeave}
+        aria-label="Leave room"
+        title="Leave room"
+      >
+        <LogOut size={14} />
+        <span>Leave</span>
       </button>
     </header>
   );

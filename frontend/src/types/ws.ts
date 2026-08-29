@@ -1,20 +1,20 @@
 export type WSEventType =
-  | 'JOIN_ROOM'
-  | 'LEAVE_ROOM'
-  | 'CHAT_MESSAGE'
-  | 'PLAY'
-  | 'PAUSE'
-  | 'SEEK'
-  | 'CHANGE_MEDIA'
-  | 'SYNC_PLAYBACK'
-  | 'WEBRTC_OFFER'
-  | 'WEBRTC_ANSWER'
-  | 'WEBRTC_ICE_CANDIDATE'
-  | 'SFU_JOIN'
-  | 'SFU_OFFER'
-  | 'SFU_ANSWER'
-  | 'SFU_ICE_CANDIDATE'
-  | 'ERROR';
+  | "JOIN_ROOM"
+  | "LEAVE_ROOM"
+  | "CHAT_MESSAGE"
+  | "PLAY"
+  | "PAUSE"
+  | "SEEK"
+  | "CHANGE_MEDIA"
+  | "SYNC_PLAYBACK"
+  | "WEBRTC_OFFER"
+  | "WEBRTC_ANSWER"
+  | "WEBRTC_ICE_CANDIDATE"
+  | "SFU_JOIN"
+  | "SFU_OFFER"
+  | "SFU_ANSWER"
+  | "SFU_ICE_CANDIDATE"
+  | "ERROR";
 
 export interface WSMessage<T = unknown> {
   type: WSEventType;

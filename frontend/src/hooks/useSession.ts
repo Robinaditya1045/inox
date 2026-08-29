@@ -1,4 +1,4 @@
-import { useAuth } from './useAuth';
+import { useAuth } from "./useAuth";
 
 export interface SessionState {
   isAuthenticated: boolean;

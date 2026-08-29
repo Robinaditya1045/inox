@@ -7,9 +7,10 @@ interface AppLayoutProps {
   activeTab: string
   setActiveTab: (tab: string) => void
   isConnected?: boolean
+  isDemoMode?: boolean
 }
 
-export function AppLayout({ children, activeTab, setActiveTab, isConnected = true }: AppLayoutProps) {
+export function AppLayout({ children, activeTab, setActiveTab, isConnected = false, isDemoMode = false }: AppLayoutProps) {
   const navItems = [
     { id: "pulse", label: "System Pulse", icon: Activity },
     { id: "media", label: "Media Library", icon: Video },
@@ -64,9 +65,13 @@ export function AppLayout({ children, activeTab, setActiveTab, isConnected = tru
         {/* Status Indicators & Controls */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-800">
-            <span className={`h-2 w-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isConnected ? "bg-emerald-500 animate-pulse" : isDemoMode ? "bg-amber-500" : "bg-rose-500"
+              }`}
+            />
             <span className="text-xs font-mono font-medium text-zinc-300">
-              {isConnected ? "TELEMETRY: LIVE" : "DISCONNECTED"}
+              {isConnected ? "TELEMETRY: LIVE" : isDemoMode ? "TELEMETRY: DEMO" : "DISCONNECTED"}
             </span>
           </div>
 

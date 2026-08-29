@@ -7,10 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { RoomInspectorDetail } from "@/types/rooms"
+import type { RoomTelemetry } from "@/types/telemetry"
 import { Users, Radio, CheckCircle2, RefreshCw, ShieldAlert, Activity, Clock, ShieldCheck } from "lucide-react"
 
-export function RoomCommandCenter() {
-  const { rooms, isLoading, isDemoMode, error, logs, forceSyncPlayback, kickParticipant, terminateRoom, refresh } = useRoomInspector()
+interface RoomCommandCenterProps {
+  /** Live rooms from the telemetry stream; omitted means demo fixtures only. */
+  liveRooms?: RoomTelemetry[]
+}
+
+export function RoomCommandCenter({ liveRooms }: RoomCommandCenterProps) {
+  const { rooms, isLoading, isDemoMode, error, logs, forceSyncPlayback, kickParticipant, terminateRoom, refresh, toggleDemoMode } = useRoomInspector(liveRooms)
   const [selectedRoom, setSelectedRoom] = React.useState<RoomInspectorDetail | null>(null)
 
   const totalPeers = React.useMemo(() => rooms.reduce((acc, r) => acc + r.participant_count, 0), [rooms])
@@ -51,6 +57,18 @@ export function RoomCommandCenter() {
               <ShieldAlert className="h-3.5 w-3.5 mr-1" /> {error}
             </span>
           )}
+
+          {/* Without this the inspector was stuck on its demo fixtures — it
+              defaults to demo mode and previously exposed no way out. */}
+          <Button
+            variant={isDemoMode ? "emerald" : "outline"}
+            size="sm"
+            onClick={toggleDemoMode}
+            className="text-xs font-mono"
+          >
+            <Radio className="h-3.5 w-3.5 mr-1.5" />
+            {isDemoMode ? "Switch to Live Rooms" : "Switch to Demo Rooms"}
+          </Button>
 
           <Button
             variant="outline"

@@ -18,7 +18,11 @@
   left: 0;
   right: 0;
   padding: var(--space-3) var(--space-4);
-  background: linear-gradient(180deg, var(--color-surface-overlay) 0%, transparent 100%);
+  background: linear-gradient(
+    180deg,
+    var(--color-surface-overlay) 0%,
+    transparent 100%
+  );
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -220,3 +224,23 @@
 }
 
 /* Range slider custom track styling via inline style is still best for dynamic progress */
+
+/* Surfaced when a source fails to load — previously these errors were silent */
+.loadError {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  z-index: var(--z-sticky);
+  pointer-events: none;
+}

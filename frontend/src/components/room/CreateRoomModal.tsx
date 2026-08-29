@@ -1,19 +1,22 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Modal } from '../common/Modal';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Modal } from "../common/Modal";
 import { TextField as Input } from "../common/TextField";
-import { Button } from '../common/Button';
-import { useRoom } from '../../hooks/useRoom';
-import { Tv, Lock, Globe, AlertCircle } from 'lucide-react';
-import styles from './CreateRoomModal.module.css';
+import { Button } from "../common/Button";
+import { useRoom } from "../../hooks/useRoom";
+import { Tv, Lock, Globe, AlertCircle } from "lucide-react";
+import styles from "./CreateRoomModal.module.css";
 
 interface CreateRoomModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) => {
-  const [name, setName] = useState('');
+export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
+  isOpen,
+  onClose,
+}) => {
+  const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -26,14 +29,17 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClos
     setValidationError(null);
 
     if (!name.trim()) {
-      setValidationError('Room name is required.');
+      setValidationError("Room name is required.");
       return;
     }
 
     try {
-      const newRoom = await createRoom({ name: name.trim(), is_private: isPrivate });
+      const newRoom = await createRoom({
+        name: name.trim(),
+        is_private: isPrivate,
+      });
       onClose();
-      setName('');
+      setName("");
       setIsPrivate(false);
       navigate(`/room/${newRoom.id}`);
     } catch {
@@ -70,23 +76,29 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClos
           onClick={() => setIsPrivate(!isPrivate)}
         >
           <div className={styles.privacyContent}>
-            <div className={`${styles.privacyIcon} ${isPrivate ? styles.privacyIconPrivate : styles.privacyIconPublic}`}>
+            <div
+              className={`${styles.privacyIcon} ${isPrivate ? styles.privacyIconPrivate : styles.privacyIconPublic}`}
+            >
               {isPrivate ? <Lock size={18} /> : <Globe size={18} />}
             </div>
             <div className={styles.privacyText}>
               <span className={styles.privacyTitle}>
-                {isPrivate ? 'Private Room' : 'Public Room'}
+                {isPrivate ? "Private Room" : "Public Room"}
               </span>
               <span className={styles.privacyDesc}>
                 {isPrivate
-                  ? 'Only invited members with direct link can join'
-                  : 'Visible in lobby for anyone to join'}
+                  ? "Only invited members with direct link can join"
+                  : "Visible in lobby for anyone to join"}
               </span>
             </div>
           </div>
 
-          <div className={`${styles.switchTrack} ${isPrivate ? styles.switchTrackPrivate : ''}`}>
-            <div className={`${styles.switchThumb} ${isPrivate ? styles.switchThumbPrivate : ''}`} />
+          <div
+            className={`${styles.switchTrack} ${isPrivate ? styles.switchTrackPrivate : ""}`}
+          >
+            <div
+              className={`${styles.switchThumb} ${isPrivate ? styles.switchThumbPrivate : ""}`}
+            />
           </div>
         </button>
 

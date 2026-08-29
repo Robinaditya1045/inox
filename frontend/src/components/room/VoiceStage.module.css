@@ -1,0 +1,94 @@
+.stage {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-auto-rows: minmax(160px, 1fr);
+  gap: var(--space-3);
+  background: var(--color-canvas);
+  overflow-y: auto;
+}
+
+.tile {
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  min-height: 160px;
+}
+
+/* Ringed while the SFU is forwarding this peer's audio */
+.tileLive {
+  border-color: var(--color-live);
+}
+
+.tileMuted .avatarWrap {
+  opacity: 0.5;
+}
+
+.nameplate {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-overlay);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  max-width: calc(100% - var(--space-4));
+}
+
+.nameplateText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screenTile {
+  grid-column: 1 / -1;
+  min-height: 320px;
+  background: #08090d;
+  border-color: var(--color-accent);
+}
+
+.screenVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #08090d;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-10);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-size: var(--text-subhead);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.emptyBody {
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+  max-width: 340px;
+  line-height: 1.5;
+}

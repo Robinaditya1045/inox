@@ -1,86 +1,88 @@
-import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
-import { useRoom } from '../../hooks/useRoom';
-import { Avatar } from '../common/Avatar';
-import { SettingsShell } from '../profile/SettingsShell';
-import { Compass, LogOut } from 'lucide-react';
-import styles from './AppRail.module.css';
+import React from "react";
+import { NavLink, useLocation } from "react-router-dom";
+import { useRoom } from "../../hooks/useRoom";
+import { Compass, Plus } from "lucide-react";
+import styles from "./AppRail.module.css";
+
+/** Two-letter monogram for a room, e.g. "Friday Night Sci-Fi" -> "FN". */
+function roomInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "??";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
 
 export const AppRail: React.FC = () => {
-  const { user, logout } = useAuth();
-  const { invitations } = useRoom();
-  
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { rooms, invitations } = useRoom();
+  const location = useLocation();
 
+  const isHome = location.pathname === "/";
   const hasPendingInvites = invitations.length > 0;
 
   return (
-    <>
-      <nav className={styles.rail} aria-label="Main navigation">
-        {/* Home / Lobby */}
+    <nav className={styles.rail} aria-label="Main navigation">
+      {/* Lobby */}
+      <div className={styles.slot}>
+        <span
+          className={`${styles.pill} ${isHome ? styles.pillActive : ""}`}
+          aria-hidden="true"
+        />
         <NavLink
           to="/"
           end
-          className={({ isActive }) =>
-            `${styles.railItem} ${isActive ? styles.railItemActive : ''}`
-          }
-          title="Room Lobby"
-          aria-label="Room Lobby"
+          className={`${styles.item} ${styles.itemHome} ${isHome ? styles.itemHomeActive : ""}`}
+          title="Lobby"
+          aria-label="Lobby"
         >
-          <Compass size={18} />
+          <Compass size={20} />
           {hasPendingInvites && (
             <span
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 4,
-                width: 7,
-                height: 7,
-                borderRadius: 'var(--radius-full)',
-                background: 'var(--color-danger)',
-                border: '1px solid var(--color-canvas)',
-              }}
-              aria-hidden="true"
-            />
+              className={styles.badge}
+              aria-label={`${invitations.length} pending invitations`}
+            >
+              {invitations.length}
+            </span>
           )}
         </NavLink>
+      </div>
 
-        <div className={styles.railDivider} />
+      <div className={styles.divider} aria-hidden="true" />
 
-        <div className={styles.railSpacer} />
+      {/* One monogram per room */}
+      {rooms.map((room) => {
+        const isActive = location.pathname === `/room/${room.id}`;
+        return (
+          <div className={styles.slot} key={room.id}>
+            <span
+              className={`${styles.pill} ${isActive ? styles.pillActive : ""}`}
+              aria-hidden="true"
+            />
+            <NavLink
+              to={`/room/${room.id}`}
+              className={`${styles.item} ${isActive ? styles.itemActive : ""}`}
+              title={room.name}
+              aria-label={room.name}
+            >
+              {roomInitials(room.name)}
+            </NavLink>
+          </div>
+        );
+      })}
 
-        {/* Logout */}
-        <button
-          className={styles.railItem}
-          onClick={logout}
-          title="Sign Out"
-          aria-label="Sign Out"
+      {/* Create a room — lives in the rail so it is reachable from inside a room too */}
+      <div className={styles.slot}>
+        <span className={styles.pill} aria-hidden="true" />
+        <NavLink
+          to="/?create=1"
+          className={`${styles.item} ${styles.itemGhost}`}
+          title="Create a room"
+          aria-label="Create a room"
         >
-          <LogOut size={16} />
-        </button>
+          <Plus size={20} />
+        </NavLink>
+      </div>
 
-        {/* User Avatar */}
-        <button
-          className={styles.railItem}
-          onClick={() => setIsProfileOpen(true)}
-          title="Profile & Settings"
-          aria-label="Profile & Settings"
-          style={{ position: 'relative', overflow: 'visible' }}
-        >
-          <Avatar
-            src={user?.avatar_url}
-            username={user?.username || 'U'}
-            size="sm"
-            status="online"
-          />
-        </button>
-      </nav>
-
-      <SettingsShell
-        isOpen={isProfileOpen}
-        onClose={() => setIsProfileOpen(false)}
-      />
-    </>
+      <div className={styles.spacer} />
+    </nav>
   );
 };

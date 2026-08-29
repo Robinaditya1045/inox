@@ -1,5 +1,5 @@
-import { apiClient } from '../../api/client';
-import type { ChatMessage } from '../../types/chat';
+import { apiClient } from "../../api/client";
+import type { ChatMessage } from "../../types/chat";
 
 export interface GetMessagesResponse {
   room_id: string;
@@ -9,7 +9,9 @@ export interface GetMessagesResponse {
 
 class ChatService {
   async getRecentMessages(roomId: string, limit = 50): Promise<ChatMessage[]> {
-    const res = await apiClient.get<GetMessagesResponse>(`/rooms/${roomId}/messages?limit=${limit}`);
+    const res = await apiClient.get<GetMessagesResponse>(
+      `/rooms/${roomId}/messages?limit=${limit}`,
+    );
     return res.messages || [];
   }
 }

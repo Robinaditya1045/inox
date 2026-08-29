@@ -1,5 +1,6 @@
 import * as React from "react"
-import type { MediaAsset, RegisterMediaRequest } from "@/types/media"
+import { apiFetch, apiJson, uploadWithProgress } from "@/lib/api"
+import type { MediaAsset, PresignedUploadResponse, RegisterMediaRequest } from "@/types/media"
 
 export interface UseMediaCatalogResult {
   assets: MediaAsset[]
@@ -103,38 +104,41 @@ export function useMediaCatalog(): UseMediaCatalogResult {
 
   const assetsRef = React.useRef<MediaAsset[]>([])
   const isDemoModeRef = React.useRef<boolean>(false)
-  assetsRef.current = assets
-  isDemoModeRef.current = isDemoMode
+
+  // Mirror state into refs from an effect rather than during render, so the
+  // refs stay consistent if React discards a render pass.
+  React.useEffect(() => {
+    assetsRef.current = assets
+  }, [assets])
+
+  React.useEffect(() => {
+    isDemoModeRef.current = isDemoMode
+  }, [isDemoMode])
 
   const fetchAssets = React.useCallback(async (silent = false) => {
     if (isDemoModeRef.current) {
       if (!silent) {
         setAssets(MOCK_ASSETS)
         setIsLoading(false)
-        setError(null)
       }
       return
     }
 
     if (!silent) setIsLoading(true)
     try {
-      const res = await fetch("/api/v1/media?limit=50&offset=0")
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`)
-      }
-      const data: MediaAsset[] = await res.json()
-      if (!data || data.length === 0) {
-        setAssets(MOCK_ASSETS)
-      } else {
-        setAssets(data)
-      }
+      const data = await apiJson<MediaAsset[] | null>("/media?limit=50&offset=0")
+      // An empty catalog is a legitimate state; substituting mock rows here made
+      // the table show assets that do not exist, whose delete/preview actions
+      // then failed against the real API.
+      setAssets(Array.isArray(data) ? data : [])
       setError(null)
     } catch (err) {
       if (!silent) {
         console.warn("Failed to fetch from backend API, switching to Demo Mode:", err)
         setAssets(MOCK_ASSETS)
         setIsDemoMode(true)
-        setError("Backend offline or empty. Displaying interactive simulated catalog.")
+        isDemoModeRef.current = true
+        setError("Backend unreachable. Displaying interactive simulated catalog.")
       }
     } finally {
       if (!silent) setIsLoading(false)
@@ -193,17 +197,10 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     formData.append("title", title)
     formData.append("description", description)
 
-    const res = await fetch("/api/v1/admin/media/upload", {
-      method: "POST",
-      body: formData,
-    })
-
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`Upload failed: ${errText || res.statusText}`)
-    }
-
-    const asset: MediaAsset = await res.json()
+    // Uploaded via XHR rather than fetch(): fetch cannot report upload progress,
+    // so the modal's progress bar used to sit at 5% for the whole transfer and
+    // then jump straight to "complete".
+    const asset = await uploadWithProgress<MediaAsset>("/admin/media/upload", formData, onProgress)
     await fetchAssets(true)
     return asset
   }, [fetchAssets])
@@ -244,9 +241,8 @@ export function useMediaCatalog(): UseMediaCatalogResult {
       return newAsset
     }
 
-    const presignRes = await fetch("/api/v1/admin/media/presigned-url", {
+    const { asset, upload_url, key } = await apiJson<PresignedUploadResponse>("/admin/media/presigned-url", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: title || file.name,
         description: description || "Direct S3/MinIO upload",
@@ -255,13 +251,6 @@ export function useMediaCatalog(): UseMediaCatalogResult {
         size: file.size,
       }),
     })
-
-    if (!presignRes.ok) {
-      const errText = await presignRes.text()
-      throw new Error(`Failed to get presigned upload URL: ${errText || presignRes.statusText}`)
-    }
-
-    const { asset, upload_url, key } = await presignRes.json()
 
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
@@ -289,21 +278,14 @@ export function useMediaCatalog(): UseMediaCatalogResult {
       xhr.send(file)
     })
 
-    const completeRes = await fetch("/api/v1/admin/media/complete-upload", {
+    const completedAsset = await apiJson<MediaAsset>("/admin/media/complete-upload", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         asset_id: asset.id,
         key: key,
       }),
     })
 
-    if (!completeRes.ok) {
-      const errText = await completeRes.text()
-      throw new Error(`Failed to complete upload registration: ${errText || completeRes.statusText}`)
-    }
-
-    const completedAsset: MediaAsset = await completeRes.json()
     await fetchAssets(true)
     return completedAsset
   }, [fetchAssets])
@@ -330,18 +312,11 @@ export function useMediaCatalog(): UseMediaCatalogResult {
       return newAsset
     }
 
-    const res = await fetch("/api/v1/admin/media/register", {
+    const asset = await apiJson<MediaAsset>("/admin/media/register", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     })
 
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`Registration failed: ${errText || res.statusText}`)
-    }
-
-    const asset: MediaAsset = await res.json()
     await fetchAssets(true)
     return asset
   }, [fetchAssets])
@@ -352,24 +327,32 @@ export function useMediaCatalog(): UseMediaCatalogResult {
       return
     }
 
-    const res = await fetch(`/api/v1/admin/media/${id}`, {
-      method: "DELETE",
-    })
+    const res = await apiFetch(`/admin/media/${id}`, { method: "DELETE" })
 
     if (!res.ok && res.status !== 204) {
-      throw new Error(`Delete failed: ${res.statusText}`)
+      const detail = await res.text().catch(() => "")
+      throw new Error(detail || `Delete failed: ${res.statusText}`)
     }
 
     setAssets(prev => prev.filter(a => a.id !== id))
   }, [])
 
   const toggleDemoMode = React.useCallback(() => {
-    setIsDemoMode(prev => {
-      const next = !prev
-      isDemoModeRef.current = next
-      return next
-    })
-  }, [])
+    // Keep the updater pure and drive the reload from the resolved value, so
+    // flipping the switch actually swaps the catalog instead of leaving the
+    // previous mode's rows on screen.
+    const next = !isDemoModeRef.current
+    isDemoModeRef.current = next
+    setIsDemoMode(next)
+    setError(null)
+
+    if (next) {
+      setAssets(MOCK_ASSETS)
+      setIsLoading(false)
+    } else {
+      void fetchAssets(false)
+    }
+  }, [fetchAssets])
 
   return {
     assets,

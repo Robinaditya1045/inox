@@ -3,59 +3,147 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: var(--space-3) 0;
+  align-items: stretch;
+  padding: var(--space-2) 0;
   gap: var(--space-2);
-  background: var(--color-canvas);
+  background: var(--color-canvas-deep);
   border-right: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
 }
 
-.railItem {
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* Each slot carries the left-edge activity pill plus the icon itself */
+.slot {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-lg);
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast),
-    border-color var(--transition-fast);
-  text-decoration: none;
   flex-shrink: 0;
 }
 
-.railItem:hover {
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
+.pill {
+  width: 3px;
+  height: 8px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  flex-shrink: 0;
+  transition:
+    height var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
-.railItemActive {
-  background-color: var(--color-accent-subtle);
+.slot:hover .pill {
+  height: 18px;
+  background: var(--color-text-secondary);
+}
+
+.pillActive,
+.slot:hover .pillActive {
+  height: 28px;
+  background: var(--color-text-primary);
+}
+
+.pillUnread {
+  height: 10px;
+  background: var(--color-text-primary);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-left: var(--space-2);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-2);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: var(--text-meta);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+  position: relative;
+  transition:
+    border-radius var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+/* Squircle-on-hover is the affordance that says "this is a room, not a button" */
+.item:hover {
+  border-radius: var(--radius-xl);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.itemActive {
+  border-radius: var(--radius-xl);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.itemHome {
+  border-radius: var(--radius-xl);
+}
+
+.itemHomeActive {
+  background: var(--color-accent-subtle);
   color: var(--color-accent);
-  border-color: var(--color-accent-border);
 }
 
-.railSpacer {
-  flex: 1;
+.itemGhost {
+  background: transparent;
+  border: 1px dashed var(--color-border-strong);
+  color: var(--color-success);
 }
 
-.railDivider {
+.itemGhost:hover {
+  background: var(--color-success-subtle);
+  border-color: var(--color-success-border);
+  color: var(--color-success);
+}
+
+.divider {
   width: 24px;
   height: 1px;
-  background: var(--color-border-subtle);
+  margin: 0 auto;
+  background: var(--color-border-default);
   border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
-/* Hidden on mobile — bottom nav handles it */
+.spacer {
+  flex: 1;
+  min-height: var(--space-2);
+}
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  border: 2px solid var(--color-canvas-deep);
+}
+
 @media (max-width: 767px) {
   .rail {
     display: none;

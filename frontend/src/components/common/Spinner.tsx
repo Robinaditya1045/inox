@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 interface SpinnerProps {
   size?: number;
@@ -9,8 +9,8 @@ interface SpinnerProps {
 
 export const Spinner: React.FC<SpinnerProps> = ({
   size = 24,
-  color = 'var(--color-accent)',
-  className = '',
+  color = "var(--color-accent)",
+  className = "",
 }) => {
   return (
     <div
@@ -20,8 +20,8 @@ export const Spinner: React.FC<SpinnerProps> = ({
         height: `${size}px`,
         border: `2px solid var(--color-border-default)`,
         borderTopColor: color,
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
+        borderRadius: "50%",
+        animation: "spin 0.8s linear infinite",
         flexShrink: 0,
       }}
       role="status"

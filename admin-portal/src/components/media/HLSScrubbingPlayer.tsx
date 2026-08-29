@@ -112,28 +112,64 @@ export function HLSScrubbingPlayer({
       }
     }
 
+    // Guards against the async CDN load resolving after this effect is torn down
+    // (dialog closed or a different rendition selected).
+    let cancelled = false
+    const safeInitVideo = () => {
+      if (!cancelled) initVideo()
+    }
+
+    let script: HTMLScriptElement | null = null
+    const onScriptLoad = () => safeInitVideo()
+    const onScriptError = () => {
+      if (!cancelled) {
+        setErrorMsg("Could not load the hls.js player library from the CDN. Check the network connection or any content blocker.")
+      }
+    }
+
     if (activeUrl.includes(".m3u8") && !video.canPlayType("application/vnd.apple.mpegurl") && typeof window !== "undefined" && !(window as any).Hls) {
       const scriptId = "hls-js-cdn-script"
-      let script = document.getElementById(scriptId) as HTMLScriptElement
+      script = document.getElementById(scriptId) as HTMLScriptElement | null
       if (!script) {
         script = document.createElement("script")
         script.id = scriptId
-        script.src = "https://cdn.jsdelivr.net/npm/hls.js@latest"
+        // Pinned to the v1 line: "@latest" silently pulls future majors, so a
+        // breaking upstream release would break playback with no code change.
+        script.src = "https://cdn.jsdelivr.net/npm/hls.js@1"
         script.async = true
-        script.onload = () => {
-          initVideo()
-        }
+        script.addEventListener("load", onScriptLoad)
+        script.addEventListener("error", onScriptError)
         document.head.appendChild(script)
       } else {
-        script.addEventListener("load", initVideo)
+        // A tag that already finished loading never fires "load" again, which
+        // previously left the player stuck on a blank frame forever.
+        if ((window as any).Hls) {
+          safeInitVideo()
+        } else {
+          script.addEventListener("load", onScriptLoad)
+          script.addEventListener("error", onScriptError)
+        }
       }
     } else {
       initVideo()
     }
 
     return () => {
+      cancelled = true
+      if (script) {
+        script.removeEventListener("load", onScriptLoad)
+        script.removeEventListener("error", onScriptError)
+      }
       if (hlsInstance) {
         hlsInstance.destroy()
+      }
+      // Stop playback and release the source; without this, closing the dialog
+      // left the audio of a non-HLS asset playing in the background.
+      const v = videoRef.current
+      if (v) {
+        v.pause()
+        v.removeAttribute("src")
+        v.load()
       }
     }
   }, [isOpen, asset, activeUrl])

@@ -1,5 +1,5 @@
-import React, { type InputHTMLAttributes, forwardRef, useId } from 'react';
-import styles from './TextField.module.css';
+import React, { type InputHTMLAttributes, forwardRef, useId } from "react";
+import styles from "./TextField.module.css";
 
 interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -9,7 +9,7 @@ interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
-  ({ label, error, icon, helperText, className = '', id, ...props }, ref) => {
+  ({ label, error, icon, helperText, className = "", id, ...props }, ref) => {
     const generatedId = useId();
     const inputId = id || generatedId;
 
@@ -26,10 +26,14 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
           <input
             ref={ref}
             id={inputId}
-            className={`${styles.input} ${icon ? styles.inputWithIcon : ''} ${error ? styles.inputError : ''}`}
+            className={`${styles.input} ${icon ? styles.inputWithIcon : ""} ${error ? styles.inputError : ""}`}
             aria-invalid={!!error}
             aria-describedby={
-              error ? `${inputId}-error` : helperText ? `${inputId}-help` : undefined
+              error
+                ? `${inputId}-error`
+                : helperText
+                  ? `${inputId}-help`
+                  : undefined
             }
             {...props}
           />
@@ -47,10 +51,10 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
         )}
       </div>
     );
-  }
+  },
 );
 
-TextField.displayName = 'TextField';
+TextField.displayName = "TextField";
 
 // Export as Input to temporarily satisfy old imports while we replace them
 export const Input = TextField;

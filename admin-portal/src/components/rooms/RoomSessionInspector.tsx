@@ -37,6 +37,11 @@ export function RoomSessionInspector({
 
   if (!room) return null
 
+  // A fixed 600s ceiling made the slider unusable past the ten-minute mark: a
+  // room playing at 1420s opened pinned to the far right and could not be
+  // scrubbed to its actual position. Track the room's real position instead.
+  const syncSliderMax = Math.max(600, Math.ceil((room.media_time_seconds || 0) * 1.5))
+
   const handleSyncSubmit = async () => {
     setIsSyncing(true)
     try {
@@ -132,7 +137,7 @@ export function RoomSessionInspector({
               <input
                 type="range"
                 min={0}
-                max={600}
+                max={syncSliderMax}
                 step={1}
                 value={syncTime}
                 onChange={e => setSyncTime(Number(e.target.value))}
@@ -188,12 +193,15 @@ export function RoomSessionInspector({
                     <TableRow key={p.user_id} className="hover:bg-zinc-900/40 border-zinc-800">
                       <TableCell className="py-2.5">
                         <div>
-                          <p className="font-semibold text-xs text-white flex items-center">
+                          {/* A div, not a p: Badge renders a <div>, and a block
+                              element inside <p> is invalid HTML that the browser
+                              silently reparents (React logs a nesting warning). */}
+                          <div className="font-semibold text-xs text-white flex items-center">
                             {p.username}
                             {p.role === "owner" && (
                               <Badge variant="cyan" className="ml-2 px-1.5 py-0 text-[9px]">HOST</Badge>
                             )}
-                          </p>
+                          </div>
                           <p className="text-[10px] font-mono text-zinc-500">ID: {p.user_id}</p>
                         </div>
                       </TableCell>

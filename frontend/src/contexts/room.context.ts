@@ -1,5 +1,11 @@
-import { createContext } from 'react';
-import type { Room, CreateRoomRequest, RoomRole, RoomPermissions, RoomInvitation } from '../types';
+import { createContext } from "react";
+import type {
+  Room,
+  CreateRoomRequest,
+  RoomRole,
+  RoomPermissions,
+  RoomInvitation,
+} from "../types";
 
 export interface RoomContextValue {
   activeRoom: Room | null;

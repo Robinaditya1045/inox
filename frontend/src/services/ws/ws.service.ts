@@ -1,22 +1,28 @@
-import type { WSEventType, WSMessage } from '../../types/ws';
-import { logger } from '../../utils/logger';
+import type { WSEventType, WSMessage } from "../../types/ws";
+import { logger } from "../../utils/logger";
 
-export type WSStatus = 'CONNECTING' | 'OPEN' | 'CLOSED';
+export type WSStatus = "CONNECTING" | "OPEN" | "CLOSED";
 type WSCallback = (msg: WSMessage<any>) => void;
 
 class WSService {
   private socket: WebSocket | null = null;
-  private status: WSStatus = 'CLOSED';
+  private status: WSStatus = "CLOSED";
   private roomId: string | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private listeners: Map<WSEventType | '*', Set<WSCallback>> = new Map();
+  private listeners: Map<WSEventType | "*", Set<WSCallback>> = new Map();
   private statusListeners: Set<(status: WSStatus) => void> = new Set();
 
   connect(roomId: string): void {
-    if (this.socket && this.roomId === roomId && (this.status === 'OPEN' || this.status === 'CONNECTING')) {
-      logger.debug('WSService: Already connected or connecting to room', { roomId });
+    if (
+      this.socket &&
+      this.roomId === roomId &&
+      (this.status === "OPEN" || this.status === "CONNECTING")
+    ) {
+      logger.debug("WSService: Already connected or connecting to room", {
+        roomId,
+      });
       return;
     }
 
@@ -29,51 +35,77 @@ class WSService {
   private initiateConnection(): void {
     if (!this.roomId) return;
 
-    this.setStatus('CONNECTING');
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.setStatus("CONNECTING");
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     // Connect to backend WebSocket endpoint
-    let wsBase = import.meta.env.VITE_WS_BASE_URL || `${protocol}//localhost:8080/api/v1`;
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      wsBase = wsBase.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+    let wsBase =
+      import.meta.env.VITE_WS_BASE_URL || `${protocol}//localhost:8080/api/v1`;
+    if (
+      window.location.hostname !== "localhost" &&
+      window.location.hostname !== "127.0.0.1"
+    ) {
+      wsBase = wsBase
+        .replace("localhost", window.location.hostname)
+        .replace("127.0.0.1", window.location.hostname);
     }
-    const storedSessionId = localStorage.getItem('inox_session_id') || '';
-    const url = `${wsBase}/rooms/${this.roomId}/ws${storedSessionId ? `?session_id=${storedSessionId}` : ''}`;
+    const storedSessionId = localStorage.getItem("inox_session_id") || "";
+    const url = `${wsBase}/rooms/${this.roomId}/ws${storedSessionId ? `?session_id=${storedSessionId}` : ""}`;
 
-    logger.info('WSService: Initiating WebSocket handshake', { url, attempt: this.reconnectAttempts + 1 });
+    logger.info("WSService: Initiating WebSocket handshake", {
+      url,
+      attempt: this.reconnectAttempts + 1,
+    });
 
     try {
       this.socket = new WebSocket(url);
 
       this.socket.onopen = () => {
-        logger.info('WSService: WebSocket connection established', { roomId: this.roomId });
-        this.setStatus('OPEN');
+        logger.info("WSService: WebSocket connection established", {
+          roomId: this.roomId,
+        });
+        this.setStatus("OPEN");
         this.reconnectAttempts = 0;
       };
 
       this.socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data) as WSMessage;
-          logger.debug('WSService: Received frame', { type: msg.type, sender: msg.sender_name });
+          logger.debug("WSService: Received frame", {
+            type: msg.type,
+            sender: msg.sender_name,
+          });
           this.dispatchEvent(msg);
         } catch (err) {
-          logger.warn('WSService: Failed to parse incoming WebSocket frame', { err, raw: event.data });
+          logger.warn("WSService: Failed to parse incoming WebSocket frame", {
+            err,
+            raw: event.data,
+          });
         }
       };
 
       this.socket.onerror = (error) => {
-        logger.error('WSService: WebSocket error observed', { error });
+        logger.error("WSService: WebSocket error observed", { error });
       };
 
       this.socket.onclose = (event) => {
-        logger.info('WSService: WebSocket connection closed', { code: event.code, reason: event.reason });
-        this.setStatus('CLOSED');
+        logger.info("WSService: WebSocket connection closed", {
+          code: event.code,
+          reason: event.reason,
+        });
+        this.setStatus("CLOSED");
         this.socket = null;
 
         // Auto-reconnect if not intentionally closed and under max attempts
         if (this.roomId && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
-          const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
-          logger.info('WSService: Scheduling reconnect', { attempt: this.reconnectAttempts, delay });
+          const delay = Math.min(
+            1000 * Math.pow(2, this.reconnectAttempts),
+            10000,
+          );
+          logger.info("WSService: Scheduling reconnect", {
+            attempt: this.reconnectAttempts,
+            delay,
+          });
           this.reconnectTimer = setTimeout(() => {
             if (this.roomId) {
               this.initiateConnection();
@@ -82,8 +114,8 @@ class WSService {
         }
       };
     } catch (err) {
-      logger.error('WSService: Failed to create WebSocket instance', { err });
-      this.setStatus('CLOSED');
+      logger.error("WSService: Failed to create WebSocket instance", { err });
+      this.setStatus("CLOSED");
     }
   }
 
@@ -94,17 +126,20 @@ class WSService {
     }
     this.roomId = null;
     if (this.socket) {
-      logger.info('WSService: Disconnecting active WebSocket');
+      logger.info("WSService: Disconnecting active WebSocket");
       this.socket.onclose = null; // Prevent auto-reconnect trigger
-      this.socket.close(1000, 'Client left room');
+      this.socket.close(1000, "Client left room");
       this.socket = null;
     }
-    this.setStatus('CLOSED');
+    this.setStatus("CLOSED");
   }
 
   send<T = unknown>(type: WSEventType, payload?: T, targetId?: string): void {
-    if (!this.socket || this.status !== 'OPEN') {
-      logger.warn('WSService: Cannot send message, socket not open', { type, status: this.status });
+    if (!this.socket || this.status !== "OPEN") {
+      logger.warn("WSService: Cannot send message, socket not open", {
+        type,
+        status: this.status,
+      });
       return;
     }
 
@@ -117,13 +152,13 @@ class WSService {
 
     try {
       this.socket.send(JSON.stringify(msg));
-      logger.debug('WSService: Frame sent', { type });
+      logger.debug("WSService: Frame sent", { type });
     } catch (err) {
-      logger.error('WSService: Send frame failed', { err, type });
+      logger.error("WSService: Send frame failed", { err, type });
     }
   }
 
-  on(type: WSEventType | '*', callback: WSCallback): () => void {
+  on(type: WSEventType | "*", callback: WSCallback): () => void {
     if (!this.listeners.has(type)) {
       this.listeners.set(type, new Set());
     }
@@ -167,7 +202,7 @@ class WSService {
     }
 
     // Notify wildcard '*' listeners
-    const wildcardListeners = this.listeners.get('*');
+    const wildcardListeners = this.listeners.get("*");
     if (wildcardListeners) {
       wildcardListeners.forEach((cb) => cb(msg));
     }

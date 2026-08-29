@@ -34,6 +34,33 @@ export function VideoUploadModal({
   const [error, setError] = React.useState<string | null>(null)
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null)
 
+  // Tracked so a pending "close after success" timer is cancelled if the modal
+  // goes away first, instead of firing against an unmounted component.
+  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  React.useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    }
+  }, [])
+
+  const scheduleClose = (delayMs: number) => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(() => {
+      resetForm()
+      onClose()
+    }, delayMs)
+  }
+
+  // Switching tabs carries over a stale error/success banner from the previous
+  // upload method, which reads as if the new tab had already run.
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    setError(null)
+    setSuccessMsg(null)
+    setProgress(0)
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0]
@@ -49,18 +76,20 @@ export function VideoUploadModal({
       setError("Please select a video file (.mp4, .mov, or .m3u8 archive) to upload.")
       return
     }
+    if (!title.trim()) {
+      setError("Asset title is required.")
+      return
+    }
     setIsSubmitting(true)
     setProgress(5)
     setError(null)
     setSuccessMsg(null)
 
     try {
-      await onUploadFile(file, title, description, (p) => setProgress(p))
+      await onUploadFile(file, title.trim(), description, (p) => setProgress(p))
+      setProgress(100)
       setSuccessMsg("Video uploaded successfully! FFmpeg 3-tier ABR transcoding job initiated.")
-      setTimeout(() => {
-        resetForm()
-        onClose()
-      }, 1800)
+      scheduleClose(1800)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed during transmission.")
     } finally {
@@ -78,18 +107,20 @@ export function VideoUploadModal({
       setError("File exceeds the 3GB limit for direct storage upload.")
       return
     }
+    if (!title.trim()) {
+      setError("Asset title is required.")
+      return
+    }
     setIsSubmitting(true)
     setProgress(5)
     setError(null)
     setSuccessMsg(null)
 
     try {
-      await onUploadDirect(file, title, description, (p) => setProgress(p))
+      await onUploadDirect(file, title.trim(), description, (p) => setProgress(p))
+      setProgress(100)
       setSuccessMsg("Direct S3 upload complete! File written directly to object storage & FFmpeg transcode queued.")
-      setTimeout(() => {
-        resetForm()
-        onClose()
-      }, 1800)
+      scheduleClose(1800)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Direct storage transfer failed.")
     } finally {
@@ -109,16 +140,13 @@ export function VideoUploadModal({
 
     try {
       await onRegisterExternal({
-        title,
+        title: title.trim(),
         description,
-        source_url: sourceUrl,
-        thumbnail_url: thumbnailUrl || undefined,
+        source_url: sourceUrl.trim(),
+        thumbnail_url: thumbnailUrl.trim() || undefined,
       })
       setSuccessMsg("External HLS stream cataloged successfully!")
-      setTimeout(() => {
-        resetForm()
-        onClose()
-      }, 1500)
+      scheduleClose(1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.")
     } finally {
@@ -149,7 +177,7 @@ export function VideoUploadModal({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="upload" value={activeTab} onValueChange={setActiveTab} className="w-full mt-2">
+        <Tabs defaultValue="upload" value={activeTab} onValueChange={handleTabChange} className="w-full mt-2">
           <TabsList className="grid w-full grid-cols-3 bg-zinc-900 border border-zinc-800">
             <TabsTrigger value="upload" className="text-xs font-mono truncate">
               <UploadCloud className="h-3.5 w-3.5 mr-1" /> Multipart (1GB)

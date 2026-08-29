@@ -1,5 +1,5 @@
-@import './styles/reset.css';
-@import './styles/theme.css';
+@import "./styles/reset.css";
+@import "./styles/theme.css";
 
 body {
   font-family: var(--font-sans);
@@ -71,5 +71,7 @@ body {
 
 /* Spin animation (used by Spinner) */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }

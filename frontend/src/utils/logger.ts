@@ -1,4 +1,4 @@
-type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
 class Logger {
   private log(level: LogLevel, msg: string, meta?: Record<string, unknown>) {
@@ -11,35 +11,35 @@ class Logger {
     };
 
     switch (level) {
-      case 'DEBUG':
+      case "DEBUG":
         console.debug(JSON.stringify(formatted));
         break;
-      case 'INFO':
+      case "INFO":
         console.info(JSON.stringify(formatted));
         break;
-      case 'WARN':
+      case "WARN":
         console.warn(JSON.stringify(formatted));
         break;
-      case 'ERROR':
+      case "ERROR":
         console.error(JSON.stringify(formatted));
         break;
     }
   }
 
   debug(msg: string, meta?: Record<string, unknown>) {
-    this.log('DEBUG', msg, meta);
+    this.log("DEBUG", msg, meta);
   }
 
   info(msg: string, meta?: Record<string, unknown>) {
-    this.log('INFO', msg, meta);
+    this.log("INFO", msg, meta);
   }
 
   warn(msg: string, meta?: Record<string, unknown>) {
-    this.log('WARN', msg, meta);
+    this.log("WARN", msg, meta);
   }
 
   error(msg: string, meta?: Record<string, unknown>) {
-    this.log('ERROR', msg, meta);
+    this.log("ERROR", msg, meta);
   }
 }
 

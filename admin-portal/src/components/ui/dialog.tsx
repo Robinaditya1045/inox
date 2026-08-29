@@ -40,15 +40,39 @@ export function DialogTrigger({ children, asChild, ...props }: React.HTMLAttribu
 
 export function DialogContent({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   const { open, onOpenChange } = React.useContext(DialogContext)
+
+  // Escape-to-close and background scroll locking: this dialog is hand-rolled
+  // rather than built on Radix, so neither behaviour came for free. Without them
+  // the only way out of a modal was the small × (or the overlay), and the page
+  // behind it kept scrolling under the open dialog.
+  React.useEffect(() => {
+    if (!open) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false)
+    }
+    document.addEventListener("keydown", onKeyDown)
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [open, onOpenChange])
+
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div 
+      <div
         className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
         onClick={() => onOpenChange(false)}
       />
       <div
+        role="dialog"
+        aria-modal="true"
         className={cn(
           "relative z-50 grid w-full max-w-lg gap-4 border border-zinc-800 bg-[#111111] p-6 shadow-2xl duration-200 rounded-xl sm:max-w-lg",
           className
@@ -57,6 +81,8 @@ export function DialogContent({ className, children, ...props }: React.HTMLAttri
       >
         {children}
         <button
+          type="button"
+          aria-label="Close dialog"
           onClick={() => onOpenChange(false)}
           className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 text-zinc-400 hover:text-white cursor-pointer"
         >

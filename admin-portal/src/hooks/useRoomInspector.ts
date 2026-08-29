@@ -1,4 +1,5 @@
 import * as React from "react"
+import { apiFetch } from "@/lib/api"
 import type { RoomInspectorDetail, AdminInterventionLog } from "@/types/rooms"
 import type { RoomTelemetry } from "@/types/telemetry"
 
@@ -13,6 +14,13 @@ export interface UseRoomInspectorResult {
   terminateRoom: (roomId: string, roomName: string) => Promise<void>
   refresh: () => void
   toggleDemoMode: () => void
+}
+
+/** Derives a sync classification from a room's QoE score. */
+function syncStatusForQoE(qoeScore: number): RoomInspectorDetail["sync_status"] {
+  if (qoeScore > 90) return "synchronized"
+  if (qoeScore > 75) return "minor_drift"
+  return "out_of_sync"
 }
 
 const MOCK_ROOM_DETAILS: RoomInspectorDetail[] = [
@@ -96,7 +104,7 @@ export function useRoomInspector(liveRooms?: RoomTelemetry[]): UseRoomInspectorR
   const [rooms, setRooms] = React.useState<RoomInspectorDetail[]>(MOCK_ROOM_DETAILS)
   const [isLoading] = React.useState<boolean>(false)
   const [isDemoMode, setIsDemoMode] = React.useState<boolean>(true)
-  const [error] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
   const [logs, setLogs] = React.useState<AdminInterventionLog[]>([
     {
       id: "log-init-1",
@@ -116,17 +124,26 @@ export function useRoomInspector(liveRooms?: RoomTelemetry[]): UseRoomInspectorR
   ])
 
   React.useEffect(() => {
-    if (liveRooms && liveRooms.length > 0 && !isDemoMode) {
-      const merged = liveRooms.map((lr, idx) => {
-        const existing = MOCK_ROOM_DETAILS.find(m => m.room_id === lr.room_id) || MOCK_ROOM_DETAILS[idx % MOCK_ROOM_DETAILS.length]
-        return {
-          ...existing,
-          ...lr,
-          sync_status: lr.qoe_score > 90 ? "synchronized" : lr.qoe_score > 75 ? "minor_drift" : "out_of_sync"
-        } as RoomInspectorDetail
-      })
-      setRooms(merged)
-    }
+    if (isDemoMode) return
+    if (!liveRooms) return
+
+    // Live telemetry carries no participant roster, room name, or owner, so
+    // those are represented as unknown rather than borrowed from a mock room —
+    // previously an unrecognized live room was padded with an arbitrary mock
+    // entry, showing fabricated participants under a real room ID.
+    const merged: RoomInspectorDetail[] = liveRooms.map(lr => ({
+      ...lr,
+      room_name: lr.room_id,
+      owner_id: "—",
+      created_at: new Date().toISOString(),
+      max_participants: Math.max(lr.participant_count, 50),
+      participants: [],
+      sync_status: syncStatusForQoE(lr.qoe_score),
+    }))
+
+    // Assigning unconditionally (including the empty case) means "no rooms
+    // live" clears the grid instead of leaving stale rows behind.
+    setRooms(merged)
   }, [liveRooms, isDemoMode])
 
   const forceSyncPlayback = React.useCallback(async (roomId: string, targetTimeSec: number, isPlaying: boolean) => {
@@ -155,16 +172,22 @@ export function useRoomInspector(liveRooms?: RoomTelemetry[]): UseRoomInspectorR
     }
 
     try {
-      const res = await fetch(`/api/v1/admin/rooms/${roomId}/sync`, {
+      const res = await apiFetch(`/admin/rooms/${roomId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ media_time_seconds: targetTimeSec, is_playing: isPlaying })
       })
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
+      setError(null)
       setLogs(prev => [actionLog, ...prev])
     } catch (err) {
-      console.warn("REST sync failed, simulating local state update:", err)
-      setLogs(prev => [actionLog, ...prev])
+      // Do not append a success entry to the audit log for an action the server
+      // rejected — the log is meant to record what actually happened.
+      console.error("Force sync failed:", err)
+      setError(
+        `Force sync failed for ${roomId}: ${err instanceof Error ? err.message : String(err)}. ` +
+        `The backend exposes no admin playback-sync endpoint yet.`
+      )
     }
   }, [isDemoMode])
 
@@ -194,21 +217,27 @@ export function useRoomInspector(liveRooms?: RoomTelemetry[]): UseRoomInspectorR
     }
 
     try {
-      const res = await fetch(`/api/v1/rooms/${roomId}/members/${userId}`, {
+      const res = await apiFetch(`/rooms/${roomId}/members/${userId}`, {
         method: "DELETE"
       })
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
-      setLogs(prev => [actionLog, ...prev])
-    } catch (err) {
-      console.warn("REST kick failed, simulating eviction:", err)
+
+      setError(null)
+      // Only drop the participant locally once the server has confirmed it;
+      // removing them on failure made a rejected kick look like it worked.
       setRooms(prev => prev.map(r => {
         if (r.room_id !== roomId) return r
+        const updatedParticipants = r.participants.filter(p => p.user_id !== userId)
         return {
           ...r,
-          participants: r.participants.filter(p => p.user_id !== userId)
+          participant_count: Math.max(0, r.participant_count - 1),
+          participants: updatedParticipants
         }
       }))
       setLogs(prev => [actionLog, ...prev])
+    } catch (err) {
+      console.error("Kick participant failed:", err)
+      setError(`Failed to evict ${username}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }, [isDemoMode])
 
@@ -228,24 +257,37 @@ export function useRoomInspector(liveRooms?: RoomTelemetry[]): UseRoomInspectorR
     }
 
     try {
-      const res = await fetch(`/api/v1/admin/rooms/${roomId}`, { method: "DELETE" })
+      // The backend has no /admin/rooms route; room deletion is the owner-scoped
+      // DELETE /rooms/{id} endpoint registered in backend/internal/api/router.go.
+      const res = await apiFetch(`/rooms/${roomId}`, { method: "DELETE" })
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
+      setError(null)
       setRooms(prev => prev.filter(r => r.room_id !== roomId))
       setLogs(prev => [actionLog, ...prev])
     } catch (err) {
-      console.warn("REST terminate failed, simulating termination:", err)
-      setRooms(prev => prev.filter(r => r.room_id !== roomId))
-      setLogs(prev => [actionLog, ...prev])
+      console.error("Terminate room failed:", err)
+      setError(`Failed to terminate "${roomName}": ${err instanceof Error ? err.message : String(err)}`)
     }
   }, [isDemoMode])
 
   const toggleDemoMode = React.useCallback(() => {
-    setIsDemoMode(prev => !prev)
-  }, [])
+    const next = !isDemoMode
+    setIsDemoMode(next)
+    // Returning to demo mode restores the sample rooms; leaving it hands control
+    // back to the live telemetry effect.
+    if (next) setRooms([...MOCK_ROOM_DETAILS])
+    setError(null)
+  }, [isDemoMode])
 
   const refresh = React.useCallback(() => {
-    setRooms([...MOCK_ROOM_DETAILS])
-  }, [])
+    // Only demo mode is refreshed from the mock fixtures; in live mode the rooms
+    // come from the telemetry stream, and overwriting them with mock data made
+    // "Refresh Telemetry" replace real rooms with fake ones.
+    if (isDemoMode) {
+      setRooms([...MOCK_ROOM_DETAILS])
+    }
+    setError(null)
+  }, [isDemoMode])
 
   return {
     rooms,

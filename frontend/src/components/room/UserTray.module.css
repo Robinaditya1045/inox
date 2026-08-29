@@ -1,0 +1,98 @@
+/* Always-present identity + self-controls strip. Sits at the same pixel in the lobby
+   sidebar and in every room sidebar so mute/deafen never move. */
+.tray {
+  height: var(--user-tray-height);
+  flex-shrink: 0;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--color-canvas-deep);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 var(--space-1);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--transition-fast);
+}
+
+.identity:hover {
+  background: var(--color-surface-1);
+}
+
+.names {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.username {
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+}
+
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Muted / deafened read as danger, matching the call-control vocabulary */
+.btnActive {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+.btnActive:hover:not(:disabled) {
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
+}
