@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import Hls from 'hls.js';
-import { usePlayerSync } from '../../hooks/usePlayerSync';
-import { usePermissions } from '../../hooks/usePermissions';
-import { useRoomSocket } from '../../hooks/useRoomSocket';
-import { normalizeMediaUrl } from '../../utils/mediaUrl';
+import React, { useRef, useEffect, useState, useCallback } from "react";
+import Hls from "hls.js";
+import { usePlayerSync } from "../../hooks/usePlayerSync";
+import { usePermissions } from "../../hooks/usePermissions";
+import { useRoomSocket } from "../../hooks/useRoomSocket";
+import { normalizeMediaUrl } from "../../utils/mediaUrl";
+import { logger } from "../../utils/logger";
 import { PlayerScrubber } from "./PlayerScrubber";
 import {
   Play,
@@ -17,14 +18,17 @@ import {
   WifiOff,
   Layers,
   ChevronUp,
-} from 'lucide-react';
-import styles from './WatchPartyPlayer.module.css';
+  AlertCircle,
+} from "lucide-react";
+import styles from "./WatchPartyPlayer.module.css";
 
 interface WatchPartyPlayerProps {
   onOpenLibrary?: () => void;
 }
 
-export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrary }) => {
+export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
+  onOpenLibrary,
+}) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -37,8 +41,11 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [currentLevel, setCurrentLevel] = useState(-1); // -1 = auto ABR
-  const [levels, setLevels] = useState<{ index: number; height: number; bitrate: number }[]>([]);
+  const [levels, setLevels] = useState<
+    { index: number; height: number; bitrate: number }[]
+  >([]);
   const [showQuality, setShowQuality] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
@@ -68,10 +75,24 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       hlsRef.current = null;
     }
 
+    // Tear the old source down explicitly. Without this, switching between a direct
+    // MP4 and an HLS master can leave the previous src attached and the new one never
+    // starts. hls.js only clears src on detach when it owns the object URL.
+    video.removeAttribute("src");
+    video.load();
+
+    // Reset per-source state before the new source attaches
+    setProgress(0);
+    setDuration(0);
+    setIsPlayingLocal(false);
+    setLevels([]);
+    setCurrentLevel(-1);
+    setLoadError(null);
+
     const isHLS =
-      effectiveUrl.includes('.m3u8') ||
-      effectiveUrl.includes('/hls/') ||
-      effectiveUrl.includes('hls_master');
+      effectiveUrl.includes(".m3u8") ||
+      effectiveUrl.includes("/hls/") ||
+      effectiveUrl.includes("hls_master");
 
     if (isHLS && Hls.isSupported()) {
       const hls = new Hls({
@@ -81,8 +102,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         abrEwmaDefaultEstimate: 1_000_000,
         startLevel: -1, // auto
       });
-      hls.loadSource(effectiveUrl);
-      hls.attachMedia(video);
+      hlsRef.current = hls;
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
         const parsedLevels = data.levels.map((l, i) => ({
@@ -93,25 +113,48 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         parsedLevels.sort((a, b) => b.height - a.height);
         setLevels(parsedLevels);
         setCurrentLevel(-1);
+        setLoadError(null);
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
         setCurrentLevel(data.level);
       });
 
-      hlsRef.current = hls;
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS
-      video.src = effectiveUrl;
-    } else {
-      // Direct MP4 / WebM
-      video.src = effectiveUrl;
-    }
+      // Without this, a failed manifest or segment fetch fails silently and the
+      // player just sits on a black frame with no indication of why.
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) {
+          logger.debug("Player: non-fatal HLS error", {
+            type: data.type,
+            details: data.details,
+          });
+          return;
+        }
+        logger.error("Player: fatal HLS error", {
+          type: data.type,
+          details: data.details,
+          url: effectiveUrl,
+        });
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          setLoadError("Could not load this stream. Retrying…");
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          setLoadError("Playback error. Recovering…");
+          hls.recoverMediaError();
+        } else {
+          setLoadError("This media could not be played.");
+          hls.destroy();
+          hlsRef.current = null;
+        }
+      });
 
-    // Reset playback state on source change
-    setProgress(0);
-    setDuration(0);
-    setIsPlayingLocal(false);
+      hls.loadSource(effectiveUrl);
+      hls.attachMedia(video);
+    } else {
+      // Safari native HLS, or a direct MP4 / WebM
+      video.src = effectiveUrl;
+      video.load();
+    }
 
     return () => {
       if (hlsRef.current) {
@@ -189,7 +232,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
       setProgress(newTime);
       emitSeek(newTime);
     },
-    [permissions.can_control_playback, emitSeek]
+    [permissions.can_control_playback, emitSeek],
   );
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -237,15 +280,19 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore key events when typing inside inputs or textareas
       const target = e.target as HTMLElement;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+      )
+        return;
 
-      if (e.code === 'Space') {
+      if (e.code === "Space") {
         e.preventDefault();
         handlePlayClick();
-      } else if (e.code === 'KeyM') {
+      } else if (e.code === "KeyM") {
         e.preventDefault();
         toggleMute();
-      } else if (e.code === 'KeyF') {
+      } else if (e.code === "KeyF") {
         e.preventDefault();
         toggleFullscreen();
       }
@@ -253,8 +300,8 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
 
     const container = containerRef.current;
     if (!container) return;
-    container.addEventListener('keydown', handleKeyDown);
-    return () => container.removeEventListener('keydown', handleKeyDown);
+    container.addEventListener("keydown", handleKeyDown);
+    return () => container.removeEventListener("keydown", handleKeyDown);
   }, [handlePlayClick, toggleMute, toggleFullscreen]);
 
   const setQualityLevel = (level: number) => {
@@ -270,8 +317,8 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
 
   const currentQualityLabel =
     currentLevel === -1 || levels.length === 0
-      ? 'Auto'
-      : `${levels.find((l) => l.index === currentLevel)?.height ?? '?'}p`;
+      ? "Auto"
+      : `${levels.find((l) => l.index === currentLevel)?.height ?? "?"}p`;
 
   return (
     <div
@@ -287,13 +334,21 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         className={styles.topBar}
         style={{
           opacity: showControls || !isPlayingLocal ? 1 : 0,
-          pointerEvents: showControls || !isPlayingLocal ? 'auto' : 'none',
+          pointerEvents: showControls || !isPlayingLocal ? "auto" : "none",
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <div className={`${styles.statusIndicator} ${isConnected ? styles.statusSynced : styles.statusOffline}`}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+          }}
+        >
+          <div
+            className={`${styles.statusIndicator} ${isConnected ? styles.statusSynced : styles.statusOffline}`}
+          >
             {isConnected ? <Wifi size={11} /> : <WifiOff size={11} />}
-            <span>{isConnected ? 'SYNCED' : 'OFFLINE'}</span>
+            <span>{isConnected ? "SYNCED" : "OFFLINE"}</span>
           </div>
           {levels.length > 0 && (
             <div className={styles.abrIndicator}>
@@ -322,18 +377,30 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         onPlay={() => setIsPlayingLocal(true)}
         onPause={() => setIsPlayingLocal(false)}
         className={styles.video}
-        style={{ cursor: permissions.can_control_playback ? 'pointer' : 'default' }}
+        style={{
+          cursor: permissions.can_control_playback ? "pointer" : "default",
+        }}
         onClick={handlePlayClick}
         playsInline
       />
+
+      {loadError && (
+        <div role="status" aria-live="polite" className={styles.loadError}>
+          <AlertCircle size={14} />
+          <span>{loadError}</span>
+        </div>
+      )}
 
       {/* Bottom Controls */}
       <div
         className={styles.bottomBar}
         style={{
           opacity: showControls || !isPlayingLocal ? 1 : 0,
-          transform: showControls || !isPlayingLocal ? 'translateY(0)' : 'translateY(6px)',
-          pointerEvents: showControls || !isPlayingLocal ? 'auto' : 'none',
+          transform:
+            showControls || !isPlayingLocal
+              ? "translateY(0)"
+              : "translateY(6px)",
+          pointerEvents: showControls || !isPlayingLocal ? "auto" : "none",
         }}
       >
         {/* Progress Scrubber (Memoized Child) */}
@@ -345,13 +412,25 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
         />
 
         {/* Action Row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-3)",
+            }}
+          >
             {/* Play/Pause */}
             <button
               onClick={handlePlayClick}
               disabled={!permissions.can_control_playback}
-              aria-label={isPlayingLocal ? 'Pause Video' : 'Play Video'}
+              aria-label={isPlayingLocal ? "Pause Video" : "Play Video"}
               className={`${styles.playBtn} ${permissions.can_control_playback ? styles.playBtnCanControl : styles.playBtnDisabled}`}
             >
               {!permissions.can_control_playback ? (
@@ -364,13 +443,25 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             </button>
 
             {/* Volume */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+              }}
+            >
               <button
                 onClick={toggleMute}
-                aria-label={isMuted || volume === 0 ? 'Unmute Audio' : 'Mute Audio'}
-                className={`${styles.iconBtn} ${isMuted || volume === 0 ? styles.iconBtnDanger : ''}`}
+                aria-label={
+                  isMuted || volume === 0 ? "Unmute Audio" : "Mute Audio"
+                }
+                className={`${styles.iconBtn} ${isMuted || volume === 0 ? styles.iconBtnDanger : ""}`}
               >
-                {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                {isMuted || volume === 0 ? (
+                  <VolumeX size={16} />
+                ) : (
+                  <Volume2 size={16} />
+                )}
               </button>
               <input
                 type="range"
@@ -388,10 +479,16 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+            }}
+          >
             {/* Quality Selector */}
             {levels.length > 0 && (
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: "relative" }}>
                 <button
                   onClick={() => setShowQuality((p) => !p)}
                   aria-label="Video Quality Settings"
@@ -405,7 +502,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
                   <div className={styles.qualityMenu}>
                     <button
                       onClick={() => setQualityLevel(-1)}
-                      className={`${styles.qualityMenuItem} ${currentLevel === -1 ? styles.qualityMenuItemActive : ''}`}
+                      className={`${styles.qualityMenuItem} ${currentLevel === -1 ? styles.qualityMenuItemActive : ""}`}
                     >
                       Auto ABR
                     </button>
@@ -413,9 +510,10 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
                       <button
                         key={l.index}
                         onClick={() => setQualityLevel(l.index)}
-                        className={`${styles.qualityMenuItem} ${currentLevel === l.index ? styles.qualityMenuItemActive : ''}`}
+                        className={`${styles.qualityMenuItem} ${currentLevel === l.index ? styles.qualityMenuItemActive : ""}`}
                       >
-                        {l.height ? `${l.height}p` : `Level ${l.index}`} · {Math.round(l.bitrate / 1000)}k
+                        {l.height ? `${l.height}p` : `Level ${l.index}`} ·{" "}
+                        {Math.round(l.bitrate / 1000)}k
                       </button>
                     ))}
                   </div>
@@ -426,7 +524,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
             {/* Fullscreen */}
             <button
               onClick={toggleFullscreen}
-              aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
               className={styles.iconBtn}
             >
               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
@@ -437,4 +535,3 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({ onOpenLibrar
     </div>
   );
 };
-

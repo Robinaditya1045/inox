@@ -92,7 +92,7 @@ func NewRouter(
 			mux.Handle("GET /api/v1/rooms/{id}", requireAuth(requireMember(http.HandlerFunc(roomHandler.GetRoom))))
 			mux.Handle("PUT /api/v1/rooms/{id}/members/{user_id}/role", requireAuth(http.HandlerFunc(roomHandler.AssignRole)))
 			mux.Handle("DELETE /api/v1/rooms/{id}/members/{user_id}", requireAuth(http.HandlerFunc(roomHandler.KickMember)))
-			
+
 			// Room deletion and leaving
 			mux.Handle("DELETE /api/v1/rooms/{id}", requireAuth(requireMember(http.HandlerFunc(roomHandler.DeleteRoom))))
 			mux.Handle("DELETE /api/v1/rooms/{id}/members/me", requireAuth(requireMember(http.HandlerFunc(roomHandler.LeaveRoom))))

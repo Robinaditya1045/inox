@@ -1,5 +1,5 @@
-import { createContext } from 'react';
-import type { RTCConnectionState } from '../types/rtc';
+import { createContext } from "react";
+import type { RTCConnectionState } from "../types/rtc";
 
 export interface RTCContextValue {
   connectionState: RTCConnectionState;

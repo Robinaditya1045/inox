@@ -1,6 +1,10 @@
-import { logger } from '../../utils/logger';
+import { logger } from "../../utils/logger";
 
-export type TrackHandler = (track: MediaStreamTrack, stream: MediaStream, peerId: string) => void;
+export type TrackHandler = (
+  track: MediaStreamTrack,
+  stream: MediaStream,
+  peerId: string,
+) => void;
 export type IceCandidateHandler = (candidate: RTCIceCandidate) => void;
 
 class RTCService {
@@ -10,7 +14,10 @@ class RTCService {
   private onTrackCallback: TrackHandler | null = null;
   private onIceCandidateCallback: IceCandidateHandler | null = null;
 
-  public setCallbacks(onTrack: TrackHandler, onIceCandidate: IceCandidateHandler): void {
+  public setCallbacks(
+    onTrack: TrackHandler,
+    onIceCandidate: IceCandidateHandler,
+  ): void {
     this.onTrackCallback = onTrack;
     this.onIceCandidateCallback = onIceCandidate;
   }
@@ -22,8 +29,8 @@ class RTCService {
 
     const config: RTCConfiguration = {
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
       ],
     };
 
@@ -39,13 +46,18 @@ class RTCService {
       if (event.streams && event.streams[0] && this.onTrackCallback) {
         const stream = event.streams[0];
         const peerId = stream.id || `remote-${Date.now()}`;
-        logger.info('RTCService: Received remote track', { kind: event.track.kind, peerId });
+        logger.info("RTCService: Received remote track", {
+          kind: event.track.kind,
+          peerId,
+        });
         this.onTrackCallback(event.track, stream, peerId);
       }
     };
 
     this.pc.onconnectionstatechange = () => {
-      logger.info('RTCService: Connection state changed', { state: this.pc?.connectionState });
+      logger.info("RTCService: Connection state changed", {
+        state: this.pc?.connectionState,
+      });
     };
 
     return this.pc;
@@ -68,10 +80,10 @@ class RTCService {
         });
       }
 
-      logger.info('RTCService: Acquired local audio stream');
+      logger.info("RTCService: Acquired local audio stream");
       return this.localAudioStream;
     } catch (err) {
-      logger.error('RTCService: Failed to acquire local audio', { err });
+      logger.error("RTCService: Failed to acquire local audio", { err });
       throw err;
     }
   }
@@ -93,10 +105,10 @@ class RTCService {
         });
       }
 
-      logger.info('RTCService: Started screen sharing');
+      logger.info("RTCService: Started screen sharing");
       return this.localScreenStream;
     } catch (err) {
-      logger.error('RTCService: Failed to get display media', { err });
+      logger.error("RTCService: Failed to get display media", { err });
       throw err;
     }
   }
@@ -113,7 +125,7 @@ class RTCService {
         }
       });
       this.localScreenStream = null;
-      logger.info('RTCService: Stopped screen sharing');
+      logger.info("RTCService: Stopped screen sharing");
     }
   }
 
@@ -126,7 +138,7 @@ class RTCService {
   }
 
   public async createOffer(): Promise<RTCSessionDescriptionInit> {
-    if (!this.pc) throw new Error('RTC connection not initialized');
+    if (!this.pc) throw new Error("RTC connection not initialized");
     const offer = await this.pc.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: true,
@@ -137,23 +149,34 @@ class RTCService {
 
   public async handleAnswer(sdp: string): Promise<void> {
     if (!this.pc) return;
-    if (this.pc.signalingState !== 'have-local-offer') {
-      logger.warn('RTCService: Ignoring SFU_ANSWER because signalingState is not have-local-offer', { state: this.pc.signalingState });
+    if (this.pc.signalingState !== "have-local-offer") {
+      logger.warn(
+        "RTCService: Ignoring SFU_ANSWER because signalingState is not have-local-offer",
+        { state: this.pc.signalingState },
+      );
       return;
     }
-    await this.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
+    await this.pc.setRemoteDescription(
+      new RTCSessionDescription({ type: "answer", sdp }),
+    );
   }
 
-  public async handleIceCandidate(candidate: string, sdpMid?: string, sdpMLineIndex?: number): Promise<void> {
+  public async handleIceCandidate(
+    candidate: string,
+    sdpMid?: string,
+    sdpMLineIndex?: number,
+  ): Promise<void> {
     if (!this.pc) return;
     try {
-      await this.pc.addIceCandidate(new RTCIceCandidate({
-        candidate,
-        sdpMid: sdpMid || undefined,
-        sdpMLineIndex: sdpMLineIndex ?? undefined,
-      }));
+      await this.pc.addIceCandidate(
+        new RTCIceCandidate({
+          candidate,
+          sdpMid: sdpMid || undefined,
+          sdpMLineIndex: sdpMLineIndex ?? undefined,
+        }),
+      );
     } catch (err) {
-      logger.error('RTCService: Failed to add ICE candidate', { err });
+      logger.error("RTCService: Failed to add ICE candidate", { err });
     }
   }
 
@@ -170,7 +193,7 @@ class RTCService {
       this.pc.close();
       this.pc = null;
     }
-    logger.info('RTCService: Closed WebRTC connection');
+    logger.info("RTCService: Closed WebRTC connection");
   }
 }
 

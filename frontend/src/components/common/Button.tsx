@@ -1,9 +1,9 @@
-import React, { type ButtonHTMLAttributes } from 'react';
-import { Spinner } from './Spinner';
-import styles from './Button.module.css';
+import React, { type ButtonHTMLAttributes } from "react";
+import { Spinner } from "./Spinner";
+import styles from "./Button.module.css";
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+export type ButtonSize = "sm" | "md" | "lg";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -15,12 +15,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button: React.FC<ButtonProps> = ({
   children,
-  variant = 'primary',
-  size = 'md',
+  variant = "primary",
+  size = "md",
   isLoading = false,
   icon,
   fullWidth = false,
-  className = '',
+  className = "",
   disabled,
   ...props
 }) => {
@@ -28,11 +28,11 @@ export const Button: React.FC<ButtonProps> = ({
     styles.btn,
     styles[variant],
     styles[size],
-    fullWidth ? styles.fullWidth : '',
+    fullWidth ? styles.fullWidth : "",
     className,
   ]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 
   return (
     <button
@@ -42,7 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
       className={cls}
       {...props}
     >
-      {isLoading && <Spinner size={size === 'sm' ? 14 : 16} />}
+      {isLoading && <Spinner size={size === "sm" ? 14 : 16} />}
       {!isLoading && icon && <span className={styles.icon}>{icon}</span>}
       {children && <span>{children}</span>}
     </button>

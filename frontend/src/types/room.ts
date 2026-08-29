@@ -1,4 +1,4 @@
-export type RoomRole = 'owner' | 'moderator' | 'member' | 'guest';
+export type RoomRole = "owner" | "moderator" | "member" | "guest";
 
 export interface RoomPermissions {
   can_control_playback: boolean;
@@ -34,7 +34,7 @@ export interface CreateRoomRequest {
   is_private: boolean;
 }
 
-export type InvitationStatus = 'pending' | 'accepted' | 'declined';
+export type InvitationStatus = "pending" | "accepted" | "declined";
 
 export interface RoomInvitation {
   id: string;

@@ -29,11 +29,15 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--color-accent-purple), var(--color-accent-cyan));
+  background: linear-gradient(
+    135deg,
+    var(--color-accent-purple),
+    var(--color-accent-cyan)
+  );
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #FFF;
+  color: #fff;
   box-shadow: 0 0 15px rgba(170, 59, 255, 0.4);
   flex-shrink: 0;
 }

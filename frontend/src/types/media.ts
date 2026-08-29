@@ -1,4 +1,4 @@
-export type MediaStatus = 'pending' | 'processing' | 'ready' | 'failed';
+export type MediaStatus = "pending" | "processing" | "ready" | "failed";
 
 export interface MediaRendition {
   id: string;

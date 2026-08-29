@@ -1,4 +1,5 @@
-import { useTelemetryStream } from "@/hooks/useTelemetryStream"
+import type { UseTelemetryStreamResult } from "@/hooks/useTelemetryStream"
+import { telemetryDisplayUrl } from "@/lib/api"
 import { MetricCard } from "@/components/dashboard/MetricCard"
 import { LiveTelemetryChart } from "@/components/dashboard/LiveTelemetryChart"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -7,8 +8,15 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Cpu, Server, Users, Database, Activity, Wifi, RefreshCw, ShieldAlert, Zap, Layers } from "lucide-react"
 
-export function SystemPulseDashboard() {
-  const { current, history, isConnected, isDemoMode, toggleDemoMode, error } = useTelemetryStream()
+const TELEMETRY_ENDPOINT = telemetryDisplayUrl()
+
+interface SystemPulseDashboardProps {
+  /** Owned by App so the stream and its history survive tab switches. */
+  telemetry: UseTelemetryStreamResult
+}
+
+export function SystemPulseDashboard({ telemetry }: SystemPulseDashboardProps) {
+  const { current, history, isConnected, isDemoMode, toggleDemoMode, error } = telemetry
 
   const goroutines = current?.goroutines || 0
   const heapMb = current ? Number((current.heap_alloc_bytes / (1024 * 1024)).toFixed(1)) : 0
@@ -39,13 +47,15 @@ export function SystemPulseDashboard() {
                 {isConnected ? "LIVE WEBSOCKET STREAM" : isDemoMode ? "DEMO SIMULATION MODE" : "DISCONNECTED"}
               </span>
               <Badge variant={isConnected ? "success" : isDemoMode ? "warning" : "destructive"}>
-                {isConnected ? "5Hz LIVE" : isDemoMode ? "2Hz FALLBACK" : "OFFLINE"}
+                {/* The backend broadcasts a snapshot every 2s; the demo generator
+                    ticks every 200ms. The previous labels had these reversed. */}
+                {isConnected ? "0.5Hz LIVE" : isDemoMode ? "5Hz SIMULATED" : "OFFLINE"}
               </Badge>
             </div>
             <p className="text-xs font-mono text-zinc-400 mt-0.5">
               {isDemoMode
-                ? "Backend offline or unreachable. Streaming simulated high-frequency RED/USE ticks."
-                : "Connected to ws://localhost:8080/api/v1/admin/telemetry/ws via Vite Proxy."}
+                ? "Backend offline or unreachable. Streaming simulated RED/USE ticks."
+                : `Streaming from ${TELEMETRY_ENDPOINT}`}
             </p>
           </div>
         </div>

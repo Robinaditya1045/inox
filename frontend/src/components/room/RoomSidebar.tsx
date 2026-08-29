@@ -1,137 +1,193 @@
-import React from 'react';
-import type { Room } from '../../types/room';
-import { usePresence } from '../../hooks/usePresence';
-import { Tv, Lock, Globe, Hash, Volume2, Users, Film } from 'lucide-react';
+import React from "react";
+import type { Room } from "../../types/room";
+import { usePresence } from "../../hooks/usePresence";
+import { useRTC } from "../../hooks/useRTC";
+import { useAuth } from "../../hooks/useAuth";
+import { Avatar } from "../common/Avatar";
+import { VoiceStatusPanel } from "./VoiceStatusPanel";
+import { UserTray } from "./UserTray";
+import {
+  Hash,
+  Volume2,
+  Film,
+  Lock,
+  Globe,
+  ChevronDown,
+  MicOff,
+  ScreenShare,
+} from "lucide-react";
+import styles from "./RoomSidebar.module.css";
+
+export type RoomChannel = "general" | "voice" | "watch-party";
 
 interface RoomSidebarProps {
   activeRoom: Room | null;
-  activePanel: 'chat' | 'members' | null;
-  isPlayerFullscreen?: boolean;
+  activeChannel: RoomChannel;
+  onSelectChannel: (channel: RoomChannel) => void;
+  onOpenRoomMenu?: () => void;
+  isMediaPlaying?: boolean;
 }
 
-const navItemStyle = (isActive: boolean): React.CSSProperties => ({
-  width: '100%',
-  padding: '5px var(--space-2)',
-  borderRadius: 'var(--radius-md)',
-  background: isActive ? 'var(--color-surface-2)' : 'transparent',
-  color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-  fontSize: 'var(--text-compact)',
-  fontWeight: isActive ? 600 : 400,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 'var(--space-2)',
-  cursor: 'default',
-  border: 'none',
-  transition: 'background-color var(--transition-fast), color var(--transition-fast)',
-  textAlign: 'left' as const,
-});
-
-const sectionLabelStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 'var(--space-1)',
-  padding: '4px var(--space-2)',
-  color: 'var(--color-text-muted)',
-  fontSize: 'var(--text-label)',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.07em',
-  userSelect: 'none',
-};
-
-export const RoomSidebar: React.FC<RoomSidebarProps> = ({ activeRoom, activePanel }) => {
+export const RoomSidebar: React.FC<RoomSidebarProps> = ({
+  activeRoom,
+  activeChannel,
+  onSelectChannel,
+  onOpenRoomMenu,
+  isMediaPlaying,
+}) => {
   const { members } = usePresence();
+  const { user } = useAuth();
+  const { connectionState, remoteStreams, isAudioMuted, isScreenSharing } =
+    useRTC(activeRoom?.id);
+
+  const inVoice = connectionState === "connected";
+
+  // Who the SFU is actually forwarding, resolved to names via the presence list
+  const remotePeers = Array.from(remoteStreams.keys()).map((userId) => ({
+    userId,
+    username: members.find((m) => m.user_id === userId)?.username || "Peer",
+  }));
+
+  const voiceCount = (inVoice ? 1 : 0) + remotePeers.length;
+
+  const channelClass = (channel: RoomChannel) =>
+    `${styles.channel} ${activeChannel === channel ? styles.channelActive : ""}`;
 
   return (
-    <aside
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Room Identity Header */}
-      <div
-        style={{
-          height: 'var(--header-height)',
-          padding: '0 var(--space-4)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-2)',
-          borderBottom: '1px solid var(--color-border-subtle)',
-          flexShrink: 0,
-        }}
+    <aside className={styles.sidebar} aria-label="Room channels">
+      {/* Room identity */}
+      <button
+        className={styles.roomHeader}
+        onClick={onOpenRoomMenu}
+        title={activeRoom?.name}
       >
-        <Tv size={14} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
-        <span
-          style={{
-            flex: 1,
-            fontWeight: 700,
-            fontSize: 'var(--text-compact)',
-            color: 'var(--color-text-primary)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {activeRoom?.name ?? 'Room'}
-        </span>
+        <span className={styles.roomName}>{activeRoom?.name ?? "Room"}</span>
         {activeRoom?.is_private ? (
-          <Lock size={12} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-label="Private room" />
+          <Lock
+            size={13}
+            style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
+            aria-label="Private room"
+          />
         ) : (
-          <Globe size={12} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} aria-label="Public room" />
+          <Globe
+            size={13}
+            style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
+            aria-label="Public room"
+          />
         )}
-      </div>
+        <ChevronDown
+          size={15}
+          style={{ color: "var(--color-text-secondary)", flexShrink: 0 }}
+          aria-hidden="true"
+        />
+      </button>
 
-      {/* Channel Nav */}
-      <nav
-        style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-2)' }}
-        aria-label="Room channels"
-      >
-        {/* Text Channels */}
-        <div style={{ marginBottom: 'var(--space-3)' }}>
-          <div style={sectionLabelStyle}>Text</div>
-          <div
-            style={{
-              ...navItemStyle(activePanel === 'chat'),
-              cursor: 'default',
-            }}
+      {/* Channels */}
+      <nav className={styles.nav}>
+        <div className={styles.group}>
+          <div className={styles.groupLabel}>
+            <span className={styles.groupLabelText}>Text</span>
+          </div>
+          <button
+            className={channelClass("general")}
+            onClick={() => onSelectChannel("general")}
+            aria-current={activeChannel === "general"}
           >
-            <Hash size={14} style={{ color: activePanel === 'chat' ? 'var(--color-accent)' : 'var(--color-text-muted)' }} aria-hidden="true" />
-            <span>general</span>
-          </div>
+            <Hash size={18} className={styles.channelIcon} aria-hidden="true" />
+            <span className={styles.channelName}>general</span>
+          </button>
         </div>
 
-        {/* Voice */}
-        <div style={{ marginBottom: 'var(--space-3)' }}>
-          <div style={sectionLabelStyle}>Voice</div>
-          <div style={navItemStyle(false)}>
-            <Volume2 size={14} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
-            <span>voice</span>
+        <div className={styles.group}>
+          <div className={styles.groupLabel}>
+            <span className={styles.groupLabelText}>Voice</span>
           </div>
-        </div>
+          <button
+            className={channelClass("voice")}
+            onClick={() => onSelectChannel("voice")}
+            aria-current={activeChannel === "voice"}
+          >
+            <Volume2
+              size={18}
+              className={styles.channelIcon}
+              aria-hidden="true"
+            />
+            <span className={styles.channelName}>voice</span>
+            {voiceCount > 0 && (
+              <span className={styles.count}>{voiceCount}</span>
+            )}
+          </button>
 
-        {/* Watch Party */}
-        <div>
-          <div style={sectionLabelStyle}>Watch Party</div>
-          <div style={navItemStyle(activePanel === null)}>
-            <Film size={14} style={{ color: activePanel === null ? 'var(--color-accent)' : 'var(--color-text-muted)' }} aria-hidden="true" />
-            <span>watch-party</span>
-          </div>
-          <div style={{ ...navItemStyle(activePanel === 'members'), marginTop: 2 }}>
-            <Users size={14} style={{ color: activePanel === 'members' ? 'var(--color-accent)' : 'var(--color-text-muted)' }} aria-hidden="true" />
-            <span>
-              members
-              {members.length > 0 && (
-                <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>
-                  {' '}({members.length})
-                </span>
+          {voiceCount > 0 && (
+            <div className={styles.participants}>
+              {inVoice && (
+                <div className={styles.participant}>
+                  <span className={styles.participantAvatar}>
+                    <Avatar
+                      username={user?.username || "You"}
+                      src={user?.avatar_url}
+                      size="xs"
+                    />
+                  </span>
+                  <span
+                    className={`${styles.participantName} ${styles.participantSelf}`}
+                  >
+                    {user?.username || "You"}
+                  </span>
+                  {isAudioMuted && (
+                    <MicOff
+                      size={13}
+                      style={{ color: "var(--color-danger)" }}
+                      aria-label="Muted"
+                    />
+                  )}
+                  {isScreenSharing && (
+                    <ScreenShare
+                      size={13}
+                      style={{ color: "var(--color-accent)" }}
+                      aria-label="Sharing screen"
+                    />
+                  )}
+                </div>
               )}
-            </span>
+              {remotePeers.map((peer) => (
+                <div key={peer.userId} className={styles.participant}>
+                  <span className={styles.participantAvatar}>
+                    <Avatar username={peer.username} size="xs" />
+                  </span>
+                  <span className={styles.participantName}>
+                    {peer.username}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className={styles.group}>
+          <div className={styles.groupLabel}>
+            <span className={styles.groupLabelText}>Watch Party</span>
           </div>
+          <button
+            className={channelClass("watch-party")}
+            onClick={() => onSelectChannel("watch-party")}
+            aria-current={activeChannel === "watch-party"}
+          >
+            <Film size={18} className={styles.channelIcon} aria-hidden="true" />
+            <span className={styles.channelName}>watch-party</span>
+            {isMediaPlaying && (
+              <span className={styles.liveBadge}>
+                <span className={styles.liveDot} aria-hidden="true" />
+                LIVE
+              </span>
+            )}
+          </button>
         </div>
       </nav>
+
+      {/* Voice state, then identity — always in this order, always at the foot */}
+      <VoiceStatusPanel roomId={activeRoom?.id} roomName={activeRoom?.name} />
+      <UserTray roomId={activeRoom?.id} />
     </aside>
   );
 };

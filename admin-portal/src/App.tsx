@@ -4,17 +4,29 @@ import { SystemPulseDashboard } from "@/components/dashboard/SystemPulseDashboar
 import { MediaCommandCenter } from "@/components/media/MediaCommandCenter"
 import { RoomCommandCenter } from "@/components/rooms/RoomCommandCenter"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useTelemetryStream } from "@/hooks/useTelemetryStream"
 
 export function App() {
   const [activeTab, setActiveTab] = React.useState("pulse")
 
+  // The telemetry stream lives here rather than inside SystemPulseDashboard.
+  // Tabs are conditionally rendered, so owning it in the dashboard tore the
+  // WebSocket down and discarded all chart history on every tab switch, and
+  // left the header's connection badge hardcoded to "LIVE".
+  const telemetry = useTelemetryStream()
+
   return (
-    <AppLayout activeTab={activeTab} setActiveTab={setActiveTab} isConnected={true}>
-      {activeTab === "pulse" && <SystemPulseDashboard />}
+    <AppLayout
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      isConnected={telemetry.isConnected}
+      isDemoMode={telemetry.isDemoMode}
+    >
+      {activeTab === "pulse" && <SystemPulseDashboard telemetry={telemetry} />}
 
       {activeTab === "media" && <MediaCommandCenter />}
 
-      {activeTab === "rooms" && <RoomCommandCenter />}
+      {activeTab === "rooms" && <RoomCommandCenter liveRooms={telemetry.current?.rooms} />}
 
       {activeTab === "debug" && (
         <Card className="border-zinc-800">

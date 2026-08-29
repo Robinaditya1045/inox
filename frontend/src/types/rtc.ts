@@ -1,4 +1,5 @@
-export type RTCConnectionState = 'disconnected' | 'connecting' | 'connected' | 'failed';
+export type RTCConnectionState =
+  "disconnected" | "connecting" | "connected" | "failed";
 
 export interface VoiceParticipant {
   user_id: string;

@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useRoomSocket } from './useRoomSocket';
-import { usePermissions } from './usePermissions';
-import { chatService } from '../services/chat/chat.service';
-import type { ChatMessage } from '../types/chat';
-import type { WSChatPayload } from '../types/ws';
-import { logger } from '../utils/logger';
+import { useState, useEffect, useCallback } from "react";
+import { useRoomSocket } from "./useRoomSocket";
+import { usePermissions } from "./usePermissions";
+import { chatService } from "../services/chat/chat.service";
+import type { ChatMessage } from "../types/chat";
+import type { WSChatPayload } from "../types/ws";
+import { logger } from "../utils/logger";
 
 export interface UseChatReturn {
   messages: ChatMessage[];
@@ -38,14 +38,16 @@ export const useChat = (roomId: string | undefined): UseChatReturn => {
         if (isMounted) {
           setMessages(history);
           setIsLoadingHistory(false);
-          logger.info('useChat: Historical messages loaded', { count: history.length });
+          logger.info("useChat: Historical messages loaded", {
+            count: history.length,
+          });
         }
       })
       .catch((err) => {
         if (isMounted) {
-          setError('Failed to load chat history');
+          setError("Failed to load chat history");
           setIsLoadingHistory(false);
-          logger.error('useChat: History fetch failed', { err });
+          logger.error("useChat: History fetch failed", { err });
         }
       });
 
@@ -58,14 +60,16 @@ export const useChat = (roomId: string | undefined): UseChatReturn => {
   useEffect(() => {
     if (!roomId) return;
 
-    const unsubscribe = subscribe('CHAT_MESSAGE', (msg) => {
+    const unsubscribe = subscribe("CHAT_MESSAGE", (msg) => {
       const payload = msg.payload as WSChatPayload;
       if (payload && payload.message) {
         const newBubble: ChatMessage = {
-          id: payload.message_id || `ws-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          id:
+            payload.message_id ||
+            `ws-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           room_id: msg.room_id || roomId,
-          user_id: msg.sender_id || 'unknown',
-          username: msg.sender_name || 'Participant',
+          user_id: msg.sender_id || "unknown",
+          username: msg.sender_name || "Participant",
           message: payload.message,
           created_at: new Date(msg.timestamp || Date.now()).toISOString(),
         };
@@ -77,7 +81,9 @@ export const useChat = (roomId: string | undefined): UseChatReturn => {
           }
           return [...prev, newBubble];
         });
-        logger.debug('useChat: Appended live chat frame', { sender: newBubble.username });
+        logger.debug("useChat: Appended live chat frame", {
+          sender: newBubble.username,
+        });
       }
     });
 
@@ -86,21 +92,26 @@ export const useChat = (roomId: string | undefined): UseChatReturn => {
     };
   }, [roomId, subscribe]);
 
-  const sendMessage = useCallback((text: string) => {
-    if (!text.trim()) return;
+  const sendMessage = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
 
-    if (!permissions.can_send_messages) {
-      logger.warn('useChat: Permission denied to send chat message');
-      return;
-    }
+      if (!permissions.can_send_messages) {
+        logger.warn("useChat: Permission denied to send chat message");
+        return;
+      }
 
-    const payload: WSChatPayload = {
-      message: text.trim(),
-    };
+      const payload: WSChatPayload = {
+        message: text.trim(),
+      };
 
-    send('CHAT_MESSAGE', payload);
-    logger.debug('useChat: Emitted CHAT_MESSAGE frame', { text: text.trim() });
-  }, [permissions.can_send_messages, send]);
+      send("CHAT_MESSAGE", payload);
+      logger.debug("useChat: Emitted CHAT_MESSAGE frame", {
+        text: text.trim(),
+      });
+    },
+    [permissions.can_send_messages, send],
+  );
 
   return {
     messages,

@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { apiClient } from '../api/client';
-import type { MediaAsset } from '../types/media';
+import { useState, useEffect, useCallback } from "react";
+import { apiClient } from "../api/client";
+import type { MediaAsset } from "../types/media";
 
 interface UseMediaLibraryReturn {
   assets: MediaAsset[];
@@ -18,14 +18,16 @@ export const useMediaLibrary = (): UseMediaLibraryReturn => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get<MediaAsset[]>('/media', {
+      const data = await apiClient.get<MediaAsset[]>("/media", {
         params: { limit: 100, offset: 0 },
       });
       // Only surface ready assets to room members
-      const ready = (data || []).filter((a) => a.status === 'ready');
+      const ready = (data || []).filter((a) => a.status === "ready");
       setAssets(ready);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load media library');
+      setError(
+        err instanceof Error ? err.message : "Failed to load media library",
+      );
     } finally {
       setIsLoading(false);
     }

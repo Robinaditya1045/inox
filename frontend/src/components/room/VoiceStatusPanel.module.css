@@ -1,0 +1,177 @@
+/* Voice state lives at the foot of the channel sidebar, directly above the user tray,
+   so it stays put while the user moves between text, voice and watch-party views. */
+.panel {
+  flex-shrink: 0;
+  padding: var(--space-2);
+  background: var(--color-surface-1);
+  border-top: 1px solid var(--color-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.statusText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.statusTitle {
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-live);
+}
+
+.statusTitleDanger {
+  color: var(--color-danger);
+}
+
+.statusSub {
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iconBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.iconBtn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.iconBtnAccent {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+.iconBtnDanger {
+  color: var(--color-danger);
+}
+
+.iconBtnDanger:hover {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+/* Wide action buttons */
+.wideBtn {
+  width: 100%;
+  height: 34px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--text-meta);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.wideBtnAccent {
+  border: 1px solid var(--color-accent-border);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+.wideBtnAccent:hover {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  border-color: transparent;
+}
+
+.wideBtnDanger {
+  height: 30px;
+  border: 1px solid var(--color-danger-border);
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+  font-size: var(--text-label);
+}
+
+.wideBtnDanger:hover {
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
+  border-color: transparent;
+}
+
+.pending {
+  width: 100%;
+  height: 34px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  font-size: var(--text-label);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.restricted {
+  width: 100%;
+  height: 34px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-canvas);
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-warning-border);
+  border-top-color: var(--color-warning);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

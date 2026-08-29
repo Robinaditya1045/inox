@@ -25,11 +25,14 @@ export function RoomGrid({
   const [terminatingId, setTerminatingId] = React.useState<string | null>(null)
 
   const filteredRooms = React.useMemo(() => {
+    const query = searchQuery.toLowerCase()
     return rooms.filter(room => {
+      // Live telemetry rooms carry no name/owner, so these are coerced before
+      // .toLowerCase() to keep search from throwing on a real room.
       const matchesSearch =
-        room.room_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        room.room_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        room.owner_id.toLowerCase().includes(searchQuery.toLowerCase())
+        (room.room_name ?? "").toLowerCase().includes(query) ||
+        (room.room_id ?? "").toLowerCase().includes(query) ||
+        (room.owner_id ?? "").toLowerCase().includes(query)
 
       const matchesStatus = statusFilter === "all" || room.sync_status === statusFilter
       return matchesSearch && matchesStatus

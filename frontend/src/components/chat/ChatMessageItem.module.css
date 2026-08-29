@@ -1,0 +1,156 @@
+.row {
+  display: flex;
+  gap: var(--space-3);
+  padding: 2px var(--space-4);
+  position: relative;
+}
+
+.rowLeader {
+  padding-top: var(--space-3);
+}
+
+.row:hover {
+  background: var(--color-surface-2);
+}
+
+.row:hover .actions {
+  opacity: 1;
+}
+.row:hover .hoverTime {
+  opacity: 1;
+}
+
+/* Messages that mention you get an accent rail, like an unread marker you can't miss */
+.rowMention {
+  background: var(--color-accent-subtle);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.rowMention:hover {
+  background: rgba(79, 115, 224, 0.18);
+}
+
+.gutter {
+  width: 36px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+/* Timestamp replaces the avatar on grouped messages, revealed on hover */
+.hoverTime {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  opacity: 0;
+  transition: opacity var(--transition-instant);
+  user-select: none;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+}
+
+.username {
+  font-size: var(--text-compact);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.usernameOwn {
+  color: var(--color-accent);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.badgeOwner {
+  background: var(--color-warning-subtle);
+  color: var(--color-role-owner);
+}
+
+.badgeMod {
+  background: var(--color-accent-subtle);
+  color: var(--color-role-mod);
+}
+
+.time {
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  line-height: 1.2;
+}
+
+.text {
+  margin: 0;
+  font-size: var(--text-compact);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.mention {
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--color-mention);
+  color: var(--color-mention-text);
+  font-weight: 600;
+}
+
+/* Hover toolbar */
+.actions {
+  position: absolute;
+  top: -10px;
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-border-default);
+  box-shadow: var(--shadow-menu);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.actionBtn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.actionBtn:hover {
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+}

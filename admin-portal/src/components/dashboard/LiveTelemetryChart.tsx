@@ -41,9 +41,21 @@ export const LiveTelemetryChart = React.memo(function LiveTelemetryChart({
   }
 
   const values = data.map(d => Number(d[dataKey]) || 0)
-  const computedMin = minValue !== undefined ? minValue : Math.min(...values)
-  const computedMax = maxValue !== undefined ? maxValue : Math.max(...values)
-  const range = (computedMax - computedMin) || 1
+  const dataMin = Math.min(...values)
+  const dataMax = Math.max(...values)
+  // minValue/maxValue are presentation hints for a stable axis, not hard bounds.
+  // They are honoured only while the real series sits inside them: otherwise the
+  // axis squashed live values into an unreadable sliver, and anything outside
+  // the range was plotted beyond the plot area and spilled over the next card
+  // (the SVG is overflow-visible). A dev backend reporting 10 goroutines against
+  // a 100-350 hint drew its line completely below the chart.
+  const withinHint =
+    minValue !== undefined && maxValue !== undefined && dataMin >= minValue && dataMax <= maxValue
+  const computedMin = withinHint ? minValue : dataMin
+  const computedMax = withinHint ? maxValue : dataMax
+  // A perfectly flat series has no range, which would collapse the axis and
+  // print the same number on every gridline. Open it up around the value.
+  const range = (computedMax - computedMin) || Math.max(1, Math.abs(dataMax) * 0.2)
   const paddedMin = Math.max(0, computedMin - range * 0.1)
   const paddedMax = computedMax + range * 0.1
   const paddedRange = paddedMax - paddedMin || 1

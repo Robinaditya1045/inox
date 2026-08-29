@@ -1,0 +1,208 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-canvas);
+}
+
+/* ── Room identity header ─────────────────────────────── */
+.roomHeader {
+  height: var(--header-height);
+  flex-shrink: 0;
+  padding: 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--transition-fast);
+}
+
+.roomHeader:hover {
+  background: var(--color-surface-1);
+}
+
+.roomName {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-subhead);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Channel list ─────────────────────────────────────── */
+.nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.nav::-webkit-scrollbar {
+  width: 8px;
+}
+.nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+.nav::-webkit-scrollbar-thumb {
+  background: var(--color-canvas-deep);
+  border-radius: var(--radius-sm);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.groupLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-1) var(--space-1);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  user-select: none;
+}
+
+.groupLabelText {
+  flex: 1;
+}
+
+.channel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--text-compact);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.channel:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.channelActive {
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.channelIcon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.channelActive .channelIcon {
+  color: var(--color-text-primary);
+}
+
+.channelName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.liveDot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+}
+
+/* ── Voice participants nested under the voice channel ── */
+.participants {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: var(--space-2);
+  margin-top: 2px;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.participantName {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.participantSelf {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* Green ring marks who is actually connected to the SFU */
+.participantAvatar {
+  box-shadow: 0 0 0 2px var(--color-live);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.emptyVoice {
+  padding: var(--space-2);
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}

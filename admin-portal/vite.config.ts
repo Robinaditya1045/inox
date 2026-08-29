@@ -1,10 +1,15 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  // The whole portal is authored in Tailwind class syntax, but Tailwind was
+  // never installed — src/index.css hand-defined ~107 of the ~390 classes in
+  // use, so the other three quarters silently did nothing (e.g. the outline
+  // button's bg-zinc-900/60 left it white-on-white and unreadable).
+  plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

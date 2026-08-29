@@ -20,7 +20,7 @@
 }
 
 .btn:disabled,
-.btn[aria-disabled='true'] {
+.btn[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.5;
 }
