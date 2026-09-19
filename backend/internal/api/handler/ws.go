@@ -3,10 +3,12 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
+	"github.com/inox/inox/backend/internal/domain"
 	"github.com/inox/inox/backend/internal/ws"
 )
 
@@ -55,6 +57,13 @@ func (h *WSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RequireRoomMembership already resolved this user's role for the route guard;
+	// reusing it here keeps role lookups out of the hub's single-threaded event loop.
+	role := domain.RoleGuest
+	if member, ok := middleware.GetRoomMemberFromContext(r.Context()); ok {
+		role = member.Role
+	}
+
 	client := &ws.Client{
 		Hub:      h.hub,
 		Conn:     conn,
@@ -62,6 +71,9 @@ func (h *WSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		RoomID:   roomID,
 		UserID:   session.UserID,
 		Username: session.Username,
+		Role:     role,
+		JoinedAt: time.Now(),
+		CanLead:  true,
 	}
 
 	// Register client connection with central Hub dispatcher

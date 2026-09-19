@@ -4,6 +4,17 @@ import { usePlayerSync } from "../../hooks/usePlayerSync";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useRoomSocket } from "../../hooks/useRoomSocket";
 import { normalizeMediaUrl } from "../../utils/mediaUrl";
+import {
+  DRIFT_CHECK_INTERVAL_MS,
+  LEADER_REPORT_INTERVAL_MS,
+  clampToSeekable,
+  driftAction,
+  isLiveMediaUrl,
+  liveEdgeTime,
+  roomLocalTime,
+  secondsBehindEdge,
+  toStreamPosition,
+} from "../../utils/liveSync";
 import { logger } from "../../utils/logger";
 import { PlayerScrubber } from "./PlayerScrubber";
 import {
@@ -19,6 +30,7 @@ import {
   Layers,
   ChevronUp,
   AlertCircle,
+  Radio,
 } from "lucide-react";
 import styles from "./WatchPartyPlayer.module.css";
 
@@ -46,7 +58,13 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   >([]);
   const [showQuality, setShowQuality] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [behindEdge, setBehindEdge] = useState(0);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Set while the element is buffering. The leader reports it so the server can keep
+  // extrapolating instead of accepting a frozen playhead, and followers use it to
+  // skip drift correction on readings taken mid-rebuffer.
+  const stalledRef = useRef(false);
 
   const {
     mediaUrl,
@@ -58,7 +76,16 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     seek: emitSeek,
     notifyLocalProgress,
     clearRemoteFlag,
+    kind,
+    leaderName,
+    isLeader,
+    liveAnchor,
+    liveStatus,
+    reportLivePosition,
+    declineLiveLeadership,
   } = usePlayerSync();
+
+  const isLive = kind === "live";
 
   const permissions = usePermissions();
   const { isConnected } = useRoomSocket();
@@ -94,6 +121,10 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       effectiveUrl.includes("/hls/") ||
       effectiveUrl.includes("hls_master");
 
+    // Read from the URL being attached rather than from `isLive`, which is server
+    // state that lands a beat after the URL does.
+    const streamIsLive = isLiveMediaUrl(effectiveUrl);
+
     if (isHLS && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
@@ -101,6 +132,16 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         // ABR config — start conservative, ramp up fast
         abrEwmaDefaultEstimate: 1_000_000,
         startLevel: -1, // auto
+        // Live tuning. Every viewer targets the same distance behind the edge, so a
+        // room starts out roughly together before leader corrections even arrive,
+        // and back buffer is kept short because nobody can seek backwards anyway.
+        ...(streamIsLive
+          ? {
+              liveSyncDurationCount: 3,
+              liveMaxLatencyDurationCount: 10,
+              backBufferLength: 30,
+            }
+          : {}),
       });
       hlsRef.current = hls;
 
@@ -164,10 +205,14 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     };
   }, [mediaUrl]);
 
-  // Sync from remote WebSocket events — triggered by lastSyncTimestamp changing
+  // Sync from remote WebSocket events — triggered by lastSyncTimestamp changing.
+  //
+  // VOD only. remoteTime is an offset from the start of a file, which on a live
+  // stream would land this client somewhere unrelated (usually outside seekable,
+  // where hls.js quietly clamps); live rooms are driven by the drift effect below.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !lastSyncTimestamp) return;
+    if (!video || !lastSyncTimestamp || isLive) return;
 
     if (Math.abs(video.currentTime - remoteTime) > 0.5) {
       video.currentTime = remoteTime;
@@ -184,19 +229,33 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
 
     const timer = setTimeout(() => clearRemoteFlag(), 300);
     return () => clearTimeout(timer);
-  }, [lastSyncTimestamp, clearRemoteFlag]);
+  }, [lastSyncTimestamp, clearRemoteFlag, isLive]);
 
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video) return;
     setProgress(video.currentTime);
+    if (isLive) {
+      setBehindEdge(secondsBehindEdge(video));
+      return;
+    }
     notifyLocalProgress(video.currentTime);
+  };
+
+  const handleWaiting = () => {
+    stalledRef.current = true;
+  };
+
+  const handlePlaying = () => {
+    stalledRef.current = false;
   };
 
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
     setDuration(video.duration);
+    // A live stream has no meaningful duration or start offset to restore.
+    if (isLive) return;
     // Apply any pending remote sync on initial load
     if (remoteTime > 0 && Math.abs(video.currentTime - remoteTime) > 0.5) {
       video.currentTime = remoteTime;
@@ -208,10 +267,136 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     }
   };
 
+  // Hold the anchor in a ref so the drift interval below stays stable. Depending on
+  // liveAnchor directly would tear down and restart the timer on every leader report.
+  const liveAnchorRef = useRef(liveAnchor);
+  useEffect(() => {
+    liveAnchorRef.current = liveAnchor;
+  }, [liveAnchor]);
+
+  // Leader: publish this client's playhead, in the stream's coordinates.
+  useEffect(() => {
+    if (!isLive || !isLeader) return;
+
+    // If nobody else in the room can lead either, the server keeps this client in the
+    // role; declining once per term is enough to say so.
+    let declined = false;
+
+    const publish = () => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const hls = hlsRef.current;
+      if (!hls) {
+        // Safari and iOS play HLS natively, so there is no fragment list here and no
+        // way to express a position in the stream's coordinates. Holding the role
+        // silently would leave the room uncorrected forever, so give it back.
+        if (!declined) {
+          logger.warn(
+            "Player: cannot lead live sync without hls.js, declining",
+          );
+          declined = true;
+          declineLiveLeadership();
+        }
+        return;
+      }
+
+      const position = toStreamPosition(hls, video.currentTime);
+      if (!position) return;
+
+      // While buffering, this playhead has stopped but the broadcast has not.
+      // Flagging it lets the server keep extrapolating rather than dragging every
+      // follower backwards and then forwards again on recovery.
+      const stalled =
+        stalledRef.current || video.readyState < 3 || video.paused;
+      reportLivePosition(position, stalled);
+    };
+
+    publish(); // don't make a new leader's room wait a full interval
+    const timer = setInterval(publish, LEADER_REPORT_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [isLive, isLeader, reportLivePosition, declineLiveLeadership]);
+
+  // Follower: measure drift against the room and close it by playback rate.
+  //
+  // Seeking a live stream flushes the buffer, so a seek is reserved for gaps too wide
+  // to close smoothly; see driftAction for the ladder.
+  useEffect(() => {
+    if (!isLive || isLeader) return;
+
+    const correct = () => {
+      const video = videoRef.current;
+      const hls = hlsRef.current;
+      const anchor = liveAnchorRef.current;
+      if (!video || !hls || !anchor) return;
+
+      // A reading taken while buffering, paused, or in a throttled background tab is
+      // noise; acting on it sends the player chasing its own tail.
+      if (video.paused || stalledRef.current || video.readyState < 3) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+
+      const target = roomLocalTime(
+        hls,
+        anchor.position,
+        anchor.receivedAt,
+        anchor.ageMs,
+      );
+
+      if (target === null) {
+        // The room's segment has aged out of this client's window. Snap to the edge
+        // rather than retrying against a position that will never come back.
+        const edge = liveEdgeTime(video);
+        if (edge !== null && Math.abs(edge - video.currentTime) > 1) {
+          logger.warn("Player: fell outside the live window, snapping to edge");
+          video.currentTime = edge;
+          video.playbackRate = 1;
+        }
+        return;
+      }
+
+      const action = driftAction(target - video.currentTime);
+      if (action.seek) {
+        logger.debug("Player: live drift too wide, seeking", {
+          drift: target - video.currentTime,
+        });
+        video.currentTime = clampToSeekable(video, target);
+        video.playbackRate = 1;
+        return;
+      }
+      if (video.playbackRate !== action.rate) {
+        video.playbackRate = action.rate;
+      }
+    };
+
+    const timer = setInterval(correct, DRIFT_CHECK_INTERVAL_MS);
+    // Captured now, because by cleanup time the ref may already point elsewhere and
+    // the element we actually sped up would be left running off-speed forever.
+    const corrected = videoRef.current;
+    return () => {
+      clearInterval(timer);
+      if (corrected) corrected.playbackRate = 1;
+    };
+  }, [isLive, isLeader]);
+
   const handlePlayClick = useCallback(() => {
-    if (!permissions.can_control_playback) return;
     const video = videoRef.current;
     if (!video) return;
+
+    // Live streams have no room-wide pause: the broadcast keeps running whatever
+    // anyone does. This stops playback for one viewer only, and the drift correction
+    // pulls them back to the room as soon as they resume.
+    if (isLive) {
+      if (video.paused) {
+        video.play().catch(() => {});
+        setIsPlayingLocal(true);
+      } else {
+        video.pause();
+        setIsPlayingLocal(false);
+      }
+      return;
+    }
+
+    if (!permissions.can_control_playback) return;
 
     if (video.paused) {
       video.play().catch(() => {});
@@ -222,7 +407,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       setIsPlayingLocal(false);
       emitPause(video.currentTime);
     }
-  }, [permissions.can_control_playback, emitPlay, emitPause]);
+  }, [permissions.can_control_playback, emitPlay, emitPause, isLive]);
 
   const handleSeek = useCallback(
     (newTime: number) => {
@@ -374,6 +559,10 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         ref={videoRef}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
+        onWaiting={handleWaiting}
+        onPlaying={handlePlaying}
+        onStalled={handleWaiting}
+        onCanPlay={handlePlaying}
         onPlay={() => setIsPlayingLocal(true)}
         onPause={() => setIsPlayingLocal(false)}
         className={styles.video}
@@ -403,13 +592,47 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
           pointerEvents: showControls || !isPlayingLocal ? "auto" : "none",
         }}
       >
-        {/* Progress Scrubber (Memoized Child) */}
-        <PlayerScrubber
-          duration={duration}
-          progress={progress}
-          canControl={permissions.can_control_playback}
-          onSeek={handleSeek}
-        />
+        {/* Transport row. A live stream has no fixed timeline to scrub, so it
+            reports where the room is instead of offering a seek target. */}
+        {isLive ? (
+          <div className={styles.liveBar}>
+            <span
+              className={`${styles.livePill} ${behindEdge > 8 ? styles.livePillBehind : ""}`}
+            >
+              <Radio size={10} />
+              LIVE
+            </span>
+            {behindEdge > 1 && (
+              <span className={styles.liveMeta}>
+                behind by {behindEdge.toFixed(1)}s
+              </span>
+            )}
+            {liveStatus && liveStatus.status !== "live" && (
+              <span
+                className={styles.liveNotice}
+                role="status"
+                aria-live="polite"
+              >
+                <AlertCircle size={11} />
+                {liveStatus.message || "The broadcast was interrupted."}
+              </span>
+            )}
+            {leaderName && (
+              <span className={styles.liveLeader}>
+                {isLeader
+                  ? "You are setting the pace"
+                  : `Following ${leaderName}`}
+              </span>
+            )}
+          </div>
+        ) : (
+          <PlayerScrubber
+            duration={duration}
+            progress={progress}
+            canControl={permissions.can_control_playback}
+            onSeek={handleSeek}
+          />
+        )}
 
         {/* Action Row */}
         <div

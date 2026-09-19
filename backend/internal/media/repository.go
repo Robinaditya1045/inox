@@ -33,12 +33,15 @@ func NewRepository(db *pgxpool.Pool) Repository {
 
 // CreateAsset inserts a new media asset record into the database.
 func (r *postgresRepository) CreateAsset(ctx context.Context, a *domain.MediaAsset) error {
+	if a.Kind == "" {
+		a.Kind = domain.MediaKindVOD
+	}
 	query := `
-		INSERT INTO media_assets (title, description, source_url, status, duration_seconds, progress, thumbnail_url, hls_master_url, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO media_assets (kind, title, description, source_url, status, duration_seconds, progress, thumbnail_url, hls_master_url, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at
 	`
-	err := r.db.QueryRow(ctx, query, a.Title, a.Description, a.SourceURL, a.Status, a.DurationSeconds, a.Progress, a.ThumbnailURL, a.HLSMasterURL, a.CreatedBy).Scan(
+	err := r.db.QueryRow(ctx, query, a.Kind, a.Title, a.Description, a.SourceURL, a.Status, a.DurationSeconds, a.Progress, a.ThumbnailURL, a.HLSMasterURL, a.CreatedBy).Scan(
 		&a.ID, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
@@ -50,12 +53,12 @@ func (r *postgresRepository) CreateAsset(ctx context.Context, a *domain.MediaAss
 // GetAssetByID retrieves a media asset along with all its adaptive bitrate HLS renditions.
 func (r *postgresRepository) GetAssetByID(ctx context.Context, id string) (*domain.MediaAsset, error) {
 	query := `
-		SELECT id, title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
+		SELECT id, COALESCE(kind, 'vod'), title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
 		FROM media_assets WHERE id = $1
 	`
 	a := &domain.MediaAsset{}
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&a.ID, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt,
+		&a.ID, &a.Kind, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -84,7 +87,7 @@ func (r *postgresRepository) ListAssets(ctx context.Context, limit, offset int) 
 		limit = 50
 	}
 	query := `
-		SELECT id, title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
+		SELECT id, COALESCE(kind, 'vod'), title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
 		FROM media_assets ORDER BY created_at DESC LIMIT $1 OFFSET $2
 	`
 	rows, err := r.db.Query(ctx, query, limit, offset)
@@ -96,7 +99,7 @@ func (r *postgresRepository) ListAssets(ctx context.Context, limit, offset int) 
 	var assets []*domain.MediaAsset
 	for rows.Next() {
 		a := &domain.MediaAsset{}
-		if err := rows.Scan(&a.ID, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan asset: %w", err)
 		}
 		assets = append(assets, a)
@@ -169,7 +172,7 @@ func (r *postgresRepository) GetAssetsByStatus(ctx context.Context, statuses []d
 		return nil, nil
 	}
 	query := `
-		SELECT id, title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
+		SELECT id, COALESCE(kind, 'vod'), title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
 		FROM media_assets WHERE status = ANY($1) ORDER BY created_at ASC
 	`
 	statusStrings := make([]string, len(statuses))
@@ -185,7 +188,7 @@ func (r *postgresRepository) GetAssetsByStatus(ctx context.Context, statuses []d
 	var assets []*domain.MediaAsset
 	for rows.Next() {
 		a := &domain.MediaAsset{}
-		if err := rows.Scan(&a.ID, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan asset: %w", err)
 		}
 		assets = append(assets, a)

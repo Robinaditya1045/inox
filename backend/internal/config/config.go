@@ -9,33 +9,35 @@ import (
 )
 
 type Config struct {
-	Environment          string
-	HTTPPort             string
-	LogLevel             string
-	DatabaseURL          string
-	RedisURL             string
-	SessionSecret        string
-	SessionDurationHours string
-	StorageDir           string
-	MediaStreamBaseURL   string
-	MinioEndpoint        string
-	MinioRootUser        string
-	MinioRootPassword    string
-	MinioUseSSL          string
-	MinioBucketName      string
-	CORSAllowedOrigins   string
-	WebRTCICEServers     string
-	WebRTCPortMin        string
-	WebRTCPortMax        string
+	Environment            string
+	HTTPPort               string
+	LogLevel               string
+	DatabaseURL            string
+	RedisURL               string
+	SessionSecret          string
+	SessionDurationHours   string
+	StorageDir             string
+	MediaStreamBaseURL     string
+	MinioEndpoint          string
+	MinioRootUser          string
+	MinioRootPassword      string
+	MinioUseSSL            string
+	MinioBucketName        string
+	CORSAllowedOrigins     string
+	LiveProxyBaseURL       string
+	LiveSourceAllowedHosts string
+	WebRTCICEServers       string
+	WebRTCPortMin          string
+	WebRTCPortMax          string
 }
 
 func Load() (*Config, error) {
 	loadDotEnv()
 
 	cfg := &Config{
-		Environment:          getEnv("APP_ENV", "development"),
-		HTTPPort:             getEnv("HTTP_PORT", "8080"),
-		LogLevel:             getEnv("LOG_LEVEL", "debug"),
+		Environment: getEnv("APP_ENV", "development"),
+		HTTPPort:    getEnv("HTTP_PORT", "8080"),
+		LogLevel:    getEnv("LOG_LEVEL", "debug"),
 		// Default local dev DSN (Data Source Name)
 		DatabaseURL:          getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/inox?sslmode=disable"),
 		RedisURL:             getEnv("REDIS_URL", "redis://localhost:6379/0"),
@@ -48,10 +50,15 @@ func Load() (*Config, error) {
 		MinioRootPassword:    getEnv("MINIO_ROOT_PASSWORD", "minioadmin"),
 		MinioUseSSL:          getEnv("MINIO_USE_SSL", "false"),
 		MinioBucketName:      getEnv("MINIO_BUCKET_NAME", "inox-media"),
-		CORSAllowedOrigins:   getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:3000"),
-		WebRTCICEServers:     getEnv("WEBRTC_ICE_SERVERS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"),
-		WebRTCPortMin:        getEnv("WEBRTC_PORT_MIN", "50000"),
-		WebRTCPortMax:        getEnv("WEBRTC_PORT_MAX", "50100"),
+		CORSAllowedOrigins:   getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:3001"),
+		LiveProxyBaseURL:     getEnv("LIVE_PROXY_BASE_URL", "http://localhost:8080/api/v1/live"),
+		// Hosts live channel sources may be pulled from. Empty is refused outright in
+		// production; elsewhere it allows any public host with a startup warning, so
+		// that local development does not push operators towards a wildcard.
+		LiveSourceAllowedHosts: getEnv("LIVE_SOURCE_ALLOWED_HOSTS", ""),
+		WebRTCICEServers:       getEnv("WEBRTC_ICE_SERVERS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"),
+		WebRTCPortMin:          getEnv("WEBRTC_PORT_MIN", "50000"),
+		WebRTCPortMax:          getEnv("WEBRTC_PORT_MAX", "50100"),
 	}
 
 	// Fail fast if DATABASE_URL or REDIS_URL is empty
@@ -119,4 +126,3 @@ func loadDotEnv() {
 		}
 	}
 }
-

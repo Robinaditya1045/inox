@@ -1,22 +1,38 @@
-import * as React from "react"
-import { Activity, Radio, Video, Terminal, Shield, RefreshCw, Layers } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import * as React from "react";
+import {
+  Activity,
+  Radio,
+  RadioTower,
+  Video,
+  Terminal,
+  Shield,
+  RefreshCw,
+  Layers,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface AppLayoutProps {
-  children: React.ReactNode
-  activeTab: string
-  setActiveTab: (tab: string) => void
-  isConnected?: boolean
-  isDemoMode?: boolean
+  children: React.ReactNode;
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  isConnected?: boolean;
+  isDemoMode?: boolean;
 }
 
-export function AppLayout({ children, activeTab, setActiveTab, isConnected = false, isDemoMode = false }: AppLayoutProps) {
+export function AppLayout({
+  children,
+  activeTab,
+  setActiveTab,
+  isConnected = false,
+  isDemoMode = false,
+}: AppLayoutProps) {
   const navItems = [
     { id: "pulse", label: "System Pulse", icon: Activity },
     { id: "media", label: "Media Library", icon: Video },
+    { id: "live", label: "Live Channels", icon: RadioTower },
     { id: "rooms", label: "Room Inspector", icon: Radio },
     { id: "debug", label: "Live Tracing", icon: Terminal },
-  ]
+  ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 flex flex-col">
@@ -28,13 +44,17 @@ export function AppLayout({ children, activeTab, setActiveTab, isConnected = fal
               <Layers className="h-5 w-5 text-black" />
             </div>
             <div>
-              <span className="font-bold text-base tracking-tight text-white">INOX</span>
-              <span className="text-xs font-mono text-zinc-500 ml-2">v1.0.0-PROD</span>
+              <span className="font-bold text-base tracking-tight text-white">
+                INOX
+              </span>
+              <span className="text-xs font-mono text-zinc-500 ml-2">
+                v1.0.0-PROD
+              </span>
             </div>
           </div>
-          
+
           <div className="hidden sm:block h-4 w-[1px] bg-zinc-800 mx-2" />
-          
+
           <span className="hidden lg:inline text-sm font-medium text-zinc-400">
             System Analytics & Admin Portal
           </span>
@@ -43,8 +63,8 @@ export function AppLayout({ children, activeTab, setActiveTab, isConnected = fal
         {/* Navigation Tabs — Always Visible */}
         <nav className="flex items-center space-x-1 bg-zinc-900/80 p-1 rounded-lg border border-zinc-800/80 overflow-x-auto max-w-full my-1">
           {navItems.map((item) => {
-            const Icon = item.icon
-            const isActive = activeTab === item.id
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
@@ -55,10 +75,12 @@ export function AppLayout({ children, activeTab, setActiveTab, isConnected = fal
                     : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30"
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? "text-emerald-400" : "text-zinc-500"}`} />
+                <Icon
+                  className={`h-4 w-4 ${isActive ? "text-emerald-400" : "text-zinc-500"}`}
+                />
                 <span>{item.label}</span>
               </button>
-            )
+            );
           })}
         </nav>
 
@@ -67,11 +89,19 @@ export function AppLayout({ children, activeTab, setActiveTab, isConnected = fal
           <div className="flex items-center space-x-2 px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-800">
             <span
               className={`h-2 w-2 rounded-full ${
-                isConnected ? "bg-emerald-500 animate-pulse" : isDemoMode ? "bg-amber-500" : "bg-rose-500"
+                isConnected
+                  ? "bg-emerald-500 animate-pulse"
+                  : isDemoMode
+                    ? "bg-amber-500"
+                    : "bg-rose-500"
               }`}
             />
             <span className="text-xs font-mono font-medium text-zinc-300">
-              {isConnected ? "TELEMETRY: LIVE" : isDemoMode ? "TELEMETRY: DEMO" : "DISCONNECTED"}
+              {isConnected
+                ? "TELEMETRY: LIVE"
+                : isDemoMode
+                  ? "TELEMETRY: DEMO"
+                  : "DISCONNECTED"}
             </span>
           </div>
 
@@ -91,14 +121,13 @@ export function AppLayout({ children, activeTab, setActiveTab, isConnected = fal
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6">
-        {children}
-      </main>
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6">{children}</main>
 
       {/* Footer */}
       <footer className="border-t border-zinc-800/80 py-4 px-6 text-center text-xs text-zinc-500 font-mono">
-        Inox Real-Time SFU & Watch Party Platform • High-Frequency Telemetry Engine • Built with React 19 & Shadcn UI
+        Inox Real-Time SFU & Watch Party Platform • High-Frequency Telemetry
+        Engine • Built with React 19 & Shadcn UI
       </footer>
     </div>
-  )
+  );
 }
