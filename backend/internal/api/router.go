@@ -27,6 +27,8 @@ func NewRouter(
 	chatHandler *handler.ChatHandler,
 	adminHandler *handler.AdminHandler,
 	mediaHandler *handler.MediaHandler,
+	liveHandler *handler.LiveHandler,
+	friendHandler *handler.FriendHandler,
 	dbPool *pgxpool.Pool,
 	redisClient *redis.Client,
 ) http.Handler {
@@ -66,12 +68,40 @@ func NewRouter(
 		mux.HandleFunc("OPTIONS /api/v1/media/stream/", mediaHandler.StreamProxy)
 	}
 
+	if liveHandler != nil {
+		// Live segment and nested-playlist routes carry a playback token minted with
+		// the master playlist, not a session: a WebSocket-less media element cannot
+		// set headers, and putting the caller's session ID in a manifest body would
+		// hand a long-lived API credential to anyone who can read the stream.
+		mux.HandleFunc("GET /api/v1/live/{slug}/p/{ref}", liveHandler.ServePlaylist)
+		mux.HandleFunc("GET /api/v1/live/{slug}/r/{ref}", liveHandler.ServeResource)
+		mux.HandleFunc("HEAD /api/v1/live/{slug}/r/{ref}", liveHandler.ServeResource)
+	}
+
 	if authService != nil {
 		// Protected Endpoints requiring explicit Redis session authentication
 		requireAuth := middleware.RequireAuth(authService)
+
+		if liveHandler != nil {
+			// The master playlist is the one live route that needs a real session.
+			mux.Handle("GET /api/v1/live/{slug}/master.m3u8", requireAuth(http.HandlerFunc(liveHandler.ServeMaster)))
+		}
 		if authHandler != nil {
 			mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(authHandler.Me)))
 			mux.Handle("PUT /api/v1/users/profile/avatar", requireAuth(http.HandlerFunc(authHandler.UpdateAvatar)))
+		}
+
+		if friendHandler != nil {
+			// The friends graph is per-user, not per-room: every route below reads the
+			// caller's own side of it out of the session.
+			mux.Handle("GET /api/v1/friends", requireAuth(http.HandlerFunc(friendHandler.ListFriends)))
+			mux.Handle("DELETE /api/v1/friends/{user_id}", requireAuth(http.HandlerFunc(friendHandler.RemoveFriend)))
+			mux.Handle("GET /api/v1/friends/requests", requireAuth(http.HandlerFunc(friendHandler.ListRequests)))
+			mux.Handle("POST /api/v1/friends/requests", requireAuth(http.HandlerFunc(friendHandler.SendRequest)))
+			mux.Handle("POST /api/v1/friends/requests/{id}/accept", requireAuth(http.HandlerFunc(friendHandler.AcceptRequest)))
+			mux.Handle("POST /api/v1/friends/requests/{id}/decline", requireAuth(http.HandlerFunc(friendHandler.DeclineRequest)))
+			mux.Handle("DELETE /api/v1/friends/requests/{id}", requireAuth(http.HandlerFunc(friendHandler.CancelRequest)))
+			mux.Handle("GET /api/v1/users/search", requireAuth(http.HandlerFunc(friendHandler.SearchUsers)))
 		}
 
 		if roomHandler != nil && roomService != nil {
@@ -122,6 +152,14 @@ func NewRouter(
 			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CompleteDirectUpload))))
 			mux.Handle("POST /api/v1/admin/media/register", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Register))))
 			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Delete))))
+		}
+
+		// Protected Admin Live Channel Endpoints
+		if liveHandler != nil {
+			mux.Handle("GET /api/v1/admin/live/channels", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.List))))
+			mux.Handle("POST /api/v1/admin/live/channels", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.Create))))
+			mux.Handle("POST /api/v1/admin/live/test-resolve", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.TestResolve))))
+			mux.Handle("DELETE /api/v1/admin/live/channels/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.Delete))))
 		}
 	}
 

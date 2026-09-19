@@ -1,7 +1,8 @@
 import React from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useRoom } from "../../hooks/useRoom";
-import { Compass, Plus } from "lucide-react";
+import { useFriends } from "../../hooks/useFriends";
+import { Compass, Plus, Users } from "lucide-react";
 import styles from "./AppRail.module.css";
 
 /** Two-letter monogram for a room, e.g. "Friday Night Sci-Fi" -> "FN". */
@@ -14,10 +15,13 @@ function roomInitials(name: string): string {
 
 export const AppRail: React.FC = () => {
   const { rooms, invitations } = useRoom();
+  const { incomingRequests } = useFriends();
   const location = useLocation();
 
   const isHome = location.pathname === "/";
+  const isFriends = location.pathname === "/friends";
   const hasPendingInvites = invitations.length > 0;
+  const hasFriendRequests = incomingRequests.length > 0;
 
   return (
     <nav className={styles.rail} aria-label="Main navigation">
@@ -41,6 +45,30 @@ export const AppRail: React.FC = () => {
               aria-label={`${invitations.length} pending invitations`}
             >
               {invitations.length}
+            </span>
+          )}
+        </NavLink>
+      </div>
+
+      {/* Friends — a lobby-level destination, so it sits above the room list */}
+      <div className={styles.slot}>
+        <span
+          className={`${styles.pill} ${isFriends ? styles.pillActive : ""}`}
+          aria-hidden="true"
+        />
+        <NavLink
+          to="/friends"
+          className={`${styles.item} ${styles.itemHome} ${isFriends ? styles.itemHomeActive : ""}`}
+          title="Friends"
+          aria-label="Friends"
+        >
+          <Users size={20} />
+          {hasFriendRequests && (
+            <span
+              className={styles.badge}
+              aria-label={`${incomingRequests.length} pending friend requests`}
+            >
+              {incomingRequests.length}
             </span>
           )}
         </NavLink>

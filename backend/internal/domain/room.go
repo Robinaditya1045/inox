@@ -26,11 +26,42 @@ type Permissions struct {
 }
 
 // RoomPlaybackState maintains the authoritative real-time media state of an active watch party room.
+//
+// VOD and live rooms use different coordinates and the Kind field selects between
+// them. For VOD the room's position is MediaTimeSeconds, an offset from the start of
+// the file. For live there is no start of file, so the room follows one member's
+// playhead expressed as a LivePosition; see domain.LivePosition for why.
 type RoomPlaybackState struct {
-	MediaURL         string  `json:"media_url"`
-	IsPlaying        bool    `json:"is_playing"`
-	MediaTimeSeconds float64 `json:"media_time_seconds"`
-	LastUpdated      int64   `json:"last_updated"` // Epoch millis
+	MediaURL         string    `json:"media_url"`
+	Kind             MediaKind `json:"kind,omitempty"`
+	IsPlaying        bool      `json:"is_playing"`
+	MediaTimeSeconds float64   `json:"media_time_seconds"`
+	LastUpdated      int64     `json:"last_updated"` // Epoch millis
+
+	// ── Live only ───────────────────────────────────────────
+	LeaderID   string `json:"leader_id,omitempty"`
+	LeaderName string `json:"leader_name,omitempty"`
+
+	LivePosition *LivePosition `json:"live_position,omitempty"`
+
+	// LiveReceivedAt is the server clock reading when LivePosition arrived. It is
+	// used only to compute an age at broadcast time and is never sent to clients:
+	// a client comparing a server timestamp against its own Date.now() inherits the
+	// full clock skew between the two machines. Clients receive an age instead and
+	// extrapolate from their own local receipt time.
+	LiveReceivedAt int64 `json:"live_received_at,omitempty"`
+}
+
+// LiveAgeMillis reports how stale the stored live position is, for the age field
+// broadcast to followers.
+func (s *RoomPlaybackState) LiveAgeMillis(nowMillis int64) int64 {
+	if s.LiveReceivedAt <= 0 {
+		return 0
+	}
+	if age := nowMillis - s.LiveReceivedAt; age > 0 {
+		return age
+	}
+	return 0
 }
 
 // Room represents a Watch Party workspace where users gather to watch synchronized video.

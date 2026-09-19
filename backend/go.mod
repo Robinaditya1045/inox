@@ -10,6 +10,7 @@ require (
 	github.com/pion/webrtc/v3 v3.3.6
 	github.com/redis/go-redis/v9 v9.14.1
 	golang.org/x/crypto v0.35.0
+	golang.org/x/sync v0.22.0
 )
 
 require (
@@ -41,7 +42,6 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/wlynxg/anet v0.0.3 // indirect
 	golang.org/x/net v0.22.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.14.0 // indirect

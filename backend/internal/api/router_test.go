@@ -9,7 +9,7 @@ import (
 
 func TestRouter_HealthCheckEndpoint(t *testing.T) {
 	// Initialize router passing nil for all handlers and DB connections
-	router := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	rec := httptest.NewRecorder()
