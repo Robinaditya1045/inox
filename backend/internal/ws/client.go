@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/inox/inox/backend/internal/domain"
 )
 
 const (
@@ -30,6 +31,17 @@ type Client struct {
 	RoomID   string
 	UserID   string
 	Username string
+
+	// Role and JoinedAt exist so the hub can elect a live sync leader without a
+	// database round-trip inside its event loop. Ranking is owner, then moderator,
+	// then whoever has been connected longest.
+	Role     domain.Role
+	JoinedAt time.Time
+
+	// CanLead is cleared when a client reports it cannot produce stream positions,
+	// which is the case for players using native HLS instead of hls.js. Such a client
+	// would hold the leadership claim and publish nothing.
+	CanLead bool
 }
 
 // readPump pumps incoming messages from the WebSocket connection to the Hub.

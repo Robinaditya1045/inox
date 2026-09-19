@@ -5,11 +5,22 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import { PlayerSyncContext } from "../contexts/playerSync.context";
+import {
+  PlayerSyncContext,
+  type LiveAnchor,
+} from "../contexts/playerSync.context";
 import { useRoomSocket } from "../hooks/useRoomSocket";
 import { usePermissions } from "../hooks/usePermissions";
 import { useRoom } from "../hooks/useRoom";
-import type { WSPlaybackPayload } from "../types/ws";
+import { useAuth } from "../hooks/useAuth";
+import type {
+  MediaKind,
+  WSLiveLeaderPayload,
+  WSLivePosition,
+  WSLivePositionPayload,
+  WSLiveStatusPayload,
+  WSPlaybackPayload,
+} from "../types/ws";
 import { logger } from "../utils/logger";
 
 interface PlayerSyncProviderProps {
@@ -39,11 +50,24 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     Date.now(),
   );
 
+  // ── Live channel state ────────────────────────────────────
+  const [kind, setKind] = useState<MediaKind>("vod");
+  const [leaderId, setLeaderId] = useState<string | null>(null);
+  const [leaderName, setLeaderName] = useState<string | null>(null);
+  const [liveAnchor, setLiveAnchor] = useState<LiveAnchor | null>(null);
+  const [liveStatus, setLiveStatus] = useState<WSLiveStatusPayload | null>(
+    null,
+  );
+
   // Prevents echo loops when the video element is driven by a remote WebSocket event
   const isRemoteUpdateRef = useRef<boolean>(false);
 
   const { send, subscribe } = useRoomSocket();
   const permissions = usePermissions();
+  const { user } = useAuth();
+
+  // The server elects the leader and announces it; this client only compares.
+  const isLeader = !!user && !!leaderId && user.id === leaderId;
 
   // Reset playback whenever the room changes so room A's position never leaks into room B
   useEffect(() => {
@@ -52,6 +76,18 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     setIsPlaying(false);
     setLastSyncTimestamp(Date.now());
   }, [roomId, activeRoom?.current_media_url]);
+
+  // Live sync identity is owned by the server, which announces it over LIVE_LEADER
+  // and clears it on CHANGE_MEDIA. It is deliberately not reset above: the room
+  // record is refetched whenever current_media_url is persisted, and clearing the
+  // leader there wiped the election that had just happened — stopping the leader
+  // from publishing, with nothing to elect a replacement.
+  useEffect(() => {
+    setLiveAnchor(null);
+    setLeaderId(null);
+    setLeaderName(null);
+    setLiveStatus(null);
+  }, [roomId]);
 
   const clearRemoteFlag = useCallback(() => {
     isRemoteUpdateRef.current = false;
@@ -115,6 +151,11 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
         });
         isRemoteUpdateRef.current = true;
         setMediaUrlState(payload.media_url);
+        setKind(payload.kind ?? "vod");
+        setLiveAnchor(null);
+        setLeaderId(null);
+        setLeaderName(null);
+        setLiveStatus(null);
         setCurrentTime(0);
         setIsPlaying(false);
         setLastSyncTimestamp(Date.now());
@@ -133,6 +174,17 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
           setMediaUrlState(payload.media_url);
         }
 
+        setKind(payload.kind ?? "vod");
+        setLeaderId(payload.leader_id ?? null);
+        setLeaderName(payload.leader_name ?? null);
+        if (payload.live_position) {
+          setLiveAnchor({
+            position: payload.live_position,
+            receivedAt: Date.now(),
+            ageMs: payload.age_ms ?? 0,
+          });
+        }
+
         let targetTime = payload.media_time_seconds || 0;
         if (payload.is_playing && payload.last_updated) {
           const elapsedSec = Math.max(
@@ -148,12 +200,45 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       }
     });
 
+    const unsubLiveLeader = subscribe("LIVE_LEADER", (msg) => {
+      const payload = msg.payload as WSLiveLeaderPayload;
+      if (!payload?.leader_id) return;
+      logger.info("PlayerSync: Live sync leader elected", {
+        leader: payload.leader_name,
+      });
+      setLeaderId(payload.leader_id);
+      setLeaderName(payload.leader_name);
+    });
+
+    const unsubLivePosition = subscribe("LIVE_POSITION", (msg) => {
+      const payload = msg.payload as WSLivePositionPayload;
+      if (!payload?.position) return;
+      if (payload.leader_id) setLeaderId(payload.leader_id);
+      // receivedAt is read from the local clock on purpose: pairing it with the
+      // server-measured age keeps this free of any cross-machine clock comparison.
+      setLiveAnchor({
+        position: payload.position,
+        receivedAt: Date.now(),
+        ageMs: payload.age_ms ?? 0,
+      });
+    });
+
+    const unsubLiveStatus = subscribe("LIVE_STATUS", (msg) => {
+      const payload = msg.payload as WSLiveStatusPayload;
+      if (!payload?.status) return;
+      logger.warn("PlayerSync: Live channel status changed", { ...payload });
+      setLiveStatus(payload);
+    });
+
     return () => {
       unsubPlay();
       unsubPause();
       unsubSeek();
       unsubChangeMedia();
       unsubSyncPlayback();
+      unsubLiveLeader();
+      unsubLivePosition();
+      unsubLiveStatus();
     };
   }, [subscribe]);
 
@@ -221,6 +306,29 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     [permissions.can_control_playback, send],
   );
 
+  // Only the leader's reports are accepted by the server, but sending from a
+  // follower would still be pointless traffic, so the guard lives here too.
+  const reportLivePosition = useCallback(
+    (position: WSLivePosition, stalled: boolean) => {
+      if (!isLeader) return;
+      send<WSLivePositionPayload>("LIVE_POSITION", {
+        position,
+        age_ms: 0,
+        stalled,
+      });
+    },
+    [isLeader, send],
+  );
+
+  const declineLiveLeadership = useCallback(() => {
+    if (!isLeader) return;
+    send<WSLivePositionPayload>("LIVE_POSITION", {
+      position: { sn: 0, cc: 0, offset: 0 },
+      age_ms: 0,
+      unable: true,
+    });
+  }, [isLeader, send]);
+
   const notifyLocalProgress = useCallback((time: number) => {
     if (!isRemoteUpdateRef.current) {
       setCurrentTime(time);
@@ -238,6 +346,14 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     seek,
     notifyLocalProgress,
     clearRemoteFlag,
+    kind,
+    leaderId,
+    leaderName,
+    isLeader,
+    liveAnchor,
+    liveStatus,
+    reportLivePosition,
+    declineLiveLeadership,
   };
 
   return (

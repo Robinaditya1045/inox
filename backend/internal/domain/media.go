@@ -11,8 +11,18 @@ const (
 	MediaStatusFailed     MediaStatus = "failed"
 )
 
+// MediaKind separates on-demand assets from live channels. Live assets carry no
+// duration and never transcode; their hls_master_url points at the live proxy.
+type MediaKind string
+
+const (
+	MediaKindVOD  MediaKind = "vod"
+	MediaKindLive MediaKind = "live"
+)
+
 type MediaAsset struct {
 	ID              string            `json:"id"`
+	Kind            MediaKind         `json:"kind"`
 	Title           string            `json:"title"`
 	Description     string            `json:"description"`
 	SourceURL       string            `json:"source_url"`

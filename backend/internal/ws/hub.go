@@ -53,18 +53,28 @@ type Hub struct {
 
 	// Cancels the Redis subscription for a room when it becomes empty.
 	roomCancelFuncs map[string]context.CancelFunc
+
+	// Optional live proxy, used to classify media URLs and to clamp a sync leader's
+	// reported position against the real live edge.
+	liveEdges LiveEdgeSource
+
+	// liveStatusNotices carries upstream health changes from the proxy's HTTP
+	// goroutines into this hub's single-threaded loop, which is the only place room
+	// state may be touched.
+	liveStatusNotices chan liveStatusNotice
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
 func NewHub() *Hub {
 	return &Hub{
-		rooms:           make(map[string]map[*Client]bool),
-		playbackStates:  make(map[string]*domain.RoomPlaybackState),
-		roomCancelFuncs: make(map[string]context.CancelFunc),
-		Register:        make(chan *Client),
-		Unregister:      make(chan *Client),
-		Broadcast:       make(chan *Event, 256),
-		Stop:            make(chan struct{}),
+		rooms:             make(map[string]map[*Client]bool),
+		playbackStates:    make(map[string]*domain.RoomPlaybackState),
+		roomCancelFuncs:   make(map[string]context.CancelFunc),
+		Register:          make(chan *Client),
+		Unregister:        make(chan *Client),
+		Broadcast:         make(chan *Event, 256),
+		Stop:              make(chan struct{}),
+		liveStatusNotices: make(chan liveStatusNotice, 64),
 	}
 }
 
@@ -109,6 +119,9 @@ func (h *Hub) getOrCreatePlaybackState(roomID string) *domain.RoomPlaybackState 
 		// 1. Try to load from Redis state repository
 		if h.stateRepo != nil {
 			if s, err := h.stateRepo.GetPlaybackState(context.Background(), roomID); err == nil && s != nil {
+				// State persisted before this room last changed media may carry no
+				// kind; the media URL is authoritative, so re-derive it.
+				s.Kind = h.kindForMediaURL(s.MediaURL)
 				h.playbackStates[roomID] = s
 				return s
 			}
@@ -123,6 +136,7 @@ func (h *Hub) getOrCreatePlaybackState(roomID string) *domain.RoomPlaybackState 
 		}
 		state = &domain.RoomPlaybackState{
 			MediaURL:         mediaURL,
+			Kind:             h.kindForMediaURL(mediaURL),
 			IsPlaying:        false,
 			MediaTimeSeconds: 0,
 			LastUpdated:      time.Now().UnixMilli(),
@@ -143,6 +157,12 @@ func (h *Hub) getOrCreatePlaybackState(roomID string) *domain.RoomPlaybackState 
 // By processing all map modifications and event routing inside a single goroutine via select,
 // the Hub achieves 100% thread safety without requiring any sync.Mutex locks!
 func (h *Hub) Run() {
+	// Recovers leadership for rooms whose leader vanished without a clean handoff:
+	// a crashed node, an evicted connection, or a claim that lapsed because the
+	// leader stopped publishing.
+	leadershipSweep := time.NewTicker(liveLeadershipSweepInterval)
+	defer leadershipSweep.Stop()
+
 	for {
 		select {
 		case client := <-h.Register:
@@ -153,6 +173,12 @@ func (h *Hub) Run() {
 
 		case event := <-h.Broadcast:
 			h.dispatchEvent(event)
+
+		case notice := <-h.liveStatusNotices:
+			h.broadcastLiveChannelStatus(notice)
+
+		case <-leadershipSweep.C:
+			h.sweepLiveLeadership()
 
 		case <-h.Stop:
 			h.shutdownAll()
@@ -213,13 +239,22 @@ func (h *Hub) registerClient(client *Client) {
 	}
 	h.dispatchEvent(joinEvt)
 
+	// A live room needs someone to follow before the newcomer is told where the room
+	// is, so that the sync payload below can name the leader.
+	h.ensureLiveLeader(client.RoomID)
+
 	// Send authoritative playback synchronization state directly to the newly joined peer
 	state := h.getOrCreatePlaybackState(client.RoomID)
 	syncPayload, _ := json.Marshal(VideoControlPayload{
 		MediaURL:         state.MediaURL,
+		Kind:             string(state.Kind),
 		IsPlaying:        state.IsPlaying,
 		MediaTimeSeconds: state.MediaTimeSeconds,
 		LastUpdated:      state.LastUpdated,
+		LeaderID:         state.LeaderID,
+		LeaderName:       state.LeaderName,
+		LivePosition:     state.LivePosition,
+		AgeMillis:        state.LiveAgeMillis(time.Now().UnixMilli()),
 	})
 	syncEvt := &Event{
 		Type:      EventSyncPlayback,
@@ -252,14 +287,20 @@ func (h *Hub) unregisterClient(client *Client) {
 
 		// Clean up empty rooms from memory
 		if len(roomClients) == 0 {
+			// Drop the leadership claim before the room state goes: otherwise it
+			// outlives the room, and the next person to join adopts a leader who
+			// is not there instead of triggering an election.
+			if state, ok := h.playbackStates[client.RoomID]; ok && state.LeaderID != "" {
+				h.dropLeaderClaim(client.RoomID, state.LeaderID)
+			}
 			delete(h.rooms, client.RoomID)
 			delete(h.playbackStates, client.RoomID)
-			
+
 			if cancel, ok := h.roomCancelFuncs[client.RoomID]; ok {
 				cancel()
 				delete(h.roomCancelFuncs, client.RoomID)
 			}
-			
+
 			observability.Global().DecActiveRooms()
 			if h.sfuManager != nil {
 				h.sfuManager.RemoveRoom(client.RoomID)
@@ -270,6 +311,9 @@ func (h *Hub) unregisterClient(client *Client) {
 					sfuRoom.RemovePeer(client.UserID)
 				}
 			}
+			// If the departing client was driving a live room, elect a replacement
+			// now rather than leaving the room uncorrected until the claim expires.
+			h.releaseLiveLeadership(client)
 			// Notify remaining room participants
 			leaveEvt := &Event{
 				Type:       EventLeaveRoom,
@@ -285,6 +329,22 @@ func (h *Hub) unregisterClient(client *Client) {
 func (h *Hub) dispatchEvent(event *Event) {
 	if h.sfuManager != nil && (event.Type == EventSFUOffer || event.Type == EventSFUICECandidate) {
 		h.handleSFUSignaling(event)
+		return
+	}
+
+	// Server-originated events carry no sender. They are not user input -- the hub
+	// itself produced them -- so there is no membership to verify, and running them
+	// through the check below drops every one of them: GetRoomAndMember("") always
+	// errors. This silently disabled SYNC_PLAYBACK on join and, later, LIVE_LEADER
+	// and LIVE_STATUS, in any deployment where roomService is wired.
+	if event.SenderID == "" {
+		if h.redisEventBus != nil {
+			if err := h.redisEventBus.Publish(context.Background(), event); err != nil {
+				slog.Error("failed to publish server event to redis", "error", err)
+			}
+			return
+		}
+		h.dispatchLocal(event)
 		return
 	}
 
@@ -326,6 +386,18 @@ func (h *Hub) dispatchLocal(event *Event) {
 	roomClients, ok := h.rooms[event.RoomID]
 	if !ok || len(roomClients) == 0 {
 		return
+	}
+
+	// Live sync events are folded into room state before fan-out. A position report
+	// is rewritten with a fresh age, and dropped outright when it did not come from
+	// the room's leader.
+	switch event.Type {
+	case EventLivePosition:
+		if !h.applyLivePosition(event) {
+			return
+		}
+	case EventLiveLeader:
+		h.applyLiveLeader(event)
 	}
 
 	data, err := json.Marshal(event)
@@ -377,10 +449,19 @@ func (h *Hub) dispatchLocal(event *Event) {
 		if err := json.Unmarshal(event.Payload, &payload); err == nil {
 			state := h.getOrCreatePlaybackState(event.RoomID)
 			state.MediaURL = payload.MediaURL
+			state.Kind = h.kindForMediaURL(payload.MediaURL)
 			state.IsPlaying = false
 			state.MediaTimeSeconds = 0
 			state.LastUpdated = time.Now().UnixMilli()
 			stateUpdated = true
+
+			// Switching media invalidates any live position: the old one names a
+			// segment in a stream nobody is watching any more.
+			state.LivePosition = nil
+			state.LiveReceivedAt = 0
+			state.LeaderID = ""
+			state.LeaderName = ""
+			defer h.ensureLiveLeader(event.RoomID)
 			if h.roomService != nil && payload.MediaURL != "" {
 				go func(roomID, url string) {
 					_ = h.roomService.UpdateRoomMediaURL(context.Background(), roomID, url)
@@ -416,18 +497,26 @@ func (h *Hub) dispatchLocal(event *Event) {
 			delete(roomClients, client)
 			observability.Global().IncWSEvictions()
 			observability.Global().DecActiveWSConnections()
+			// A leader with a full send buffer is exactly the client that gets
+			// evicted, so leadership has to move on here as well as on a clean leave.
+			evicted := client
 			if h.eventAggregator != nil {
 				h.eventAggregator.RecordEvent("eviction_occurred", &event.RoomID, &client.UserID, map[string]any{
 					"reason": "send buffer overflow",
 				})
 			}
 			if len(roomClients) == 0 {
+				if state, ok := h.playbackStates[event.RoomID]; ok && state.LeaderID != "" {
+					h.dropLeaderClaim(event.RoomID, state.LeaderID)
+				}
 				delete(h.rooms, event.RoomID)
 				delete(h.playbackStates, event.RoomID)
 				observability.Global().DecActiveRooms()
 				if h.sfuManager != nil {
 					h.sfuManager.RemoveRoom(event.RoomID)
 				}
+			} else {
+				h.releaseLiveLeadership(evicted)
 			}
 		}
 	}
@@ -524,4 +613,3 @@ func (h *Hub) InspectRooms() []observability.RoomTelemetry {
 	}
 	return rooms
 }
-

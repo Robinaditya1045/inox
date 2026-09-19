@@ -18,6 +18,8 @@ import (
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/config"
+	"github.com/inox/inox/backend/internal/friend"
+	"github.com/inox/inox/backend/internal/live"
 	"github.com/inox/inox/backend/internal/media"
 	"github.com/inox/inox/backend/internal/observability"
 	"github.com/inox/inox/backend/internal/room"
@@ -59,6 +61,7 @@ func (a *App) Run() error {
 	}
 	roomService := room.NewRoomService(roomRepo, userRepo, stateRepo)
 	chatService := room.NewChatService(chatRepo, roomRepo)
+	friendService := friend.NewService(friend.NewRepository(a.DB), userRepo)
 
 	obsRepo := observability.NewRepository(a.DB)
 	eventAggregator := observability.NewEventAggregator(obsRepo)
@@ -89,6 +92,7 @@ func (a *App) Run() error {
 	wsHandler := handler.NewWSHandler(hub)
 	chatHandler := handler.NewChatHandler(chatService)
 	adminHandler := handler.NewAdminHandler(telemetryHub)
+	friendHandler := handler.NewFriendHandler(friendService)
 
 	mediaRepo := media.NewRepository(a.DB)
 	var storageSvc storage.Service
@@ -118,6 +122,33 @@ func (a *App) Run() error {
 	mediaService := media.NewService(mediaRepo, storageSvc, mediaProcessor, queueClient)
 	mediaHandler := handler.NewMediaHandler(mediaService, a.Config.MediaStreamBaseURL)
 
+	// Live channels. Both ingest paths -- a manifest URL or provider API we already
+	// hold, and a page we resolve a manifest out of -- converge on one Resolver
+	// interface, so the proxy, the refresh path and the room sync behind it are
+	// written once.
+	liveFetcher := live.NewFetcher(a.Config.LiveSourceAllowedHosts, a.Config.IsProd())
+	liveRegistry := live.NewRegistry(
+		live.NewDirectResolver(),
+		live.NewAPIResolver(liveFetcher),
+		live.NewStaticResolver(liveFetcher),
+	)
+	liveService := live.NewService(live.NewRepository(a.DB), mediaRepo, liveRegistry, liveFetcher, a.Config.LiveProxyBaseURL)
+
+	var liveHandler *handler.LiveHandler
+	liveSealer, err := live.NewSealer(a.Config.SessionSecret)
+	if err != nil {
+		// Without a sealer the proxy would have to expose upstream URLs to clients,
+		// so live channels stay switched off rather than degrading to that.
+		a.Logger.Error("failed to initialize live stream sealer; live channels disabled", "error", err)
+	} else {
+		liveProxy := live.NewProxy(liveService, liveFetcher, liveSealer, live.NewTokenSigner(a.Config.SessionSecret), a.Config.LiveProxyBaseURL)
+		liveHandler = handler.NewLiveHandler(liveService, liveProxy)
+		hub.SetLiveEdgeSource(liveProxy)
+		// Upstream health reaches the rooms watching that channel, so a dead
+		// broadcast shows an explanation rather than a frozen frame.
+		liveProxy.SetStatusListener(hub.NotifyLiveChannelStatus)
+	}
+
 	// Reconcile stuck or orphaned transcode jobs from previous server sessions in the background
 	go mediaService.ReconcileOrphanedAssets(context.Background())
 
@@ -127,7 +158,7 @@ func (a *App) Run() error {
 	middleware.SetAllowedOrigins(a.Config.CORSAllowedOrigins)
 
 	// 6. Register router with wired handlers & middleware
-	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, a.DB, a.Redis)
+	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, liveHandler, friendHandler, a.DB, a.Redis)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),

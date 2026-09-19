@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useRoom } from "../../hooks/useRoom";
+import { useFriends } from "../../hooks/useFriends";
 import { CreateRoomModal } from "../room/CreateRoomModal";
 import { Badge } from "../common/Badge";
 import { UserTray } from "../room/UserTray";
@@ -17,6 +18,7 @@ export const HomeSidebar: React.FC = () => {
     declineInvitation,
     isLoadingRoom,
   } = useRoom();
+  const { friends, incomingRequests } = useFriends();
   const navigate = useNavigate();
 
   return (
@@ -33,6 +35,49 @@ export const HomeSidebar: React.FC = () => {
           >
             <Plus size={16} />
           </button>
+        </div>
+
+        {/* Friends — the lobby's other destination, kept above the room list so a
+            waiting friend request is visible without opening the page. */}
+        <div className={styles.section}>
+          <NavLink
+            to="/friends"
+            style={({ isActive }) => ({
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              padding: "6px var(--space-2)",
+              borderRadius: "var(--radius-lg)",
+              textDecoration: "none",
+              fontSize: "var(--text-compact)",
+              fontWeight: isActive ? 600 : 500,
+              color: isActive
+                ? "var(--color-text-primary)"
+                : "var(--color-text-secondary)",
+              background: isActive ? "var(--color-surface-2)" : "transparent",
+              transition: "background-color var(--transition-fast)",
+            })}
+          >
+            <Users
+              size={14}
+              style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
+            />
+            <span style={{ flex: 1 }}>Friends</span>
+            {incomingRequests.length > 0 ? (
+              <Badge variant="danger">{incomingRequests.length}</Badge>
+            ) : (
+              friends.length > 0 && (
+                <span
+                  style={{
+                    fontSize: "var(--text-label)",
+                    color: "var(--color-text-muted)",
+                  }}
+                >
+                  {friends.length}
+                </span>
+              )
+            )}
+          </NavLink>
         </div>
 
         {/* Pending Invitations */}
