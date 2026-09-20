@@ -68,18 +68,26 @@ class WSService {
       };
 
       this.socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data) as WSMessage;
-          logger.debug("WSService: Received frame", {
-            type: msg.type,
-            sender: msg.sender_name,
-          });
-          this.dispatchEvent(msg);
-        } catch (err) {
-          logger.warn("WSService: Failed to parse incoming WebSocket frame", {
-            err,
-            raw: event.data,
-          });
+        // One event per frame is the contract, but older backends packed bursts
+        // into a single newline-separated frame. Splitting first means a client
+        // deployed ahead of the server does not silently drop whole bursts of
+        // signaling on the floor.
+        const frames = String(event.data).split("\n");
+        for (const frame of frames) {
+          if (!frame.trim()) continue;
+          try {
+            const msg = JSON.parse(frame) as WSMessage;
+            logger.debug("WSService: Received frame", {
+              type: msg.type,
+              sender: msg.sender_name,
+            });
+            this.dispatchEvent(msg);
+          } catch (err) {
+            logger.warn("WSService: Failed to parse incoming WebSocket frame", {
+              err,
+              raw: frame,
+            });
+          }
         }
       };
 

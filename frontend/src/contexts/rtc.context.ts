@@ -1,12 +1,15 @@
 import { createContext } from "react";
-import type { RTCConnectionState } from "../types/rtc";
+import type { RTCConnectionState, VoicePeer } from "../types/rtc";
 
 export interface RTCContextValue {
   connectionState: RTCConnectionState;
   isAudioMuted: boolean;
   isDeafened: boolean;
   isScreenSharing: boolean;
-  remoteStreams: Map<string, MediaStream>;
+  /** Everyone in the call, you included, from the server's roster. */
+  peers: VoicePeer[];
+  /** Subset of peers whose audio is currently carrying speech. */
+  speakingIds: Set<string>;
   localScreenStream: MediaStream | null;
   connectAudio: () => Promise<void>;
   disconnectAudio: () => void;

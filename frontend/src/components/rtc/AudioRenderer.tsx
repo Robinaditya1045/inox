@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from "react";
+import type { VoicePeer } from "../../types/rtc";
 
 interface AudioRendererProps {
-  remoteStreams: Map<string, MediaStream>;
+  peers: VoicePeer[];
   isDeafened: boolean;
 }
 
@@ -21,32 +22,50 @@ function attemptPlay(audioEl: HTMLAudioElement): void {
   });
 }
 
-export const AudioRenderer: React.FC<AudioRendererProps> = ({
-  remoteStreams,
+/** One element per peer, mounted for as long as that peer is in the call. */
+const PeerAudio: React.FC<{ stream: MediaStream; isDeafened: boolean }> = ({
+  stream,
   isDeafened,
 }) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const ref = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const element = ref.current;
+    if (!element || element.srcObject === stream) return;
+    element.srcObject = stream;
+    if (!isDeafened) attemptPlay(element);
+  }, [stream, isDeafened]);
 
-    // Clear existing audio nodes
-    containerRef.current.innerHTML = "";
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.muted = isDeafened;
+    if (!isDeafened) attemptPlay(element);
+  }, [isDeafened]);
 
-    remoteStreams.forEach((stream, peerId) => {
-      const audioEl = document.createElement("audio");
-      audioEl.id = `audio-peer-${peerId}`;
-      audioEl.autoplay = true;
-      audioEl.srcObject = stream;
-      audioEl.muted = isDeafened;
-
-      containerRef.current?.appendChild(audioEl);
-
-      if (!isDeafened) {
-        attemptPlay(audioEl);
-      }
-    });
-  }, [remoteStreams, isDeafened]);
-
-  return <div ref={containerRef} style={{ display: "none" }} />;
+  return <audio ref={ref} autoPlay />;
 };
+
+/**
+ * Plays everyone else's microphones.
+ *
+ * Keyed per peer rather than rebuilt as one block: recreating every element
+ * whenever the roster changes cuts the audio of everyone already in the call
+ * each time somebody joins.
+ */
+export const AudioRenderer: React.FC<AudioRendererProps> = ({
+  peers,
+  isDeafened,
+}) => (
+  <div style={{ display: "none" }}>
+    {peers
+      .filter((peer) => !peer.isLocal && peer.audioStream)
+      .map((peer) => (
+        <PeerAudio
+          key={peer.userId}
+          stream={peer.audioStream!}
+          isDeafened={isDeafened}
+        />
+      ))}
+  </div>
+);

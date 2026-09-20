@@ -15,10 +15,11 @@ var (
 
 // Manager orchestrates lifecycle management across all active SFU media rooms.
 type Manager struct {
-	rooms      map[string]*Room
-	api        *webrtc.API
-	iceServers []webrtc.ICEServer
-	mu         sync.RWMutex
+	rooms        map[string]*Room
+	api          *webrtc.API
+	iceServers   []webrtc.ICEServer
+	stateHandler StateHandler
+	mu           sync.RWMutex
 }
 
 // NewManager initializes the central SFU voice and video routing coordinator
@@ -46,6 +47,22 @@ func NewNetworkedManager(cfg NetworkConfig) (*Manager, error) {
 	return m, nil
 }
 
+// SetStateHandler installs the roster callback every room created from here on --
+// and every room that already exists -- reports voice state changes to.
+func (m *Manager) SetStateHandler(h StateHandler) {
+	m.mu.Lock()
+	m.stateHandler = h
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, room := range m.rooms {
+		rooms = append(rooms, room)
+	}
+	m.mu.Unlock()
+
+	for _, room := range rooms {
+		room.SetStateHandler(h)
+	}
+}
+
 // GetOrCreateRoom retrieves an existing media room or initializes a new one.
 func (m *Manager) GetOrCreateRoom(roomID string) *Room {
 	m.mu.Lock()
@@ -54,6 +71,7 @@ func (m *Manager) GetOrCreateRoom(roomID string) *Room {
 	room, ok := m.rooms[roomID]
 	if !ok {
 		room = NewRoom(roomID, m.api, m.iceServers)
+		room.SetStateHandler(m.stateHandler)
 		m.rooms[roomID] = room
 		slog.Info("created new sfu media room", "room_id", roomID)
 		observability.Global().IncActiveSFURooms()
@@ -84,13 +102,7 @@ func (m *Manager) RemoveRoom(roomID string) {
 
 	if ok {
 		observability.Global().DecActiveSFURooms()
-		room.mu.Lock()
-		for uid, peer := range room.Peers {
-			observability.Global().DecActiveSFUPeers()
-			_ = peer.Close()
-			delete(room.Peers, uid)
-		}
-		room.mu.Unlock()
+		room.Close()
 		slog.Info("removed sfu media room and disconnected peers", "room_id", roomID)
 	}
 }
@@ -103,13 +115,7 @@ func (m *Manager) Shutdown() {
 	slog.Info("shutting down sfu media manager...")
 	for roomID, room := range m.rooms {
 		observability.Global().DecActiveSFURooms()
-		room.mu.Lock()
-		for uid, peer := range room.Peers {
-			observability.Global().DecActiveSFUPeers()
-			_ = peer.Close()
-			delete(room.Peers, uid)
-		}
-		room.mu.Unlock()
+		room.Close()
 		delete(m.rooms, roomID)
 	}
 	slog.Info("sfu media manager shutdown complete")

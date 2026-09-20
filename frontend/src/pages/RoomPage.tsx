@@ -224,10 +224,7 @@ export const RoomPage: React.FC = () => {
       </div>
 
       {/* Invisible Audio Renderer */}
-      <AudioRenderer
-        remoteStreams={rtc.remoteStreams}
-        isDeafened={rtc.isDeafened}
-      />
+      <AudioRenderer peers={rtc.peers} isDeafened={rtc.isDeafened} />
 
       {/* Media Library Modal */}
       <MediaLibraryPicker

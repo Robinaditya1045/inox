@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/inox/inox/backend/internal/domain"
+	"github.com/inox/inox/backend/internal/sfu"
 )
 
 type EventType string
@@ -24,7 +25,17 @@ const (
 	EventSFUOffer        EventType = "SFU_OFFER"
 	EventSFUAnswer       EventType = "SFU_ANSWER"
 	EventSFUICECandidate EventType = "SFU_ICE_CANDIDATE"
-	EventError           EventType = "ERROR"
+	// SFU_LEAVE is the browser hanging up. Without it the SFU only notices when the
+	// websocket goes, so leaving voice while staying in the room would keep the peer
+	// -- and its tile -- alive for everyone else.
+	EventSFULeave EventType = "SFU_LEAVE"
+	// SFU_STATE is the browser reporting what the SFU cannot see for itself: a muted
+	// microphone still sends (silent) audio.
+	EventSFUState EventType = "SFU_STATE"
+	// SFU_PEERS is the server's voice roster, broadcast to the whole room so that
+	// members who are not in the call still see who is.
+	EventSFUPeers EventType = "SFU_PEERS"
+	EventError    EventType = "ERROR"
 
 	// Live streaming. A live room follows one member's playhead rather than an
 	// offset from the start of a file, so it needs its own small vocabulary.
@@ -110,6 +121,16 @@ type ChatPayload struct {
 type SFUSDOPayload struct {
 	SDP  string `json:"sdp"`
 	Type string `json:"type"` // "offer" or "answer"
+}
+
+// SFUStatePayload carries a peer's self-reported media state to the server.
+type SFUStatePayload struct {
+	IsMuted bool `json:"is_muted"`
+}
+
+// SFUPeersPayload carries a room's voice roster to every client in it.
+type SFUPeersPayload struct {
+	Peers []sfu.PeerState `json:"peers"`
 }
 
 // SFUICECandidatePayload represents WebRTC ICE candidate framing for NAT traversal.

@@ -1,34 +1,212 @@
-.stage {
+/* Call surface: stage on top, one control bar pinned underneath it. */
+.shell {
   flex: 1;
   min-height: 0;
-  padding: var(--space-4);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  grid-auto-rows: minmax(160px, 1fr);
-  gap: var(--space-3);
-  background: var(--color-canvas);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-canvas-deep);
 }
 
-.tile {
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-2);
-  border: 2px solid transparent;
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+/* ── Presentation ──────────────────────────────────────────── */
+
+.stageMain {
+  flex: 1;
+  min-width: 0;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border-subtle);
+  background: #08090d;
   overflow: hidden;
-  min-height: 160px;
 }
 
-/* Ringed while the SFU is forwarding this peer's audio */
-.tileLive {
-  border-color: var(--color-live);
+.screenVideo {
+  width: 100%;
+  height: 100%;
+  /* contain, never cover: a shared window cropped to fill the frame hides the
+     part of it the presenter is usually pointing at. */
+  object-fit: contain;
+  background: #08090d;
 }
 
-.tileMuted .avatarWrap {
-  opacity: 0.5;
+.awaitingScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-compact);
+}
+
+.presenterChip {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 26px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-border-subtle);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  max-width: calc(100% - var(--space-6));
+}
+
+.stageActions {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.stageMain:hover .stageActions,
+.stageMain:focus-within .stageActions {
+  opacity: 1;
+}
+
+.stageBtn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-overlay);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.stageBtn:hover {
+  background: var(--color-surface-3);
+}
+
+.filmstrip {
+  width: 208px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Gallery ───────────────────────────────────────────────── */
+
+.grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  align-content: center;
+  justify-content: center;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  overflow-y: auto;
+}
+
+/* One person alone should not be blown up to the full width of the room. */
+.grid[data-count="1"] {
+  grid-template-columns: minmax(0, min(560px, 100%));
+}
+
+/* ── Tiles ─────────────────────────────────────────────────── */
+
+.tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  max-height: 100%;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-2);
+  border: 2px solid transparent;
+  overflow: hidden;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tileCompact {
+  flex-shrink: 0;
+  border-radius: var(--radius-lg);
+}
+
+/* The ring follows who is actually talking, not who is connected: a room of
+   idle tiles all outlined the same tells you nothing. */
+.tileSpeaking {
+  border-color: var(--color-speaking);
+  box-shadow: 0 0 0 4px var(--color-accent-subtle);
+}
+
+.avatarWrap {
+  display: block;
+  transition: opacity var(--transition-fast);
+}
+
+/* The shared Avatar tops out at a size meant for lists. A call tile is mostly
+   empty space around it, so it is resized here rather than by adding a size to
+   the component that only this view would ever use. Two classes deep so the
+   override does not depend on which stylesheet the bundler emits first. */
+.tile .avatarWrap > * {
+  width: 88px;
+  height: 88px;
+  font-size: 2rem;
+}
+
+.tile.tileCompact .avatarWrap > * {
+  width: 52px;
+  height: 52px;
+  font-size: 1.25rem;
+}
+
+.avatarMuted {
+  opacity: 0.55;
+}
+
+.tilePin {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-overlay);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.tile:hover .tilePin,
+.tilePin:focus-visible {
+  opacity: 1;
+}
+
+.tilePin:hover {
+  color: var(--color-text-primary);
 }
 
 .nameplate {
@@ -54,22 +232,87 @@
   white-space: nowrap;
 }
 
-.screenTile {
-  grid-column: 1 / -1;
-  min-height: 320px;
-  background: #08090d;
-  border-color: var(--color-accent);
+/* ── Controls ──────────────────────────────────────────────── */
+
+.controls {
+  flex-shrink: 0;
+  height: var(--call-bar-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-canvas);
 }
 
-.screenVideo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #08090d;
+.ctrl {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
+
+.ctrl:hover {
+  background: var(--color-surface-3);
+}
+
+.ctrlAccent {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.ctrlDanger {
+  background: var(--color-danger-subtle);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+}
+
+.ctrlLeave {
+  width: 58px;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-text-on-accent);
+}
+
+.ctrlLeave:hover {
+  background: var(--color-danger-hover);
+}
+
+.joinBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 var(--space-5);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-size: var(--text-button);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.joinBtn:hover {
+  background: var(--color-accent-hover);
+}
+
+/* ── Empty ─────────────────────────────────────────────────── */
 
 .empty {
-  grid-column: 1 / -1;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -91,4 +334,25 @@
   color: var(--color-text-secondary);
   max-width: 340px;
   line-height: 1.5;
+}
+
+/* Below this width the filmstrip costs the presentation more than it adds, so
+   it moves underneath and scrolls sideways. */
+@media (max-width: 1100px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .filmstrip {
+    width: auto;
+    flex-direction: row;
+    height: 108px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .filmstrip .tile {
+    height: 100%;
+    width: auto;
+  }
 }

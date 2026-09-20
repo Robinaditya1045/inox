@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -107,6 +108,7 @@ func (h *Hub) SetStateRepository(sr room.StateRepository) {
 // SetSFUManager wires the Selective Forwarding Unit for voice chat and video routing.
 func (h *Hub) SetSFUManager(mgr *sfu.Manager) {
 	h.sfuManager = mgr
+	mgr.SetStateHandler(h.broadcastVoiceRoster)
 }
 
 // SetEventAggregator wires the background telemetry event worker for historical analytics persistence.
@@ -184,7 +186,11 @@ func (h *Hub) Run() {
 			h.broadcastLiveChannelStatus(notice)
 
 		case signal := <-h.sfuSignals:
-			h.sendToTarget(signal)
+			if signal.TargetID != "" {
+				h.sendToTarget(signal)
+			} else {
+				h.dispatchEvent(signal)
+			}
 
 		case <-leadershipSweep.C:
 			h.sweepLiveLeadership()
@@ -273,6 +279,36 @@ func (h *Hub) registerClient(client *Client) {
 		Timestamp: time.Now().UnixMilli(),
 	}
 	h.dispatchEvent(syncEvt)
+
+	// Who is already in voice. The roster is only broadcast when it changes, so
+	// without this a late arrival sees an empty call until someone joins or leaves.
+	h.sendVoiceRoster(client)
+}
+
+// sendVoiceRoster gives one client the room's current voice roster.
+func (h *Hub) sendVoiceRoster(client *Client) {
+	if h.sfuManager == nil {
+		return
+	}
+	sfuRoom, err := h.sfuManager.GetRoom(client.RoomID)
+	if err != nil {
+		return
+	}
+	roster := sfuRoom.Roster()
+	if len(roster) == 0 {
+		return
+	}
+	payload, err := json.Marshal(SFUPeersPayload{Peers: roster})
+	if err != nil {
+		return
+	}
+	h.sendToTarget(&Event{
+		Type:      EventSFUPeers,
+		RoomID:    client.RoomID,
+		TargetID:  client.UserID,
+		Payload:   payload,
+		Timestamp: time.Now().UnixMilli(),
+	})
 }
 
 func (h *Hub) unregisterClient(client *Client) {
@@ -335,8 +371,18 @@ func (h *Hub) unregisterClient(client *Client) {
 	}
 }
 
+// isSFUSignal reports whether an event is browser-to-SFU signaling, which is
+// handled by the media layer instead of being fanned out to the room.
+func isSFUSignal(t EventType) bool {
+	switch t {
+	case EventSFUOffer, EventSFUAnswer, EventSFUICECandidate, EventSFULeave, EventSFUState:
+		return true
+	}
+	return false
+}
+
 func (h *Hub) dispatchEvent(event *Event) {
-	if h.sfuManager != nil && (event.Type == EventSFUOffer || event.Type == EventSFUICECandidate) {
+	if h.sfuManager != nil && event.SenderID != "" && isSFUSignal(event.Type) {
 		h.handleSFUSignaling(event)
 		return
 	}
@@ -533,8 +579,26 @@ func (h *Hub) dispatchLocal(event *Event) {
 
 func (h *Hub) handleSFUSignaling(event *Event) {
 	sfuRoom := h.sfuManager.GetOrCreateRoom(event.RoomID)
+
+	if event.Type == EventSFULeave {
+		sfuRoom.RemovePeer(event.SenderID)
+		return
+	}
+
 	peer, err := sfuRoom.GetPeer(event.SenderID)
+	// A peer left over from a browser that vanished without hanging up cannot
+	// answer a new call; an offer means the user is starting over, so replace it.
+	if err == nil && event.Type == EventSFUOffer && !peer.Usable() {
+		slog.Info("replacing dead sfu peer on rejoin", "user_id", event.SenderID, "room_id", event.RoomID)
+		sfuRoom.RemovePeer(event.SenderID)
+		peer, err = nil, sfu.ErrPeerNotFound
+	}
 	if err != nil {
+		// Only an offer starts a call. Stray candidates or state updates from a peer
+		// that has already hung up must not resurrect it.
+		if event.Type != EventSFUOffer {
+			return
+		}
 		peer, err = sfuRoom.NewPeer(event.SenderID, event.SenderID, event.SenderName)
 		if err != nil {
 			slog.Error("failed to initialize sfu peer", "user_id", event.SenderID, "error", err)
@@ -546,32 +610,52 @@ func (h *Hub) handleSFUSignaling(event *Event) {
 		// without it every peer connection stalls in "checking" and fails.
 		// Wired before the offer is processed so no candidate is missed.
 		h.trickleLocalCandidates(peer, event.RoomID, event.SenderID)
+		// Subscriptions made after this peer is connected -- someone else joining,
+		// or starting a screen share -- need a fresh offer from the SFU. This is how
+		// it reaches the browser.
+		h.signalSFUOffers(peer, event.RoomID, event.SenderID)
 		sfuRoom.AddPeer(peer)
 	}
 
-	if event.Type == EventSFUOffer {
+	switch event.Type {
+	case EventSFUOffer:
 		var sdpPayload SFUSDOPayload
 		if err := json.Unmarshal(event.Payload, &sdpPayload); err != nil {
 			return
 		}
 		offer := webrtc.SessionDescription{SDP: sdpPayload.SDP, Type: webrtc.SDPTypeOffer}
-		if err := peer.SetRemoteDescription(offer); err != nil {
-			return
-		}
-		answer, err := peer.CreateAnswer()
+		answer, err := peer.HandleOffer(offer)
 		if err != nil {
+			// A collision is expected and self-healing: the browser rolls its own
+			// offer back, answers the SFU's, and offers again afterwards.
+			if !errors.Is(err, sfu.ErrOfferCollision) {
+				slog.Error("failed to answer sfu offer", "user_id", event.SenderID, "error", err)
+			}
 			return
 		}
 		respBytes, _ := json.Marshal(SFUSDOPayload{SDP: answer.SDP, Type: "answer"})
-		answerEvt := &Event{
+		h.sendToTarget(&Event{
 			Type:      EventSFUAnswer,
 			RoomID:    event.RoomID,
 			TargetID:  event.SenderID,
 			Payload:   respBytes,
 			Timestamp: event.Timestamp,
+		})
+		// Tracks that were attached before this exchange but did not fit in the
+		// answer -- a third person's microphone, a share already in progress -- are
+		// flushed here, now that the connection is established.
+		peer.Negotiate()
+
+	case EventSFUAnswer:
+		var sdpPayload SFUSDOPayload
+		if err := json.Unmarshal(event.Payload, &sdpPayload); err != nil {
+			return
 		}
-		h.sendToTarget(answerEvt)
-	} else if event.Type == EventSFUICECandidate {
+		if err := peer.HandleAnswer(webrtc.SessionDescription{SDP: sdpPayload.SDP, Type: webrtc.SDPTypeAnswer}); err != nil {
+			slog.Error("failed to apply sfu answer", "user_id", event.SenderID, "error", err)
+		}
+
+	case EventSFUICECandidate:
 		var candPayload SFUICECandidatePayload
 		if err := json.Unmarshal(event.Payload, &candPayload); err != nil {
 			return
@@ -581,6 +665,58 @@ func (h *Hub) handleSFUSignaling(event *Event) {
 			SDPMid:        candPayload.SDPMid,
 			SDPMLineIndex: candPayload.SDPMLineIndex,
 		})
+
+	case EventSFUState:
+		var statePayload SFUStatePayload
+		if err := json.Unmarshal(event.Payload, &statePayload); err != nil {
+			return
+		}
+		sfuRoom.SetMuted(event.SenderID, statePayload.IsMuted)
+	}
+}
+
+// signalSFUOffers installs the transport for server-initiated renegotiation.
+// Pion produces these offers on its own goroutines, so they go through the same
+// channel as gathered candidates rather than touching h.rooms directly.
+func (h *Hub) signalSFUOffers(peer *sfu.Peer, roomID, targetID string) {
+	peer.SetSignaler(func(sdp webrtc.SessionDescription) {
+		payload, err := json.Marshal(SFUSDOPayload{SDP: sdp.SDP, Type: "offer"})
+		if err != nil {
+			slog.Error("failed to marshal sfu renegotiation offer", "user_id", targetID, "error", err)
+			return
+		}
+		h.queueSFUSignal(&Event{
+			Type:      EventSFUOffer,
+			RoomID:    roomID,
+			TargetID:  targetID,
+			Payload:   payload,
+			Timestamp: time.Now().UnixMilli(),
+		}, "renegotiation offer")
+	})
+}
+
+// broadcastVoiceRoster publishes a room's voice roster to everyone in it. The SFU
+// calls this from its own goroutines whenever the roster changes.
+func (h *Hub) broadcastVoiceRoster(roomID string, peers []sfu.PeerState) {
+	payload, err := json.Marshal(SFUPeersPayload{Peers: peers})
+	if err != nil {
+		slog.Error("failed to marshal sfu voice roster", "room_id", roomID, "error", err)
+		return
+	}
+	h.queueSFUSignal(&Event{
+		Type:      EventSFUPeers,
+		RoomID:    roomID,
+		Payload:   payload,
+		Timestamp: time.Now().UnixMilli(),
+	}, "voice roster")
+}
+
+// queueSFUSignal hands an event produced outside the hub loop to that loop.
+func (h *Hub) queueSFUSignal(event *Event, kind string) {
+	select {
+	case h.sfuSignals <- event:
+	default:
+		slog.Error("dropped sfu signal; buffer full", "kind", kind, "room_id", event.RoomID, "target_id", event.TargetID)
 	}
 }
 
@@ -604,17 +740,13 @@ func (h *Hub) trickleLocalCandidates(peer *sfu.Peer, roomID, targetID string) {
 			return
 		}
 
-		select {
-		case h.sfuSignals <- &Event{
+		h.queueSFUSignal(&Event{
 			Type:      EventSFUICECandidate,
 			RoomID:    roomID,
 			TargetID:  targetID,
 			Payload:   payload,
 			Timestamp: time.Now().UnixMilli(),
-		}:
-		default:
-			slog.Warn("dropped sfu ice candidate; signal buffer full", "user_id", targetID, "room_id", roomID)
-		}
+		}, "ice candidate")
 	})
 }
 
