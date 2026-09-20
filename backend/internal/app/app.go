@@ -169,12 +169,21 @@ func (a *App) Run() error {
 	// 6. Register router with wired handlers & middleware
 	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, liveHandler, friendHandler, a.DB, a.Redis)
 
+	// Whole-request read/write timeouts are wrong for this service. Uploads are
+	// large by design (the admin portal offers 1 GB multipart and 3 GB direct) and
+	// media responses stream for as long as someone is watching, so a 10s clock on
+	// the body killed a 252 MB upload at exactly 10.00s. The browser reported that
+	// as a CORS error, because the 502 the reverse proxy synthesises for a dropped
+	// upstream connection carries no CORS headers.
+	//
+	// ReadHeaderTimeout keeps the slowloris protection ReadTimeout was there for,
+	// without putting a clock on transfers whose duration depends on the client's
+	// bandwidth.
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              fmt.Sprintf(":%s", a.Config.HTTPPort),
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

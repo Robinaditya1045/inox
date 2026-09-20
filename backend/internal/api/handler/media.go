@@ -90,9 +90,18 @@ func (h *MediaHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 // Upload handles multipart file upload of raw MP4 or HLS files, triggering asynchronous FFmpeg transcoding.
+// maxMultipartUpload caps the buffered multipart path, matching the size the
+// admin portal advertises on its "Multipart" tab. Larger files go through the
+// presigned direct-upload path instead.
+const maxMultipartUpload = 1 << 30 // 1 GB
+
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
-	// Limit upload size to 1GB in memory/temp storage
-	if err := r.ParseMultipartForm(1024 << 20); err != nil {
+	// MaxBytesReader is what actually enforces the cap. ParseMultipartForm's
+	// argument is the in-memory buffer size, not a limit, so passing 1 GB there
+	// meant a 252 MB upload was held entirely in RAM on a 6 GB host. 32 MB in
+	// memory with the remainder spilled to temp files is the intended shape.
+	r.Body = http.MaxBytesReader(w, r.Body, maxMultipartUpload)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		respond.WriteError(w, http.StatusBadRequest, "file upload too large or malformed")
 		return
 	}
@@ -358,4 +367,3 @@ func (h *MediaHandler) StreamProxy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, reader)
 }
-
