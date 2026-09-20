@@ -200,6 +200,15 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.ORACLE_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+
+          # A public-key fingerprint is not secret, and printing it turns an
+          # opaque "Permission denied (publickey)" into an obvious mismatch
+          # against the key the host actually authorises.
+          if ! ssh-keygen -yf ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub 2>/dev/null; then
+            echo "::error::ORACLE_SSH_KEY is not a usable private key. It must be the full contents of the private key file, starting with -----BEGIN OPENSSH PRIVATE KEY----- (not the .pub, and not a passphrase-protected key)."
+            exit 1
+          fi
+          echo "Deploy key in use: $(ssh-keygen -lf ~/.ssh/deploy_key.pub)"
           # Pinned rather than keyscanned at run time, so a redirected deploy
           # cannot silently hand the key to a different host.
           printf '%s\n' "140.238.248.49 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFevN/vQQ5Kai1XXg6BiqPRCWB72V+wTTBnEgkI4ddX4" > ~/.ssh/known_hosts
