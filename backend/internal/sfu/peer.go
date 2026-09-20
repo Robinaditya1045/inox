@@ -22,15 +22,16 @@ type Peer struct {
 }
 
 // NewPeer initializes a WebRTC PeerConnection configured for SFU media routing.
-func NewPeer(id, userID, username, roomID string, api *webrtc.API) (*Peer, error) {
-	// Configure ICE servers (STUN/TURN) for NAT traversal
-	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
-			},
-		},
+//
+// A nil api uses Pion's package defaults, and empty iceServers fall back to a
+// public STUN server; Room.NewPeer supplies both from the deployment's
+// NetworkConfig so peers created for real traffic honour it.
+func NewPeer(id, userID, username, roomID string, api *webrtc.API, iceServers []webrtc.ICEServer) (*Peer, error) {
+	if len(iceServers) == 0 {
+		iceServers = DefaultICEServers()
 	}
+	// Configure ICE servers (STUN/TURN) for NAT traversal
+	config := webrtc.Configuration{ICEServers: iceServers}
 
 	var pc *webrtc.PeerConnection
 	var err error

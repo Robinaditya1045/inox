@@ -20,16 +20,28 @@ type Room struct {
 	Peers  map[string]*Peer
 	tracks map[string]*webrtc.TrackLocalStaticRTP
 
+	api        *webrtc.API
+	iceServers []webrtc.ICEServer
+
 	mu sync.RWMutex
 }
 
-// NewRoom initializes a new SFU media routing workspace.
-func NewRoom(id string) *Room {
+// NewRoom initializes a new SFU media routing workspace. api and iceServers
+// carry the deployment's NAT/port settings down to every peer the room creates;
+// both may be nil for Pion's defaults.
+func NewRoom(id string, api *webrtc.API, iceServers []webrtc.ICEServer) *Room {
 	return &Room{
-		ID:     id,
-		Peers:  make(map[string]*Peer),
-		tracks: make(map[string]*webrtc.TrackLocalStaticRTP),
+		ID:         id,
+		Peers:      make(map[string]*Peer),
+		tracks:     make(map[string]*webrtc.TrackLocalStaticRTP),
+		api:        api,
+		iceServers: iceServers,
 	}
+}
+
+// NewPeer creates a peer bound to this room's WebRTC API and ICE configuration.
+func (r *Room) NewPeer(id, userID, username string) (*Peer, error) {
+	return NewPeer(id, userID, username, r.ID, r.api, r.iceServers)
 }
 
 // AddPeer registers a new WebRTC peer and subscribes them to all active media tracks in the room.
@@ -157,4 +169,3 @@ func (r *Room) GetPeerCount() int {
 	defer r.mu.RUnlock()
 	return len(r.Peers)
 }
-

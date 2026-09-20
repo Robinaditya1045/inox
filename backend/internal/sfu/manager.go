@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/inox/inox/backend/internal/observability"
+	"github.com/pion/webrtc/v3"
 )
 
 var (
@@ -14,15 +15,35 @@ var (
 
 // Manager orchestrates lifecycle management across all active SFU media rooms.
 type Manager struct {
-	rooms map[string]*Room
-	mu    sync.RWMutex
+	rooms      map[string]*Room
+	api        *webrtc.API
+	iceServers []webrtc.ICEServer
+	mu         sync.RWMutex
 }
 
-// NewManager initializes the central SFU voice and video routing coordinator.
+// NewManager initializes the central SFU voice and video routing coordinator
+// using Pion's default networking, which is correct for a directly addressable
+// host. Deployments behind NAT should use NewNetworkedManager instead.
 func NewManager() *Manager {
 	return &Manager{
-		rooms: make(map[string]*Room),
+		rooms:      make(map[string]*Room),
+		iceServers: DefaultICEServers(),
 	}
+}
+
+// NewNetworkedManager initializes the coordinator with an explicit NAT and UDP
+// port configuration, so every peer it creates advertises candidates the
+// outside world can actually reach.
+func NewNetworkedManager(cfg NetworkConfig) (*Manager, error) {
+	api, err := buildAPI(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	m := NewManager()
+	m.api = api
+	m.iceServers = ParseICEServers(cfg.ICEServers)
+	return m, nil
 }
 
 // GetOrCreateRoom retrieves an existing media room or initializes a new one.
@@ -32,7 +53,7 @@ func (m *Manager) GetOrCreateRoom(roomID string) *Room {
 
 	room, ok := m.rooms[roomID]
 	if !ok {
-		room = NewRoom(roomID)
+		room = NewRoom(roomID, m.api, m.iceServers)
 		m.rooms[roomID] = room
 		slog.Info("created new sfu media room", "room_id", roomID)
 		observability.Global().IncActiveSFURooms()

@@ -62,6 +62,11 @@ type Hub struct {
 	// goroutines into this hub's single-threaded loop, which is the only place room
 	// state may be touched.
 	liveStatusNotices chan liveStatusNotice
+
+	// sfuSignals carries locally gathered ICE candidates from Pion's goroutines
+	// into the same single-threaded loop, for the same reason: delivering one
+	// means walking h.rooms.
+	sfuSignals chan *Event
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
@@ -75,6 +80,7 @@ func NewHub() *Hub {
 		Broadcast:         make(chan *Event, 256),
 		Stop:              make(chan struct{}),
 		liveStatusNotices: make(chan liveStatusNotice, 64),
+		sfuSignals:        make(chan *Event, 256),
 	}
 }
 
@@ -176,6 +182,9 @@ func (h *Hub) Run() {
 
 		case notice := <-h.liveStatusNotices:
 			h.broadcastLiveChannelStatus(notice)
+
+		case signal := <-h.sfuSignals:
+			h.sendToTarget(signal)
 
 		case <-leadershipSweep.C:
 			h.sweepLiveLeadership()
@@ -526,11 +535,17 @@ func (h *Hub) handleSFUSignaling(event *Event) {
 	sfuRoom := h.sfuManager.GetOrCreateRoom(event.RoomID)
 	peer, err := sfuRoom.GetPeer(event.SenderID)
 	if err != nil {
-		peer, err = sfu.NewPeer(event.SenderID, event.SenderID, event.SenderName, event.RoomID, nil)
+		peer, err = sfuRoom.NewPeer(event.SenderID, event.SenderID, event.SenderName)
 		if err != nil {
 			slog.Error("failed to initialize sfu peer", "user_id", event.SenderID, "error", err)
 			return
 		}
+		// The browser can only reach the SFU via candidates the SFU tells it
+		// about. CreateAnswer returns before gathering finishes, so the answer
+		// SDP carries none of them and this callback is the only delivery path;
+		// without it every peer connection stalls in "checking" and fails.
+		// Wired before the offer is processed so no candidate is missed.
+		h.trickleLocalCandidates(peer, event.RoomID, event.SenderID)
 		sfuRoom.AddPeer(peer)
 	}
 
@@ -567,6 +582,40 @@ func (h *Hub) handleSFUSignaling(event *Event) {
 			SDPMLineIndex: candPayload.SDPMLineIndex,
 		})
 	}
+}
+
+// trickleLocalCandidates forwards each ICE candidate the SFU gathers to the peer
+// that offered, as an SFU_ICE_CANDIDATE event the client already knows how to apply.
+func (h *Hub) trickleLocalCandidates(peer *sfu.Peer, roomID, targetID string) {
+	peer.PC.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		// A nil candidate marks the end of gathering, not a candidate to send.
+		if candidate == nil {
+			return
+		}
+
+		init := candidate.ToJSON()
+		payload, err := json.Marshal(SFUICECandidatePayload{
+			Candidate:     init.Candidate,
+			SDPMid:        init.SDPMid,
+			SDPMLineIndex: init.SDPMLineIndex,
+		})
+		if err != nil {
+			slog.Error("failed to marshal sfu ice candidate", "user_id", targetID, "error", err)
+			return
+		}
+
+		select {
+		case h.sfuSignals <- &Event{
+			Type:      EventSFUICECandidate,
+			RoomID:    roomID,
+			TargetID:  targetID,
+			Payload:   payload,
+			Timestamp: time.Now().UnixMilli(),
+		}:
+		default:
+			slog.Warn("dropped sfu ice candidate; signal buffer full", "user_id", targetID, "room_id", roomID)
+		}
+	})
 }
 
 func (h *Hub) sendToTarget(event *Event) {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -78,7 +79,15 @@ func (a *App) Run() error {
 		hub.SetRedisEventBus(redisEventBus)
 		hub.SetStateRepository(stateRepo)
 	}
-	sfuMgr := sfu.NewManager()
+	sfuMgr, err := sfu.NewNetworkedManager(sfu.NetworkConfig{
+		ICEServers: a.Config.WebRTCICEServers,
+		PortMin:    parsePort(a.Config.WebRTCPortMin),
+		PortMax:    parsePort(a.Config.WebRTCPortMax),
+		PublicIP:   a.Config.WebRTCPublicIP,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize sfu media manager: %w", err)
+	}
 	hub.SetSFUManager(sfuMgr)
 	go hub.Run()
 
@@ -209,4 +218,15 @@ func (a *App) Run() error {
 
 	a.Logger.Info("server exited cleanly")
 	return nil
+}
+
+// parsePort converts a configured port string to the uint16 Pion expects,
+// yielding 0 (meaning "leave the range unpinned") for anything unparseable or
+// outside the valid port space.
+func parsePort(raw string) uint16 {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 || n > 65535 {
+		return 0
+	}
+	return uint16(n)
 }

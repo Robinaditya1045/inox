@@ -36,7 +36,7 @@ func TestSFUManagerRoomLifecycle(t *testing.T) {
 
 	// 4. Test Peer initialization and registration
 	api := webrtc.NewAPI()
-	peerAlice, err := sfu.NewPeer("peer-1", "user-alice", "Alice", roomID, api)
+	peerAlice, err := sfu.NewPeer("peer-1", "user-alice", "Alice", roomID, api, nil)
 	if err != nil {
 		t.Fatalf("expected peer creation to succeed, got %v", err)
 	}

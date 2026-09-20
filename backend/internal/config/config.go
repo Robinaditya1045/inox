@@ -29,6 +29,7 @@ type Config struct {
 	WebRTCICEServers       string
 	WebRTCPortMin          string
 	WebRTCPortMax          string
+	WebRTCPublicIP         string
 }
 
 func Load() (*Config, error) {
@@ -59,6 +60,10 @@ func Load() (*Config, error) {
 		WebRTCICEServers:       getEnv("WEBRTC_ICE_SERVERS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"),
 		WebRTCPortMin:          getEnv("WEBRTC_PORT_MIN", "50000"),
 		WebRTCPortMax:          getEnv("WEBRTC_PORT_MAX", "50100"),
+		// Set to the VM's public address when the host sits behind 1:1 NAT (Oracle
+		// Cloud, EC2, GCE). Left empty the SFU advertises its private IP, which no
+		// remote browser can route to, and voice chat never leaves "checking".
+		WebRTCPublicIP: getEnv("WEBRTC_PUBLIC_IP", ""),
 	}
 
 	// Fail fast if DATABASE_URL or REDIS_URL is empty
