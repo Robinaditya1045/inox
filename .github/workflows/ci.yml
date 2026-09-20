@@ -3,8 +3,12 @@ name: Inox CI/CD
 on:
   push:
     branches: [ "main" ]
+    # A documentation-only commit would otherwise rebuild the image and restart
+    # the backend, dropping every live room's WebSocket for no reason.
+    paths-ignore: [ "**.md" ]
   pull_request:
     branches: [ "main" ]
+    paths-ignore: [ "**.md" ]
   # Lets a deploy be re-run or rolled forward without an empty commit.
   workflow_dispatch:
 
