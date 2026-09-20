@@ -148,12 +148,24 @@ func TestHubSFUSignalingAndVoiceRoster(t *testing.T) {
 	hub.Register <- alice
 	hub.Register <- bob
 
-	// Alice joins voice with an offer her browser would have produced.
-	browser, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	// Alice joins voice with an offer her browser would have produced. It gathers
+	// no candidates: this test is about the hub's signaling, and a transport that
+	// connects and is then closed mid-start trips a data race inside pion (see
+	// newBrowserPeerConnection in the sfu package tests).
+	settings := webrtc.SettingEngine{}
+	settings.SetInterfaceFilter(func(string) bool { return false })
+	mediaEngine := &webrtc.MediaEngine{}
+	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+		t.Fatalf("failed to register codecs: %v", err)
+	}
+	browser, err := webrtc.NewAPI(
+		webrtc.WithSettingEngine(settings),
+		webrtc.WithMediaEngine(mediaEngine),
+	).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatalf("failed to create browser-side peer connection: %v", err)
 	}
-	defer browser.Close()
+	t.Cleanup(func() { _ = browser.Close() })
 	if _, err := browser.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	}); err != nil {

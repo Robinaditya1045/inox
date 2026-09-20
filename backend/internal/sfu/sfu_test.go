@@ -131,6 +131,39 @@ func TestRoomRosterTracksMembershipAndMute(t *testing.T) {
 	}
 }
 
+// newBrowserPeerConnection returns a peer connection that gathers no ICE
+// candidates, for tests about SDP rather than connectivity.
+//
+// Letting these connect for real is not just wasted work. pion's
+// ICETransport.stop re-reads t.mux outside its lock (v3.3.6 icetransport.go:224)
+// while Start writes it on connect, so closing a peer connection at the moment
+// ICE comes up is a data race inside pion itself -- which CI caught and a fast
+// machine does not. With no interfaces to gather from, no transport starts and
+// the negotiation under test is unchanged.
+func newBrowserPeerConnection(t *testing.T) *webrtc.PeerConnection {
+	t.Helper()
+
+	settings := webrtc.SettingEngine{}
+	settings.SetInterfaceFilter(func(string) bool { return false })
+
+	// A hand-built API starts with an empty media engine, which would reject every
+	// m-line it is offered.
+	mediaEngine := &webrtc.MediaEngine{}
+	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+		t.Fatalf("failed to register codecs: %v", err)
+	}
+
+	pc, err := webrtc.NewAPI(
+		webrtc.WithSettingEngine(settings),
+		webrtc.WithMediaEngine(mediaEngine),
+	).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("failed to create browser-side peer connection: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	return pc
+}
+
 // A track attached after the browser's opening exchange carries no media until the
 // browser has been offered it. This is the bug that made the second person to join
 // a call inaudible to the first, so it is tested end to end against a real
@@ -150,11 +183,7 @@ func TestPeerRenegotiatesTracksAddedAfterConnecting(t *testing.T) {
 	peer.SetSignaler(func(sdp webrtc.SessionDescription) { offers <- sdp })
 	room.AddPeer(peer)
 
-	browser, err := webrtc.NewPeerConnection(webrtc.Configuration{})
-	if err != nil {
-		t.Fatalf("failed to create browser-side peer connection: %v", err)
-	}
-	defer browser.Close()
+	browser := newBrowserPeerConnection(t)
 
 	if _, err := browser.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
@@ -280,11 +309,7 @@ func TestPeerFlushesTracksThatDidNotFitTheOpeningAnswer(t *testing.T) {
 		}
 	}
 
-	browser, err := webrtc.NewPeerConnection(webrtc.Configuration{})
-	if err != nil {
-		t.Fatalf("failed to create browser-side peer connection: %v", err)
-	}
-	defer browser.Close()
+	browser := newBrowserPeerConnection(t)
 
 	if _, err := browser.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
