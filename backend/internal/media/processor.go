@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -55,6 +56,17 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 	p.mu.Lock()
 	if p.activeJobs == nil {
 		p.activeJobs = make(map[string]context.CancelFunc)
+	}
+	// Restarting the API while an asset is mid-transcode makes
+	// ReconcileOrphanedAssets enqueue it again, and the worker's concurrency lets
+	// that run alongside the job already in flight: two ffmpeg ladders competing
+	// for the same core and writing to the same HLS prefix. Treat a duplicate as
+	// satisfied by the run already under way rather than as work to redo.
+	if _, running := p.activeJobs[asset.ID]; running {
+		p.mu.Unlock()
+		cancel()
+		slog.Info("transcode already in progress for asset; skipping duplicate task", "asset_id", asset.ID)
+		return nil
 	}
 	p.activeJobs[asset.ID] = cancel
 	p.wg.Add(1)
@@ -109,19 +121,48 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 	}
 	defer os.RemoveAll(tmpDir)
 
-	hasAudio := p.hasAudioStream(asset.SourceURL)
+	// FFmpeg reads the source straight over HTTP from object storage. On a single
+	// core the encoder drains that response at roughly 50 KB/s, holding one
+	// connection open for the whole job, and when the object store drops it ffmpeg
+	// treats the short read as end-of-input: it flushes, exits 0, and leaves a
+	// playlist covering only what it managed to read. Two runs over the same 487s
+	// source yielded 24s and 42s of video, both reported as successful transcodes.
+	// Staging to local disk first removes the failure mode, and spares ffmpeg the
+	// HTTP range requests it otherwise makes to locate the moov atom.
+	inputPath := asset.SourceURL
+	if staged, stageErr := p.stageSource(ctx, asset, tmpDir); stageErr != nil {
+		slog.Warn("could not stage source locally; transcoding straight from the source URL",
+			"asset_id", asset.ID, "error", stageErr)
+	} else {
+		inputPath = staged
+	}
+
+	hasAudio := p.hasAudioStream(inputPath)
 
 	// Optimized FFmpeg command for 3-tier Adaptive Bitrate HLS ladder (1080p, 720p, 480p)
+	//
+	// x264's default preset ("medium") encodes all three renditions at roughly
+	// 0.06x realtime on a single Ampere core, which is over two hours for an
+	// eight-minute source. "veryfast" trades some compression efficiency at the
+	// same bitrate for a ~4x speedup, which is the right side of that trade for a
+	// one-core host.
 	// Using pad=ceil(iw/2)*2:ceil(ih/2)*2 ensures both width and height are even integers,
 	// preventing 'width not divisible by 2' encoder errors when force_original_aspect_ratio produces odd dimensions.
-	args := []string{
-		"-i", asset.SourceURL,
+	args := []string{}
+	if strings.HasPrefix(inputPath, "http://") || strings.HasPrefix(inputPath, "https://") {
+		// Still remote: either an externally registered CDN asset or a staging
+		// failure. Let the HTTP reader re-establish a dropped connection rather
+		// than reporting it upstream as a clean end of file.
+		args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "30")
+	}
+	args = append(args,
+		"-i", inputPath,
 		"-filter_complex",
 		"[0:v]split=3[v1][v2][v3];[v1]scale=w=1920:h=1080:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v1out];[v2]scale=w=1280:h=720:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v2out];[v3]scale=w=854:h=480:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v3out]",
-		"-map", "[v1out]", "-c:v:0", "libx264", "-profile:v:0", "main", "-pix_fmt:v:0", "yuv420p", "-b:v:0", "4500k", "-maxrate:v:0", "5000k", "-bufsize:v:0", "6000k",
-		"-map", "[v2out]", "-c:v:1", "libx264", "-profile:v:1", "main", "-pix_fmt:v:1", "yuv420p", "-b:v:1", "2500k", "-maxrate:v:1", "2800k", "-bufsize:v:1", "3500k",
-		"-map", "[v3out]", "-c:v:2", "libx264", "-profile:v:2", "main", "-pix_fmt:v:2", "yuv420p", "-b:v:2", "1000k", "-maxrate:v:2", "1200k", "-bufsize:v:2", "1500k",
-	}
+		"-map", "[v1out]", "-c:v:0", "libx264", "-preset:v:0", "veryfast", "-profile:v:0", "main", "-pix_fmt:v:0", "yuv420p", "-b:v:0", "4500k", "-maxrate:v:0", "5000k", "-bufsize:v:0", "6000k",
+		"-map", "[v2out]", "-c:v:1", "libx264", "-preset:v:1", "veryfast", "-profile:v:1", "main", "-pix_fmt:v:1", "yuv420p", "-b:v:1", "2500k", "-maxrate:v:1", "2800k", "-bufsize:v:1", "3500k",
+		"-map", "[v3out]", "-c:v:2", "libx264", "-preset:v:2", "veryfast", "-profile:v:2", "main", "-pix_fmt:v:2", "yuv420p", "-b:v:2", "1000k", "-maxrate:v:2", "1200k", "-bufsize:v:2", "1500k",
+	)
 
 	if hasAudio {
 		args = append(args,
@@ -165,22 +206,31 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 		return err
 	}
 
+	// Measured from the original URL rather than the staged copy: this is the
+	// authoritative length the finished encode is checked against below, so it has
+	// to come from something a truncated download could not have shortened.
 	totalDurationUs := p.getVideoDurationUs(asset.SourceURL)
 	lastReportedPct := 1
+	var lastOutTimeUs int64
 	scanner := bufio.NewScanner(stdoutPipe)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "out_time_us=") {
 			timeStr := strings.TrimPrefix(line, "out_time_us=")
-			if us, err := strconv.ParseInt(timeStr, 10, 64); err == nil && totalDurationUs > 0 {
-				pct := int((us * 95) / totalDurationUs) // Reserve last 5% for HLS segment upload
-				if pct > 95 {
-					pct = 95
+			if us, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+				if us > lastOutTimeUs {
+					lastOutTimeUs = us
 				}
-				if pct-lastReportedPct >= 5 || pct == 95 {
-					lastReportedPct = pct
-					slog.Info("transcoding progression", "asset_id", asset.ID, "progress_percent", pct, "status", domain.MediaStatusProcessing)
-					_ = p.repo.UpdateAssetProgress(ctx, asset.ID, pct, domain.MediaStatusProcessing)
+				if totalDurationUs > 0 {
+					pct := int((us * 95) / totalDurationUs) // Reserve last 5% for HLS segment upload
+					if pct > 95 {
+						pct = 95
+					}
+					if pct-lastReportedPct >= 5 || pct == 95 {
+						lastReportedPct = pct
+						slog.Info("transcoding progression", "asset_id", asset.ID, "progress_percent", pct, "status", domain.MediaStatusProcessing)
+						_ = p.repo.UpdateAssetProgress(ctx, asset.ID, pct, domain.MediaStatusProcessing)
+					}
 				}
 			}
 		}
@@ -195,6 +245,19 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 		slog.Error("ffmpeg transcoding failed", "error", err, "stderr", stderrBuf.String())
 		_ = p.repo.UpdateAssetStatus(context.Background(), asset.ID, domain.MediaStatusFailed, "")
 		return err
+	}
+
+	// A zero exit is not evidence the whole video was encoded -- ffmpeg reports
+	// success after a short read of its input just as it does after a real one.
+	// Publishing that produces an asset that plays for a few seconds and stops,
+	// which is worse than a visible failure, so compare what was actually muxed
+	// against the source's real length before calling this ready.
+	if totalDurationUs > 0 && lastOutTimeUs > 0 && lastOutTimeUs < (totalDurationUs*98)/100 {
+		truncErr := fmt.Errorf("transcode covered %.1fs of a %.1fs source", float64(lastOutTimeUs)/1e6, float64(totalDurationUs)/1e6)
+		slog.Error("truncated transcode; refusing to publish the asset",
+			"asset_id", asset.ID, "error", truncErr, "stderr", stderrBuf.String())
+		_ = p.repo.UpdateAssetStatus(context.Background(), asset.ID, domain.MediaStatusFailed, "")
+		return truncErr
 	}
 
 	// Transcoding finished, updating to 96% while uploading HLS segments to MinIO
@@ -259,7 +322,7 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 		_ = p.repo.UpdateAssetStatus(ctx, asset.ID, domain.MediaStatusReady, masterURL)
 	}
 	slog.Info("media transcoding and hls upload complete", "asset_id", asset.ID, "master_url", masterURL, "progress_percent", 100)
-	
+
 	return nil
 }
 
@@ -335,4 +398,47 @@ func (p *Processor) Shutdown(ctx context.Context) {
 	case <-ctx.Done():
 		slog.Warn("timeout waiting for transcode jobs to shut down")
 	}
+}
+
+// stageSource copies an asset's source out of object storage into dir and returns
+// the local path.
+//
+// Assets registered as external CDN URLs are not objects we hold, so a miss here
+// is an expected outcome rather than an error condition; the caller falls back to
+// reading directly from the URL.
+func (p *Processor) stageSource(ctx context.Context, asset *domain.MediaAsset, dir string) (string, error) {
+	if p.storage == nil {
+		return "", errors.New("no storage service configured")
+	}
+
+	key := extractStorageKey(asset.SourceURL)
+	if !strings.HasPrefix(key, "raw/") {
+		return "", fmt.Errorf("source %q is not an object in our storage", asset.SourceURL)
+	}
+
+	reader, _, err := p.storage.GetFile(ctx, key)
+	if err != nil {
+		return "", fmt.Errorf("fetch %s: %w", key, err)
+	}
+	defer reader.Close()
+
+	ext := filepath.Ext(key)
+	if ext == "" {
+		ext = ".mp4"
+	}
+	path := filepath.Join(dir, "source"+ext)
+
+	file, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	written, err := io.Copy(file, reader)
+	if err != nil {
+		return "", fmt.Errorf("stage %s: %w", key, err)
+	}
+
+	slog.Info("staged source locally for transcoding", "asset_id", asset.ID, "key", key, "bytes", written)
+	return path, nil
 }
