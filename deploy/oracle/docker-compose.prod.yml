@@ -1,0 +1,167 @@
+# Inox production stack for a single Oracle Cloud VM (arm64, 1 OCPU / 6 GB).
+#
+# Networking split, and why:
+#   - postgres / redis / minio publish on 127.0.0.1 only. They are reachable from
+#     the host (and therefore from the host-networked app containers) but never
+#     from the internet, regardless of what Docker writes into iptables.
+#   - backend / worker / caddy run with host networking. The SFU needs a fixed,
+#     directly reachable UDP range; Docker's userland proxy would rewrite the
+#     source address of every RTP packet and ICE would never complete.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - inox-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: inox-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - inox-net
+
+  minio:
+    # quay.io, not Docker Hub: MinIO stopped publishing a `latest` tag there, so
+    # `minio/minio:latest` now fails with "pull access denied".
+    image: quay.io/minio/minio:latest
+    container_name: inox-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inox-net
+
+  # One-shot schema migration. Runs to completion before the app starts; the
+  # server does not migrate on boot, so this is the only thing that does.
+  migrate:
+    image: inox-backend:latest
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: inox-migrate
+    restart: "no"
+    entrypoint: ["./migrate"]
+    command: ["--command=up", "--dir=/app/migrations"]
+    env_file: .env.prod
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - inox-net
+
+  backend:
+    image: inox-backend:latest
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: inox-backend
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env.prod
+    volumes:
+      - storage_data:/app/storage_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:${HTTP_PORT:-8080}/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    image: inox-backend:latest
+    # Same build block as backend so `up --build` rebuilds and recreates this
+    # container too. Without it compose reuses the running container and the
+    # worker silently keeps executing the previous image.
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: inox-worker
+    restart: unless-stopped
+    network_mode: host
+    entrypoint: ["./worker"]
+    env_file: .env.prod
+    volumes:
+      - storage_data:/app/storage_data
+    depends_on:
+      backend:
+        condition: service_started
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: inox-caddy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./admin-dist:/srv/admin:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+      BACKEND_ADDR: 127.0.0.1:${HTTP_PORT:-8080}
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  storage_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  inox-net:
+    driver: bridge

@@ -1,0 +1,34 @@
+# TLS is mandatory rather than nice-to-have here: the viewer client is served
+# from Vercel over HTTPS, so a plain-HTTP API would be blocked as mixed content,
+# and the session cookie is SameSite=None+Secure in production, which browsers
+# refuse to store over an insecure origin.
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	# RequireMetricsAccess exempts loopback callers so a co-located Prometheus can
+	# scrape without credentials. Every request arriving through this proxy is
+	# loopback as far as the backend is concerned, which would hand /metrics to
+	# the whole internet. Scrape it on the host at 127.0.0.1:8080/metrics instead.
+	handle /metrics {
+		respond 404
+	}
+
+	@admin_bare path /admin
+	redir @admin_bare /admin/ 308
+
+	# Operator dashboard, served same-origin with the API. That is deliberate:
+	# it makes the session cookie apply directly, so the ?session_id= handover
+	# in bootstrapSessionFromUrl becomes a fallback rather than the only route in.
+	handle_path /admin/* {
+		root * /srv/admin
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Everything else belongs to the Go backend: /api/v1/*, /healthz, /metrics,
+	# /media/stream/*, /inox-media/*, and both WebSockets (room events and admin
+	# telemetry), which reverse_proxy upgrades without extra configuration.
+	handle {
+		reverse_proxy {$BACKEND_ADDR}
+	}
+}
