@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # Lets a deploy be re-run or rolled forward without an empty commit.
+  workflow_dispatch:
 
 jobs:
   backend-lint-and-test:
