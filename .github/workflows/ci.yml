@@ -83,3 +83,163 @@ jobs:
 
       - name: Typecheck admin-portal
         run: npx tsc --noEmit -p tsconfig.app.json
+
+  # ---------------------------------------------------------------------------
+  # Continuous deployment to the Oracle Cloud VM.
+  #
+  # The image is built on a native arm64 runner rather than on the target: the
+  # instance has a single Ampere core, where the same build takes minutes and
+  # would leave production half-built if it failed. The host only pulls.
+  # ---------------------------------------------------------------------------
+  build-backend-image:
+    name: Build & Publish Backend Image
+    needs: backend-lint-and-test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          # Tagged by commit so a deploy is traceable and a rollback is just a
+          # redeploy of an older tag.
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/inox-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/inox-backend:latest
+          # Links the package to this repository, which is what lets the
+          # deploy job's GITHUB_TOKEN pull it without a personal access token.
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-oracle:
+    name: Deploy to Oracle Cloud
+    needs:
+      - build-backend-image
+      - frontend-lint-and-typecheck
+      - admin-portal-lint-and-typecheck
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    # Never let two deploys interleave on one host.
+    concurrency:
+      group: deploy-oracle
+      cancel-in-progress: false
+    env:
+      ORACLE_HOST: 140.238.248.49
+      ORACLE_USER: opc
+      PUBLIC_HOST: 140.238.248.49.sslip.io
+      REMOTE_DIR: /home/opc/inox
+      IMAGE_REF: ghcr.io/${{ github.repository_owner }}/inox-backend:${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify deploy credentials are configured
+        run: |
+          if [ -z "${{ secrets.ORACLE_SSH_KEY }}" ]; then
+            echo "::error::ORACLE_SSH_KEY is not set. Add the deploy key with:"
+            echo "::error::  gh secret set ORACLE_SSH_KEY < ~/.ssh/inox_gha_deploy"
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: admin-portal/package-lock.json
+
+      - name: Build admin portal for /admin/ on the backend host
+        working-directory: admin-portal
+        env:
+          ADMIN_BASE_PATH: /admin/
+          VITE_API_BASE_URL: https://140.238.248.49.sslip.io/api/v1
+          VITE_TELEMETRY_WS_URL: wss://140.238.248.49.sslip.io/api/v1/admin/telemetry/ws
+          VITE_ENABLE_DEMO_MODE: 'false'
+          VITE_LOG_LEVEL: info
+        run: |
+          npm ci
+          npm run build
+          rm -rf ../deploy/oracle/admin-dist
+          cp -r dist ../deploy/oracle/admin-dist
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.ORACLE_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned rather than keyscanned at run time, so a redirected deploy
+          # cannot silently hand the key to a different host.
+          printf '%s\n' "140.238.248.49 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFevN/vQQ5Kai1XXg6BiqPRCWB72V+wTTBnEgkI4ddX4" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Sync deployment files
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
+            --exclude '.env.prod' \
+            deploy/oracle/ "${ORACLE_USER}@${ORACLE_HOST}:${REMOTE_DIR}/deploy/oracle/"
+
+      - name: Authenticate the host to the registry
+        # Piped through ssh stdin so the token never appears in the host's
+        # process list. The token expires when this job ends.
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
+            "${ORACLE_USER}@${ORACLE_HOST}" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+
+      - name: Pull image and restart the stack
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "${ORACLE_USER}@${ORACLE_HOST}" "
+            set -euo pipefail
+            cd '${REMOTE_DIR}/deploy/oracle'
+            docker pull '${IMAGE_REF}'
+
+            # Record the deployed image in the server-only env file, so every
+            # later compose invocation on this host resolves the same tag.
+            if grep -q '^BACKEND_IMAGE=' .env.prod; then
+              sed -i 's|^BACKEND_IMAGE=.*|BACKEND_IMAGE=${IMAGE_REF}|' .env.prod
+            else
+              echo 'BACKEND_IMAGE=${IMAGE_REF}' >> .env.prod
+            fi
+
+            # --no-build: the host must never fall back to compiling on its
+            # single core. A missing image should fail loudly instead.
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build
+            docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+            docker logout ghcr.io
+            docker image prune -f
+          "
+
+      - name: Verify the deployment is serving
+        run: |
+          for attempt in $(seq 1 10); do
+            body=$(curl -fsS --max-time 15 "https://${PUBLIC_HOST}/healthz" || true)
+            echo "attempt ${attempt}: ${body:-<no response>}"
+            case "$body" in
+              *'"status":"ok"'*)
+                echo "Deployment healthy: https://${PUBLIC_HOST}"
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Backend did not report healthy after the deploy"
+          exit 1

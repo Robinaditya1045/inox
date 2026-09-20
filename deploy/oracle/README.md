@@ -65,13 +65,57 @@ matter what Docker writes into iptables.
    `.env.prod` is git-ignored and never overwritten by `deploy.sh`; it is the one
    file that lives only on the server.
 
-4. **Deploy** from your workstation:
+4. **Deploy.** Push to `main` and CI does the rest (see below). For the very
+   first deploy, before the secret is configured, run it by hand:
 
    ```bash
    ./deploy/oracle/deploy.sh
    ```
 
+## Continuous deployment
+
+Pushing to `main` deploys. `.github/workflows/ci.yml` runs lint/test/typecheck,
+builds the backend image on a native `ubuntu-24.04-arm` runner, publishes it to
+`ghcr.io/<owner>/inox-backend` tagged with the commit SHA, then over SSH pulls
+that tag on the host and restarts the stack. Pull requests build and test but
+never deploy.
+
+The image is deliberately not built on the target. The instance has one Ampere
+core, where the same build takes minutes and a failure would leave production
+half-built. The host only pulls, and `--no-build` makes a missing image fail
+loudly rather than silently falling back to compiling there.
+
+Setup is one repository secret:
+
+```bash
+gh secret set ORACLE_SSH_KEY < ~/.ssh/inox_gha_deploy
+```
+
+Everything else (host, user, public hostname) is non-secret and lives in the
+workflow's `env:` block. The host key is pinned there too, so a redirected
+deploy cannot hand the key to a different machine. The host authenticates to
+the registry with the job's short-lived `GITHUB_TOKEN`, piped over SSH stdin so
+it never reaches the process list, and logs out again at the end — no personal
+access token is stored anywhere.
+
+### Rolling back
+
+Each deploy is pinned to a commit, and the host records what it is running in
+`BACKEND_IMAGE` inside `.env.prod`. To go back:
+
+```bash
+ssh opc@<host>
+cd ~/inox/deploy/oracle
+sed -i 's|^BACKEND_IMAGE=.*|BACKEND_IMAGE=ghcr.io/<owner>/inox-backend:<older-sha>|' .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build
+```
+
+Re-running the workflow for an older commit does the same thing.
+
 ## Day-to-day
+
+`deploy.sh` remains as the manual fallback for when CI is unavailable or you
+need to ship something uncommitted. It builds on the host, so it is slower.
 
 ```bash
 ./deploy/oracle/deploy.sh              # build admin bundle, sync, rebuild, restart

@@ -73,8 +73,13 @@ services:
 
   # One-shot schema migration. Runs to completion before the app starts; the
   # server does not migrate on boot, so this is the only thing that does.
+  #
+  # BACKEND_IMAGE lets CI deploy an image built on a multi-core runner and
+  # pinned to a commit, rather than rebuilding on the host's single core. Left
+  # unset (deploy.sh, or a manual `compose build`) it falls back to a locally
+  # built tag, so both paths keep working.
   migrate:
-    image: inox-backend:latest
+    image: ${BACKEND_IMAGE:-inox-backend:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -92,7 +97,7 @@ services:
       - inox-net
 
   backend:
-    image: inox-backend:latest
+    image: ${BACKEND_IMAGE:-inox-backend:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -119,7 +124,7 @@ services:
       start_period: 20s
 
   worker:
-    image: inox-backend:latest
+    image: ${BACKEND_IMAGE:-inox-backend:latest}
     # Same build block as backend so `up --build` rebuilds and recreates this
     # container too. Without it compose reuses the running container and the
     # worker silently keeps executing the previous image.
