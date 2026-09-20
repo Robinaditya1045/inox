@@ -103,12 +103,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # The default docker driver cannot export a build cache; the
+      # docker-container driver this sets up can.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # github.repository_owner preserves the account's capitalisation, which
+      # GHCR rejects: image names must be lowercase.
+      - name: Resolve image name
+        id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/inox-backend" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -118,8 +129,8 @@ jobs:
           # Tagged by commit so a deploy is traceable and a rollback is just a
           # redeploy of an older tag.
           tags: |
-            ghcr.io/${{ github.repository_owner }}/inox-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/inox-backend:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
           # Links the package to this repository, which is what lets the
           # deploy job's GITHUB_TOKEN pull it without a personal access token.
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -146,10 +157,12 @@ jobs:
       ORACLE_USER: opc
       PUBLIC_HOST: 140.238.248.49.sslip.io
       REMOTE_DIR: /home/opc/inox
-      IMAGE_REF: ghcr.io/${{ github.repository_owner }}/inox-backend:${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Resolve image reference
+        run: echo "IMAGE_REF=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/inox-backend:${{ github.sha }}" >> "$GITHUB_ENV"
 
       - name: Verify deploy credentials are configured
         run: |
