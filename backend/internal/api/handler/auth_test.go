@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,6 +19,9 @@ import (
 // mockAuthService implements auth.AuthService for handler layer testing.
 type mockAuthService struct {
 	sessions map[string]*domain.Session
+	// lookupErrs makes ValidateSession fail for a session ID as if the store
+	// itself were unreachable.
+	lookupErrs map[string]error
 }
 
 func newMockAuthService() *mockAuthService {
@@ -60,6 +64,9 @@ func (m *mockAuthService) Logout(ctx context.Context, sessionID string) error {
 }
 
 func (m *mockAuthService) ValidateSession(ctx context.Context, sessionID string) (*domain.Session, error) {
+	if err, failing := m.lookupErrs[sessionID]; failing {
+		return nil, err
+	}
 	s, exists := m.sessions[sessionID]
 	if !exists {
 		return nil, auth.ErrSessionNotFound
@@ -279,6 +286,97 @@ func TestRequireAuthCredentialPrecedence(t *testing.T) {
 			}
 			if cleared != tt.wantCleared {
 				t.Errorf("expected session cookie cleared = %v, got %v", tt.wantCleared, cleared)
+			}
+		})
+	}
+}
+
+// A session store that cannot answer says nothing about whether the caller's
+// session is valid. A 401 would make the frontend discard a session that is
+// still good, so this must be a 503 that leaves the cookie alone.
+func TestRequireAuthSessionStoreUnavailable(t *testing.T) {
+	mockSvc := newMockAuthService()
+	mockSvc.lookupErrs = map[string]error{
+		"sess_live": errors.New("dial tcp 127.0.0.1:6379: connect: connection refused"),
+	}
+
+	wrapped := middleware.RequireAuth(mockSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("protected handler must not run without a validated session")
+	}))
+
+	tests := []struct {
+		name   string
+		cookie string
+		bearer string
+	}{
+		{name: "only credential", bearer: "sess_live"},
+		{name: "alongside a stale cookie", cookie: "sess_stale", bearer: "sess_live"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/v1/users/me", nil)
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: middleware.SessionCookieName, Value: tt.cookie})
+			}
+			req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("expected HTTP 503, got %d", rec.Code)
+			}
+			for _, c := range rec.Result().Cookies() {
+				if c.Name == middleware.SessionCookieName {
+					t.Errorf("session cookie must be left alone, got Set-Cookie %+v", c)
+				}
+			}
+		})
+	}
+}
+
+// Logout must revoke the session the client authenticates with, not only the
+// cookie's: browsers that block third-party cookies never send one, and the
+// session then stayed valid in Redis for its full lifetime.
+func TestLogoutRevokesEverySessionTheRequestCarries(t *testing.T) {
+	tests := []struct {
+		name        string
+		cookie      string
+		bearer      string
+		wantRevoked []string
+	}{
+		{name: "token only (third-party cookies blocked)", bearer: "sess_header", wantRevoked: []string{"sess_header"}},
+		{name: "token and a different cookie", cookie: "sess_cookie", bearer: "sess_header", wantRevoked: []string{"sess_header", "sess_cookie"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := newMockAuthService()
+			for _, id := range []string{"sess_header", "sess_cookie", "sess_bystander"} {
+				mockSvc.sessions[id] = &domain.Session{ID: id}
+			}
+			authHandler := handler.NewAuthHandler(mockSvc, true)
+
+			req := httptest.NewRequest("POST", "/api/v1/auth/logout", nil)
+			req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: middleware.SessionCookieName, Value: tt.cookie})
+			}
+			rec := httptest.NewRecorder()
+
+			authHandler.Logout(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected HTTP 200 OK, got %d", rec.Code)
+			}
+			for _, id := range tt.wantRevoked {
+				if _, alive := mockSvc.sessions[id]; alive {
+					t.Errorf("expected session %q to be revoked", id)
+				}
+			}
+			if _, alive := mockSvc.sessions["sess_bystander"]; !alive {
+				t.Errorf("a session the request did not carry must survive logout")
 			}
 		})
 	}

@@ -38,8 +38,13 @@ export const authService = {
 
   async logout(): Promise<void> {
     logger.info("AuthService: Attempting logout");
-    localStorage.removeItem("inox_session_id");
-    await apiClient.post<void>("/auth/logout");
+    try {
+      // Revoke before forgetting the ID: this request authenticates with it,
+      // and the cookie alone is never sent where third-party cookies are blocked.
+      await apiClient.post<void>("/auth/logout");
+    } finally {
+      localStorage.removeItem("inox_session_id");
+    }
   },
 
   async getCurrentUser(): Promise<User | null> {
