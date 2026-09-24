@@ -1,0 +1,3 @@
+Introducing Inox: a watch party that actually stays on the same second.
+One playhead per room — every player measures its own drift each second and bends its playback rate until the gap closes, instead of pausing everybody.
+Go, a Pion SFU, and one WebSocket per room carrying chat, playback and signalling.

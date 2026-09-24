@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Inox — Same movie. Same second.</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="assets/audio-data.js"></script>
+    <style>
+      /* ── Fonts: shipped locally so the render is deterministic.
+         Figtree is the Inox design system's only typeface
+         (frontend/src/styles/theme.css). ───────────────────────────── */
+      @font-face {
+        font-family: "Figtree";
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: block;
+        src: url("assets/fonts/figtree-latin.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        font-style: normal;
+        font-weight: 400 700;
+        font-display: block;
+        src: url("assets/fonts/jetbrainsmono-latin.woff2") format("woff2");
+      }
+
+      /* ── Inox design tokens, copied verbatim from
+         frontend/src/styles/theme.css ─────────────────────────────── */
+      :root {
+        --canvas-deep: #0a0d14;
+        --canvas: #0f1117;
+        --surface-1: #161b27;
+        --surface-2: #1a2035;
+        --surface-3: #1f2640;
+        --border-subtle: rgba(255, 255, 255, 0.06);
+        --border-default: rgba(255, 255, 255, 0.1);
+        --border-strong: rgba(255, 255, 255, 0.18);
+        --text-primary: #e8eaf0;
+        --text-secondary: #9aa3b5;
+        --accent: #4f73e0;
+        --accent-subtle: rgba(79, 115, 224, 0.12);
+        --accent-border: rgba(79, 115, 224, 0.35);
+        --success: #2ecc71;
+        --warning: #e6a817;
+        --danger: #e05656;
+        --font-sans: "Figtree", sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+
+        /* audio-reactive, written per frame from the music bed */
+        --energy: 0.3;
+        --bass: 0.2;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--canvas-deep);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--canvas-deep);
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+
+      /* ── Shared frame chrome ─────────────────────────────────────── */
+      .ambient {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      /* Radial, never a full-screen linear gradient: linear ramps band
+         badly on a near-black field under H.264. */
+      .glow {
+        position: absolute;
+        border-radius: 50%;
+        pointer-events: none;
+        filter: blur(60px);
+      }
+      .vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 90% 80% at 50% 45%,
+          rgba(0, 0, 0, 0) 40%,
+          rgba(0, 0, 0, 0.55) 100%
+        );
+      }
+      .corner-mark {
+        position: absolute;
+        font-family: var(--font-mono);
+        font-size: 21px;
+        font-weight: 400;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+      .scene-label {
+        position: absolute;
+        font-family: var(--font-mono);
+        font-size: 23px;
+        font-weight: 500;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .scene-label .bar {
+        display: block;
+        width: 54px;
+        height: 3px;
+        background: var(--accent);
+        transform-origin: left center;
+      }
+
+      /* ── Scrubber primitive (the film's recurring motif) ─────────── */
+      .track {
+        position: absolute;
+        height: 5px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.09);
+      }
+      .track .fill {
+        position: absolute;
+        inset: 0;
+        border-radius: 3px;
+        background: var(--accent);
+        transform-origin: left center;
+      }
+      .head {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        margin-top: -8px;
+        margin-left: -10px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        box-shadow: 0 0 0 5px rgba(10, 13, 20, 0.9);
+      }
+
+      /* ── Scene 1: the countdown ──────────────────────────────────── */
+      #s1-count {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 300px;
+        text-align: center;
+        font-size: 300px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        font-variant-numeric: tabular-nums;
+      }
+      .count-digit {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        display: block;
+      }
+      #s1-play {
+        opacity: 0;
+        color: var(--accent);
+        font-size: 232px;
+        letter-spacing: -0.03em;
+      }
+
+      /* ── Scene 2: drift ──────────────────────────────────────────── */
+      .drift-row {
+        position: absolute;
+        left: 260px;
+        width: 1400px;
+        height: 64px;
+        display: block;
+      }
+      .drift-name {
+        position: absolute;
+        left: 0;
+        top: 14px;
+        width: 210px;
+        font-family: var(--font-mono);
+        font-size: 30px;
+        font-weight: 400;
+        color: var(--text-secondary);
+      }
+      .drift-track {
+        position: absolute;
+        left: 250px;
+        top: 28px;
+        width: 880px;
+      }
+      .drift-tag {
+        position: absolute;
+        left: 1190px;
+        top: 10px;
+        font-family: var(--font-mono);
+        font-size: 40px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-secondary);
+      }
+
+      /* ── Scene 3: the Inox room, full bleed ──────────────────────── */
+      #s3 {
+        background: var(--canvas);
+      }
+      /* Sized explicitly: GSAP transforms this on entrance, which makes it the
+         containing block for every absolute part of the room below. */
+      #room-frame {
+        position: absolute;
+        inset: 0;
+      }
+      #room-header {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 84px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 0 40px 0 72px;
+        border-bottom: 2px solid var(--border-subtle);
+      }
+      .hash {
+        font-size: 36px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+      #channel-name {
+        font-size: 34px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .h-rule {
+        width: 2px;
+        height: 28px;
+        background: var(--border-default);
+        margin: 0 8px;
+      }
+      #channel-topic {
+        font-size: 26px;
+        font-weight: 400;
+        color: var(--text-secondary);
+      }
+      #member-count {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 26px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+
+      #stage {
+        position: absolute;
+        left: 72px;
+        top: 128px;
+        width: 1336px;
+        height: 752px;
+        border-radius: 12px;
+        background: var(--canvas-deep);
+        border: 2px solid var(--border-subtle);
+        overflow: hidden;
+      }
+      /* The film in the player: not a stock image, just the frame's own
+         palette pushed into a wide cinematic field. */
+      #stage-art {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            ellipse 60% 70% at 32% 42%,
+            rgba(79, 115, 224, 0.4) 0%,
+            rgba(79, 115, 224, 0) 62%
+          ),
+          radial-gradient(
+            ellipse 50% 60% at 74% 66%,
+            rgba(230, 168, 23, 0.2) 0%,
+            rgba(230, 168, 23, 0) 60%
+          ),
+          var(--canvas-deep);
+      }
+      /* Driven per frame from the music bed — the one thing in the film that
+         breathes with the track. Opacity only; nothing moves, nothing strobes. */
+      #stage-glow {
+        position: absolute;
+        inset: 0;
+        opacity: 0.4;
+        mix-blend-mode: screen;
+        background: radial-gradient(
+          ellipse 48% 58% at 34% 44%,
+          rgba(79, 115, 224, 0.26) 0%,
+          rgba(79, 115, 224, 0) 68%
+        );
+      }
+      #stage-scan {
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          0deg,
+          rgba(255, 255, 255, 0.05) 0px,
+          rgba(255, 255, 255, 0.05) 1px,
+          rgba(255, 255, 255, 0) 1px,
+          rgba(255, 255, 255, 0) 4px
+        );
+      }
+      #synced-pill {
+        position: absolute;
+        left: 36px;
+        top: 34px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 26px;
+        border-radius: 9999px;
+        background: rgba(46, 204, 113, 0.14);
+        border: 2px solid rgba(46, 204, 113, 0.4);
+        font-size: 25px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        color: var(--success);
+      }
+      #synced-dot {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: var(--success);
+      }
+      #stage-caption {
+        position: absolute;
+        left: 36px;
+        bottom: 42px;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+      #stage-caption .bar {
+        display: block;
+        width: 6px;
+        height: 62px;
+        background: var(--accent);
+        transform-origin: bottom center;
+      }
+      #stage-caption span {
+        display: block;
+        font-size: 50px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        text-shadow: 0 4px 24px rgba(10, 13, 20, 0.9);
+      }
+
+      #player-bar {
+        position: absolute;
+        left: 72px;
+        top: 906px;
+        width: 1336px;
+        height: 42px;
+      }
+      #player-time {
+        position: absolute;
+        right: 0;
+        top: 16px;
+        font-family: var(--font-mono);
+        font-size: 24px;
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+      }
+
+      #filmstrip {
+        position: absolute;
+        left: 72px;
+        top: 968px;
+        display: flex;
+        gap: 18px;
+      }
+      .v-tile {
+        position: relative;
+        width: 172px;
+        height: 97px;
+        border-radius: 6px;
+        background: var(--surface-2);
+        border: 2px solid transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .v-avatar {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: var(--surface-3);
+        color: var(--text-primary);
+        font-size: 22px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .v-name {
+        position: absolute;
+        left: 8px;
+        bottom: 7px;
+        font-size: 17px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        background: rgba(10, 13, 20, 0.72);
+        border-radius: 4px;
+        padding: 2px 8px;
+      }
+      /* The real speaking treatment from VoiceStage.module.css:
+         2px accent border + a 4px accent-subtle halo. */
+      #tile-2 {
+        border-color: var(--accent);
+      }
+
+      #chat-rail {
+        position: absolute;
+        right: 0;
+        top: 84px;
+        bottom: 0;
+        width: 440px;
+        background: var(--surface-1);
+        border-left: 2px solid var(--border-subtle);
+        padding: 34px 32px;
+      }
+      .msg {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 30px;
+      }
+      .msg-avatar {
+        flex: 0 0 auto;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--surface-3);
+        color: var(--text-primary);
+        font-size: 22px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .msg-who {
+        display: block;
+        font-size: 23px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      .msg-body {
+        display: block;
+        font-size: 24px;
+        font-weight: 400;
+        line-height: 1.35;
+        color: var(--text-secondary);
+        max-width: 300px;
+      }
+      #composer {
+        position: absolute;
+        left: 32px;
+        right: 32px;
+        bottom: 36px;
+        height: 68px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        border: 2px solid var(--border-default);
+        display: flex;
+        align-items: center;
+        padding: 0 22px;
+        font-size: 24px;
+        color: var(--text-secondary);
+      }
+
+      /* ── Scene 4: the drift ladder ───────────────────────────────── */
+      .lad-row {
+        position: absolute;
+        left: 160px;
+        width: 1620px;
+        height: 110px;
+      }
+      .lad-name {
+        position: absolute;
+        left: 0;
+        top: 36px;
+        width: 200px;
+        font-family: var(--font-mono);
+        font-size: 30px;
+        color: var(--text-secondary);
+      }
+      .lad-value {
+        position: absolute;
+        left: 230px;
+        top: 12px;
+        width: 250px;
+        font-family: var(--font-mono);
+        font-size: 66px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .lad-arrow {
+        position: absolute;
+        left: 528px;
+        top: 52px;
+        width: 62px;
+        height: 3px;
+        background: var(--border-strong);
+      }
+      .lad-arrow::after {
+        content: "";
+        position: absolute;
+        right: 0;
+        top: -6px;
+        width: 15px;
+        height: 15px;
+        border-top: 3px solid var(--border-strong);
+        border-right: 3px solid var(--border-strong);
+        transform: rotate(45deg);
+      }
+      .lad-action {
+        position: absolute;
+        left: 632px;
+        top: 26px;
+        padding: 12px 28px;
+        border-radius: 9999px;
+        background: var(--surface-2);
+        border: 2px solid var(--border-default);
+        font-family: var(--font-mono);
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--text-primary);
+        white-space: nowrap;
+      }
+      .lad-track {
+        position: absolute;
+        left: 1050px;
+        top: 52px;
+        width: 560px;
+      }
+      #converge-line {
+        position: absolute;
+        opacity: 0;
+        width: 3px;
+        background: var(--accent);
+        transform-origin: top center;
+      }
+
+      /* ── Scene 5: the lockup ─────────────────────────────────────── */
+      #s5-rule {
+        position: absolute;
+        left: 50%;
+        margin-left: -2px;
+        top: 236px;
+        width: 4px;
+        height: 168px;
+        background: var(--accent);
+        box-shadow: 0 0 22px rgba(79, 115, 224, 0.55);
+        transform-origin: top center;
+      }
+      #wordmark {
+        position: absolute;
+        opacity: 0;
+        left: 0;
+        right: 0;
+        top: 440px;
+        text-align: center;
+        font-size: 178px;
+        font-weight: 800;
+        letter-spacing: -0.045em;
+        line-height: 1;
+      }
+      #wordmark-underline {
+        position: absolute;
+        opacity: 0;
+        left: 50%;
+        top: 646px;
+        width: 340px;
+        margin-left: -170px;
+        height: 5px;
+        background: var(--accent);
+        transform-origin: center;
+      }
+      .tagline {
+        position: absolute;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 60px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        letter-spacing: 0.01em;
+      }
+      #tag-1 {
+        top: 742px;
+      }
+      #tag-2 {
+        top: 826px;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-xc3y" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="24.04" data-fps="30">
+      <!-- ══ SCENE 1 — the countdown ══ 0.00 → 4.39 ══════════════ -->
+      <section data-hf-id="hf-8r86" id="s1" class="clip" data-start="0" data-duration="4.39" data-track-index="0">
+        <div data-hf-id="hf-9v4o" class="ambient">
+          <div data-hf-id="hf-hjat" id="s1-glow" class="glow" style="
+              left: 610px;
+              top: 250px;
+              width: 700px;
+              height: 560px;
+              background: rgba(79, 115, 224, 0.2);
+            "></div>
+          <div data-hf-id="hf-q7bi" class="vignette"></div>
+        </div>
+
+        <div data-hf-id="hf-c77m" class="corner-mark" style="left: 120px; top: 92px">inox · watch party</div>
+        <div data-hf-id="hf-kc7f" class="corner-mark" style="right: 120px; top: 92px">room · movie night</div>
+
+        <div data-hf-id="hf-o5uf" id="s1-count">
+          <span data-hf-id="hf-z6lr" class="count-digit" id="c3">3</span>
+          <span data-hf-id="hf-avkv" class="count-digit" id="c2">2</span>
+          <span data-hf-id="hf-knrb" class="count-digit" id="c1">1</span>
+          <span data-hf-id="hf-3fjt" class="count-digit" id="s1-play">play</span>
+        </div>
+
+        <div data-hf-id="hf-gwbs" id="s1-track" class="track" style="left: 410px; top: 790px; width: 1100px">
+          <div data-hf-id="hf-zhc1" class="fill" id="s1-fill"></div>
+        </div>
+        <div data-hf-id="hf-ictt" id="s1-head" class="head" style="left: 410px; top: 792px"></div>
+      </section>
+
+      <!-- ══ SCENE 2 — drift ══ 4.39 → 8.74 ═════════════════════ -->
+      <section data-hf-id="hf-bpcj" id="s2" class="clip" data-start="4.39" data-duration="4.35" data-track-index="0">
+        <div data-hf-id="hf-ugc0" class="ambient">
+          <div data-hf-id="hf-soyq" id="s2-glow" class="glow" style="
+              left: 430px;
+              top: 300px;
+              width: 1060px;
+              height: 480px;
+              background: rgba(224, 86, 86, 0.11);
+            "></div>
+          <div data-hf-id="hf-8o0i" class="vignette"></div>
+        </div>
+
+        <div data-hf-id="hf-ctgo" class="scene-label" style="left: 260px; top: 240px">
+          <span data-hf-id="hf-87v5" class="bar" id="s2-bar"></span>
+          <span data-hf-id="hf-6n0g">drift</span>
+        </div>
+
+        <div data-hf-id="hf-nhnf" class="drift-row" id="d-row-1" style="top: 452px">
+          <span data-hf-id="hf-nxpa" class="drift-name">robin</span>
+          <div data-hf-id="hf-7wha" class="drift-track track"><div data-hf-id="hf-mw81" class="fill" id="d-fill-1"></div></div>
+          <div data-hf-id="hf-09dz" class="head" id="d-head-1" style="left: 619px; top: 30px"></div>
+          <span data-hf-id="hf-3utu" class="drift-tag" id="d-tag-1">+0.8s</span>
+        </div>
+
+        <div data-hf-id="hf-hznf" class="drift-row" id="d-row-2" style="top: 556px">
+          <span data-hf-id="hf-dpy1" class="drift-name">mira</span>
+          <div data-hf-id="hf-boz6" class="drift-track track"><div data-hf-id="hf-quc2" class="fill" id="d-fill-2"></div></div>
+          <div data-hf-id="hf-dkz2" class="head" id="d-head-2" style="left: 619px; top: 30px"></div>
+          <span data-hf-id="hf-4734" class="drift-tag" id="d-tag-2">+2.1s</span>
+        </div>
+
+        <div data-hf-id="hf-0ub0" class="drift-row" id="d-row-3" style="top: 660px">
+          <span data-hf-id="hf-qutu" class="drift-name">theo</span>
+          <div data-hf-id="hf-c3a7" class="drift-track track"><div data-hf-id="hf-usg3" class="fill" id="d-fill-3"></div></div>
+          <div data-hf-id="hf-a2vx" class="head" id="d-head-3" style="left: 619px; top: 30px"></div>
+          <span data-hf-id="hf-d5ud" class="drift-tag" id="d-tag-3" style="color: #e05656">-4.4s</span>
+        </div>
+      </section>
+
+      <!-- ══ SCENE 3 — the Inox room ══ 8.74 → 14.73 ════════════ -->
+      <section data-hf-id="hf-3yz6" id="s3" class="clip" data-start="8.74" data-duration="5.99" data-track-index="0">
+        <div data-hf-id="hf-ykc4" id="room-frame">
+          <div data-hf-id="hf-nhv6" id="room-header">
+            <span data-hf-id="hf-jici" class="hash">#</span>
+            <span data-hf-id="hf-o7yd" id="channel-name">watch-party</span>
+            <span data-hf-id="hf-v062" class="h-rule"></span>
+            <span data-hf-id="hf-mv1l" id="channel-topic">cyberpunk-ep-07.m3u8</span>
+            <span data-hf-id="hf-74dx" id="member-count">4 members</span>
+          </div>
+
+          <div data-hf-id="hf-1rt5" id="stage">
+            <div data-hf-id="hf-j60t" id="stage-art"></div>
+            <div data-hf-id="hf-3j0t" id="stage-glow"></div>
+            <div data-hf-id="hf-nnbh" id="stage-scan"></div>
+            <div data-hf-id="hf-5h3h" id="synced-pill">
+              <span data-hf-id="hf-j4mm" id="synced-dot"></span>
+              <span data-hf-id="hf-gg3j">SYNCED</span>
+            </div>
+            <div data-hf-id="hf-qxtg" id="stage-caption">
+              <span data-hf-id="hf-vj32" class="bar" id="cap-bar"></span>
+              <span data-hf-id="hf-yp8z" id="cap-text">One room. One playhead.</span>
+            </div>
+          </div>
+
+          <div data-hf-id="hf-kwsq" id="player-bar">
+            <div data-hf-id="hf-y93b" class="track" style="left: 0; top: 18px; width: 1150px">
+              <div data-hf-id="hf-nx6j" class="fill" id="s3-fill"></div>
+            </div>
+            <div data-hf-id="hf-hx3b" class="head" style="left: 437px; top: 20px"></div>
+            <span data-hf-id="hf-i92x" id="player-time">18:42 / 48:55</span>
+          </div>
+
+          <div data-hf-id="hf-wnsn" id="filmstrip">
+            <div data-hf-id="hf-9ttf" class="v-tile" id="tile-1">
+              <span data-hf-id="hf-9xcx" class="v-avatar">R</span><span data-hf-id="hf-w86l" class="v-name">robin</span>
+            </div>
+            <div data-hf-id="hf-yybs" class="v-tile" id="tile-2">
+              <span data-hf-id="hf-j2ek" class="v-avatar">M</span><span data-hf-id="hf-w2w0" class="v-name">mira</span>
+            </div>
+            <div data-hf-id="hf-zpzl" class="v-tile" id="tile-3">
+              <span data-hf-id="hf-94qv" class="v-avatar">T</span><span data-hf-id="hf-udnf" class="v-name">theo</span>
+            </div>
+            <div data-hf-id="hf-r23q" class="v-tile" id="tile-4">
+              <span data-hf-id="hf-hh6g" class="v-avatar">A</span><span data-hf-id="hf-0bp1" class="v-name">ada</span>
+            </div>
+          </div>
+
+          <div data-hf-id="hf-2nn0" id="chat-rail">
+            <div data-hf-id="hf-5p92" class="msg" id="msg-1">
+              <span data-hf-id="hf-arpe" class="msg-avatar">T</span>
+              <span data-hf-id="hf-uckh">
+                <span data-hf-id="hf-6jwf" class="msg-who">theo</span>
+                <span data-hf-id="hf-pyhn" class="msg-body">wait go back, I missed the whole rooftop bit</span>
+              </span>
+            </div>
+            <div data-hf-id="hf-1r51" class="msg" id="msg-2">
+              <span data-hf-id="hf-djul" class="msg-avatar">M</span>
+              <span data-hf-id="hf-l73p">
+                <span data-hf-id="hf-cmes" class="msg-who">mira</span>
+                <span data-hf-id="hf-4aly" class="msg-body">you're on the same frame as us, promise</span>
+              </span>
+            </div>
+            <div data-hf-id="hf-0zh8" class="msg" id="msg-3">
+              <span data-hf-id="hf-d5jk" class="msg-avatar">R</span>
+              <span data-hf-id="hf-me0s">
+                <span data-hf-id="hf-cab5" class="msg-who">robin</span>
+                <span data-hf-id="hf-nlbx" class="msg-body">told you. nobody counts down any more</span>
+              </span>
+            </div>
+            <div data-hf-id="hf-562l" id="composer">Message #general</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ SCENE 4 — the drift ladder ══ 14.73 → 20.19 ════════ -->
+      <section data-hf-id="hf-72il" id="s4" class="clip" data-start="14.73" data-duration="5.46" data-track-index="0">
+        <div data-hf-id="hf-t9ex" class="ambient">
+          <div data-hf-id="hf-e9u7" id="s4-glow" class="glow" style="
+              left: 500px;
+              top: 260px;
+              width: 920px;
+              height: 560px;
+              background: rgba(79, 115, 224, 0.15);
+            "></div>
+          <div data-hf-id="hf-92bj" class="vignette"></div>
+        </div>
+
+        <div data-hf-id="hf-zfpe" class="scene-label" style="left: 160px; top: 186px">
+          <span data-hf-id="hf-i9kn" class="bar" id="s4-bar"></span>
+          <span data-hf-id="hf-1y8y">drift correction · every second</span>
+        </div>
+
+        <div data-hf-id="hf-qpws" class="lad-row" id="lad-1" style="top: 350px">
+          <span data-hf-id="hf-o2c8" class="lad-name">robin</span>
+          <span data-hf-id="hf-0cnp" class="lad-value" id="v-1" style="color: #2ecc71">0.12s</span>
+          <span data-hf-id="hf-ljqo" class="lad-arrow"></span>
+          <span data-hf-id="hf-nr7t" class="lad-action" id="a-1">hold</span>
+          <div data-hf-id="hf-tpo8" class="lad-track track">
+            <div data-hf-id="hf-9a92" class="fill" style="transform: scaleX(0.46)"></div>
+          </div>
+          <div data-hf-id="hf-gr1a" class="head" id="h-1" style="left: 1308px; top: 54px"></div>
+        </div>
+
+        <div data-hf-id="hf-1244" class="lad-row" id="lad-2" style="top: 496px">
+          <span data-hf-id="hf-e0q3" class="lad-name">mira</span>
+          <span data-hf-id="hf-om29" class="lad-value" id="v-2" style="color: #e6a817">0.90s</span>
+          <span data-hf-id="hf-h9fs" class="lad-arrow"></span>
+          <span data-hf-id="hf-o5p9" class="lad-action" id="a-2">rate ×1.02</span>
+          <div data-hf-id="hf-ln2o" class="lad-track track">
+            <div data-hf-id="hf-4kpu" class="fill" style="transform: scaleX(0.4)"></div>
+          </div>
+          <div data-hf-id="hf-mwf1" class="head" id="h-2" style="left: 1274px; top: 54px"></div>
+        </div>
+
+        <div data-hf-id="hf-1tri" class="lad-row" id="lad-3" style="top: 642px">
+          <span data-hf-id="hf-rpu4" class="lad-name">theo</span>
+          <span data-hf-id="hf-1scx" class="lad-value" id="v-3" style="color: #e05656">5.20s</span>
+          <span data-hf-id="hf-g2ip" class="lad-arrow"></span>
+          <span data-hf-id="hf-cvhy" class="lad-action" id="a-3">seek</span>
+          <div data-hf-id="hf-kg5l" class="lad-track track">
+            <div data-hf-id="hf-n8up" class="fill" style="transform: scaleX(0.58)"></div>
+          </div>
+          <div data-hf-id="hf-l0rm" class="head" id="h-3" style="left: 1395px; top: 54px"></div>
+        </div>
+
+        <div data-hf-id="hf-0ew7" id="converge-line" style="left: 1445px; top: 396px; height: 308px"></div>
+
+        <div data-hf-id="hf-rshz" class="corner-mark" style="left: 160px; bottom: 150px" id="s4-foot">
+          deadband 0.15s · seek past 4s
+        </div>
+      </section>
+
+      <!-- ══ SCENE 5 — the lockup ══ 20.19 → 24.04 ══════════════ -->
+      <section data-hf-id="hf-45jo" id="s5" class="clip" data-start="20.19" data-duration="3.85" data-track-index="0">
+        <div data-hf-id="hf-tnpy" class="ambient">
+          <div data-hf-id="hf-81jw" id="s5-glow" class="glow" style="
+              left: 560px;
+              top: 280px;
+              width: 800px;
+              height: 620px;
+              background: rgba(79, 115, 224, 0.22);
+            "></div>
+          <div data-hf-id="hf-9gmk" class="vignette"></div>
+        </div>
+
+        <div data-hf-id="hf-u43o" id="s5-rule"></div>
+        <div data-hf-id="hf-lbru" id="wordmark">Inox</div>
+        <div data-hf-id="hf-8khl" id="wordmark-underline"></div>
+        <div data-hf-id="hf-cjwy" class="tagline" id="tag-1">Same movie.</div>
+        <div data-hf-id="hf-x4w1" class="tagline" id="tag-2">Same second.</div>
+      </section>
+
+      <!-- ══ AUDIO ══════════════════════════════════════════════════
+           Track 10 = music bed, 11 = narration, 12+ = SFX.
+           The music's volume lane breathes: 0.13 under every narration
+           line, ~0.28 in the gaps between them, released for the outro.
+      -->
+      <audio data-hf-id="hf-xk4q" id="music-bed" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3" data-start="0" data-duration="24.04" data-track-index="10" data-automation="{&quot;version&quot;:1,&quot;lanes&quot;:[{&quot;target&quot;:&quot;volume&quot;,&quot;points&quot;:[
+          {&quot;t&quot;:0,&quot;v&quot;:0},{&quot;t&quot;:0.55,&quot;v&quot;:0.30},{&quot;t&quot;:0.80,&quot;v&quot;:0.13},
+          {&quot;t&quot;:3.20,&quot;v&quot;:0.13},{&quot;t&quot;:3.50,&quot;v&quot;:0.26},{&quot;t&quot;:4.55,&quot;v&quot;:0.26},{&quot;t&quot;:4.75,&quot;v&quot;:0.13},
+          {&quot;t&quot;:8.05,&quot;v&quot;:0.13},{&quot;t&quot;:8.35,&quot;v&quot;:0.28},{&quot;t&quot;:9.00,&quot;v&quot;:0.28},{&quot;t&quot;:9.15,&quot;v&quot;:0.13},
+          {&quot;t&quot;:14.25,&quot;v&quot;:0.13},{&quot;t&quot;:14.55,&quot;v&quot;:0.26},{&quot;t&quot;:14.95,&quot;v&quot;:0.26},{&quot;t&quot;:15.00,&quot;v&quot;:0.13},
+          {&quot;t&quot;:19.40,&quot;v&quot;:0.13},{&quot;t&quot;:19.60,&quot;v&quot;:0.30},{&quot;t&quot;:20.30,&quot;v&quot;:0.30},{&quot;t&quot;:20.35,&quot;v&quot;:0.13},
+          {&quot;t&quot;:23.00,&quot;v&quot;:0.13},{&quot;t&quot;:23.35,&quot;v&quot;:0.30},{&quot;t&quot;:23.60,&quot;v&quot;:0.30},{&quot;t&quot;:24.04,&quot;v&quot;:0}
+        ]}]}"></audio>
+
+      <audio data-hf-id="hf-9i78" id="vo-1" src="assets/vo/vo-1.wav" data-duration="2.16" data-start="0.90" data-track-index="11" data-volume="1"></audio>
+      <audio data-hf-id="hf-tkrs" id="vo-2" src="assets/vo/vo-2.wav" data-duration="3.14" data-start="4.80" data-track-index="11" data-volume="1"></audio>
+      <audio data-hf-id="hf-wecp" id="vo-3" src="assets/vo/vo-3.wav" data-duration="4.95" data-start="9.20" data-track-index="11" data-volume="1"></audio>
+      <audio data-hf-id="hf-fnqu" id="vo-4" src="assets/vo/vo-4.wav" data-duration="4.23" data-start="15.05" data-track-index="11" data-volume="1"></audio>
+      <audio data-hf-id="hf-3n7r" id="vo-5" src="assets/vo/vo-5.wav" data-duration="2.50" data-start="20.40" data-track-index="11" data-volume="1"></audio>
+
+      <!-- countdown ticks — quiet, they sit under the first narration line -->
+      <audio data-hf-id="hf-1cx2" id="sfx-c3" src="assets/sfx/interface/drop_002.ogg" data-start="0.56" data-track-index="12" data-volume="0.42"></audio>
+      <audio data-hf-id="hf-wec8" id="sfx-c2" src="assets/sfx/interface/drop_002.ogg" data-start="1.64" data-track-index="13" data-volume="0.42"></audio>
+      <audio data-hf-id="hf-qok9" id="sfx-c1" src="assets/sfx/interface/drop_002.ogg" data-start="2.73" data-track-index="14" data-volume="0.42"></audio>
+      <!-- the play press lands in the gap after line 1 -->
+      <audio data-hf-id="hf-yfcz" id="sfx-play" src="assets/sfx/interface/click_003.ogg" data-start="3.27" data-track-index="15" data-volume="0.58"></audio>
+      <!-- the room lands: the one moment allowed weight // beat-locked 8.74s -->
+      <audio data-hf-id="hf-4vlq" id="sfx-room" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="8.74" data-track-index="16" data-volume="0.68"></audio>
+      <!-- ladder rows // beat-grid 15.29 / 16.38 / 17.47 -->
+      <audio data-hf-id="hf-zgae" id="sfx-r1" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="15.29" data-track-index="17" data-volume="0.42"></audio>
+      <audio data-hf-id="hf-ii51" id="sfx-r2" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="16.38" data-track-index="18" data-volume="0.42"></audio>
+      <audio data-hf-id="hf-5gm8" id="sfx-r3" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="17.47" data-track-index="19" data-volume="0.42"></audio>
+      <!-- the drift resolves: the only bell in the film // beat-locked 19.66s -->
+      <audio data-hf-id="hf-yuj6" id="sfx-converge" src="assets/sfx/impact/impactBell_heavy_000.ogg" data-start="19.66" data-track-index="20" data-volume="0.60"></audio>
+      <!-- wordmark // beat-locked 22.37s -->
+      <audio data-hf-id="hf-hih0" id="sfx-mark" src="assets/sfx/impact/impactSoft_medium_004.ogg" data-start="22.37" data-track-index="21" data-volume="0.62"></audio>
+    </div>
+
+    <script>
+      (function () {
+        var tl = gsap.timeline({ paused: true });
+
+        /* ════════════════════════════════════════════════════════════
+           Beat map — happy-beats-business-moves-vol-12, 109.96 BPM.
+           Beats land ~0.545s apart. Three strong cues carry the film's
+           three real moments; everything else is free timing.
+           ════════════════════════════════════════════════════════════ */
+        var CUE_ROOM = 8.74; // strong cue 0.99 — the room arrives
+        var CUE_CONVERGE = 19.66; // strong cue 0.96 — the drift resolves
+        var CUE_MARK = 22.37; // strong cue 0.98 — the wordmark lands
+
+        /* ── Scene 1 — the countdown ─────────────────────────────── */
+        // beat-grid: 3 at 0.56s, 2 at 1.64s, 1 at 2.73s — every other beat,
+        // so each digit is settled for a full 1.08s before the next.
+        // Each `out` is the moment the NEXT thing lands, so no two of these
+        // are ever on screen together — a countdown reads as a swap, and two
+        // numerals crossfading on top of each other just looks like mud.
+        var digits = [
+          { el: "#c3", t: 0.56, out: 1.5 },
+          { el: "#c2", t: 1.64, out: 2.58 },
+          { el: "#c1", t: 2.73, out: 3.13 },
+        ];
+        digits.forEach(function (d) {
+          tl.fromTo(
+            d.el,
+            { opacity: 0, scale: 1.35, y: -18 },
+            { opacity: 1, scale: 1, y: 0, duration: 0.3, ease: "power3.out" },
+            d.t,
+          );
+          tl.to(d.el, { opacity: 0, scale: 0.82, duration: 0.14, ease: "power2.in" }, d.out);
+        });
+        // "play" snaps in on the next beat and then HOLDS 1.12s — fast-in,
+        // long-settle, which reads punchy and still gives the eye its floor.
+        tl.fromTo(
+          "#s1-play",
+          { opacity: 0, scale: 0.86 },
+          { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(1.9)" },
+          3.27,
+        );
+        tl.fromTo(
+          "#s1-head",
+          { opacity: 0, scale: 0.4 },
+          { opacity: 1, scale: 1, duration: 0.4, ease: "power2.out" },
+          0.3,
+        );
+        // The playhead only starts moving once "play" is pressed.
+        tl.fromTo("#s1-fill", { scaleX: 0 }, { scaleX: 0.06, duration: 1.0, ease: "none" }, 3.3);
+        tl.to("#s1-head", { x: 66, duration: 1.0, ease: "none" }, 3.3);
+        tl.fromTo(
+          "#s1 .corner-mark",
+          { opacity: 0 },
+          { opacity: 1, duration: 0.7, ease: "power2.out" },
+          0.2,
+        );
+        // Ambient: the glow never sits still.
+        tl.fromTo(
+          "#s1-glow",
+          { scale: 0.86, opacity: 0.5 },
+          { scale: 1.06, opacity: 0.95, duration: 2.1, ease: "sine.inOut", yoyo: true, repeat: 1 },
+          0,
+        );
+
+        /* ── Scene 2 — drift ─────────────────────────────────────── */
+        var S2 = 4.39;
+        tl.fromTo("#s2-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "power3.out" }, S2 + 0.1);
+        tl.fromTo(
+          "#s2 .scene-label span:last-child",
+          { opacity: 0, x: -14 },
+          { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" },
+          S2 + 0.18,
+        );
+        // The three rows arrive flush — everyone starts together.
+        tl.fromTo(
+          [".drift-row"],
+          { opacity: 0, x: -40 },
+          { opacity: 1, x: 0, duration: 0.5, stagger: 0.1, ease: "power3.out" },
+          S2 + 0.2,
+        );
+        // …and then come apart. Positive drift = behind the room, so those
+        // heads fall back; theo is ahead, so his runs forward.
+        // Track geometry: the bar spans 880px, the playhead starts at 0.42 of
+        // it, so a head offset of N px is a fill delta of N/880.
+        var drifts = [
+          { n: 1, dx: -46, d: 1.5 },
+          { n: 2, dx: -118, d: 1.7 },
+          { n: 3, dx: 232, d: 1.9 },
+        ];
+        drifts.forEach(function (o) {
+          tl.to("#d-head-" + o.n, { x: o.dx, duration: o.d, ease: "power1.inOut" }, S2 + 0.85);
+          tl.fromTo(
+            "#d-fill-" + o.n,
+            { scaleX: 0.42 },
+            { scaleX: 0.42 + o.dx / 880, duration: o.d, ease: "power1.inOut" },
+            S2 + 0.85,
+          );
+        });
+
+        // beat-grid: drift tags at 5.34 / 6.00 / 6.56 — short mono labels
+        // that then hold to the end of the scene, so each gets 2.2s+ settled.
+        [
+          { el: "#d-tag-1", t: 5.34 },
+          { el: "#d-tag-2", t: 6.0 },
+          { el: "#d-tag-3", t: 6.56 },
+        ].forEach(function (d) {
+          tl.fromTo(
+            d.el,
+            { opacity: 0, x: -20 },
+            { opacity: 1, x: 0, duration: 0.32, ease: "power3.out" },
+            d.t,
+          );
+        });
+        tl.fromTo(
+          "#s2-glow",
+          { opacity: 0.2, scale: 0.9 },
+          { opacity: 1, scale: 1.04, duration: 2.6, ease: "sine.out" },
+          S2 + 0.6,
+        );
+
+        /* ── Scene 3 — the Inox room ─────────────────────────────── */
+        var S3 = CUE_ROOM; // beat-locked 8.74s — the panel lands on the cue
+        tl.fromTo(
+          "#room-frame",
+          { opacity: 0, scale: 0.965, y: 26 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.62, ease: "power3.out" },
+          S3,
+        );
+        // The SYNCED pill is the point of the scene, so it arrives on its own
+        // beat rather than riding the panel in.
+        tl.fromTo(
+          "#synced-pill",
+          { opacity: 0, scale: 0.8 },
+          { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2)" },
+          S3 + 0.55,
+        );
+        tl.fromTo(
+          "#synced-dot",
+          { opacity: 0.35 },
+          { opacity: 1, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: 5 },
+          S3 + 0.9,
+        );
+        // Caption: 4 words, held from 9.5s to the cut at 14.73 — far past
+        // its reading floor.
+        tl.fromTo("#cap-bar", { scaleY: 0 }, { scaleY: 1, duration: 0.34, ease: "power3.out" }, S3 + 0.76);
+        tl.fromTo(
+          "#cap-text",
+          { opacity: 0, y: 18 },
+          { opacity: 1, y: 0, duration: 0.46, ease: "power3.out" },
+          S3 + 0.82,
+        );
+        // The room is live: the playhead creeps, chat lands, a tile rings.
+        tl.fromTo("#s3-fill", { scaleX: 0.38 }, { scaleX: 0.415, duration: 5.4, ease: "none" }, S3 + 0.3);
+        tl.fromTo("#player-bar .head", { x: 0 }, { x: 40, duration: 5.4, ease: "none" }, S3 + 0.3);
+        tl.fromTo(
+          ["#msg-1", "#msg-2"],
+          { opacity: 0, x: 24 },
+          { opacity: 1, x: 0, duration: 0.42, stagger: 0.18, ease: "power2.out" },
+          S3 + 0.4,
+        );
+        tl.fromTo(
+          "#msg-3",
+          { opacity: 0, x: 24 },
+          { opacity: 1, x: 0, duration: 0.42, ease: "power2.out" },
+          S3 + 2.35,
+        );
+        tl.fromTo(
+          ".v-tile",
+          { opacity: 0, y: 22 },
+          { opacity: 1, y: 0, duration: 0.4, stagger: 0.08, ease: "power2.out" },
+          S3 + 0.5,
+        );
+        // mira starts talking — the real speaking ring from VoiceStage.
+        // GSAP owns the arrival, the audio sampler owns the halo's presence;
+        // they meet on one proxy so nothing animates boxShadow twice.
+        var ring = { v: 0 };
+        tl.fromTo(ring, { v: 0 }, { v: 1, duration: 0.38, ease: "power2.out" }, S3 + 3.1);
+
+        /* ── Scene 4 — the drift ladder ──────────────────────────── */
+        var S4 = 14.73;
+        tl.fromTo("#s4-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "power3.out" }, S4 + 0.12);
+        tl.fromTo(
+          "#s4 .scene-label span:last-child",
+          { opacity: 0, x: -14 },
+          { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" },
+          S4 + 0.2,
+        );
+        // beat-grid: rows at 15.29 / 16.38 / 17.47 — EVERY OTHER beat.
+        // These are lines the viewer has to read, so 1.09s apart, not 0.545s.
+        // The full set then holds together from 17.47 to the convergence.
+        var rows = [
+          { row: "#lad-1", t: 15.29 },
+          { row: "#lad-2", t: 16.38 },
+          { row: "#lad-3", t: 17.47 },
+        ];
+        rows.forEach(function (r) {
+          tl.fromTo(
+            r.row,
+            { opacity: 0, x: -44 },
+            { opacity: 1, x: 0, duration: 0.42, ease: "power3.out" },
+            r.t,
+          );
+        });
+        tl.fromTo(
+          "#s4-foot",
+          { opacity: 0 },
+          { opacity: 1, duration: 0.5, ease: "power2.out" },
+          S4 + 3.1,
+        );
+
+        // beat-locked 19.66s — every reading falls into the deadband and the
+        // three playheads line up. The only bell in the film lands here.
+        var CV = CUE_CONVERGE;
+        var readings = [
+          { el: "#v-1", from: 0.12 },
+          { el: "#v-2", from: 0.9 },
+          { el: "#v-3", from: 5.2 },
+        ];
+        readings.forEach(function (r) {
+          var proxy = { v: r.from };
+          var node = document.querySelector(r.el);
+          tl.to(
+            proxy,
+            {
+              v: 0,
+              duration: 0.52,
+              ease: "power2.inOut",
+              onUpdate: function () {
+                node.textContent = proxy.v.toFixed(2) + "s";
+              },
+            },
+            CV,
+          );
+          tl.to(r.el, { color: "#2ecc71", duration: 0.52, ease: "power2.inOut" }, CV);
+        });
+        tl.to(["#a-1", "#a-2", "#a-3"], { opacity: 0.25, duration: 0.4, ease: "power2.out" }, CV);
+        tl.to("#h-1", { x: -22, duration: 0.52, ease: "power2.inOut" }, CV);
+        tl.to("#h-2", { x: 12, duration: 0.52, ease: "power2.inOut" }, CV);
+        tl.to("#h-3", { x: -109, duration: 0.52, ease: "power2.inOut" }, CV);
+        tl.fromTo(
+          "#converge-line",
+          { opacity: 0, scaleY: 0 },
+          { opacity: 1, scaleY: 1, duration: 0.42, ease: "power3.out" },
+          CV + 0.18,
+        );
+
+        /* ── Scene 5 — the lockup ────────────────────────────────── */
+        var S5 = 20.19;
+        // The converged line from scene 4 survives the cut as this rule, so
+        // the outro sits on the thing the film just proved.
+        tl.fromTo(
+          "#s5-rule",
+          { scaleY: 0, opacity: 0 },
+          { scaleY: 1, opacity: 1, duration: 0.5, ease: "power3.out" },
+          S5 + 0.06,
+        );
+        // Tagline first, name last — the narration ends on "Inox", so the
+        // wordmark lands on the word.
+        tl.fromTo(
+          "#tag-1",
+          { opacity: 0, y: 24 },
+          { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+          20.19, // beat — lands on the cut, so the outro never opens empty
+        );
+        tl.fromTo(
+          "#tag-2",
+          { opacity: 0, y: 24 },
+          { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+          21.28, // beat
+        );
+        // beat-locked 22.37s
+        tl.fromTo(
+          "#wordmark",
+          { opacity: 0, scale: 0.9, y: 22 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.46, ease: "power4.out" },
+          CUE_MARK,
+        );
+        tl.fromTo(
+          "#wordmark-underline",
+          { opacity: 0, scaleX: 0 },
+          { opacity: 1, scaleX: 1, duration: 0.42, ease: "power3.out" },
+          CUE_MARK + 0.16,
+        );
+        tl.fromTo(
+          "#s5-glow",
+          { opacity: 0.3, scale: 0.86 },
+          { opacity: 1, scale: 1.05, duration: 1.4, ease: "sine.out" },
+          S5 + 0.2,
+        );
+        // Fade to black. The end state resolves at 23.98, just inside the
+        // half-open [start, start+duration) window.
+        tl.to(
+          ["#wordmark", "#wordmark-underline", "#tag-1", "#tag-2", "#s5-rule", "#s5-glow"],
+          { opacity: 0, duration: 0.64, ease: "power2.in" },
+          23.34,
+        );
+
+        /* ════════════════════════════════════════════════════════════
+           Audio-reactive layer — subtle, and only on things that were
+           already in the frame. The music's RMS breathes the accent glow
+           behind the room; its bass gives the speaking tile's halo a
+           little presence. No waveforms, no bars, no text scaling.
+
+           Sampled as a pure function of timeline time, so it is identical
+           on a forward render and on any seek.
+           ════════════════════════════════════════════════════════════ */
+        var AUDIO = window.__INOX_AUDIO || [];
+        var AFPS = 30;
+        var root = document.getElementById("root");
+        var tile2 = document.getElementById("tile-2");
+        var stageGlow = document.getElementById("stage-glow");
+
+        function sampleAudio() {
+          if (!AUDIO.length) return;
+          var i = Math.min(AUDIO.length - 1, Math.max(0, Math.round(tl.time() * AFPS)));
+          var f = AUDIO[i];
+          var energy = f[0];
+          var bass = f[1];
+          root.style.setProperty("--energy", energy.toFixed(3));
+          root.style.setProperty("--bass", bass.toFixed(3));
+
+          // The light off the player breathes with the bed. Opacity only, on a
+          // soft radial, so no frame ever looks like a visualiser.
+          if (stageGlow) stageGlow.style.opacity = (0.34 + energy * 0.5).toFixed(3);
+
+          // The speaking halo gains presence on the low end, between the
+          // 0.12 alpha the app actually uses and a touch above it.
+          if (tile2) {
+            var spread = (ring.v * 8).toFixed(2);
+            var alpha = (ring.v * (0.1 + bass * 0.1)).toFixed(3);
+            tile2.style.boxShadow =
+              "0 0 0 " + spread + "px rgba(79,115,224," + alpha + ")";
+          }
+        }
+        tl.eventCallback("onUpdate", sampleAudio);
+
+        // Fonts are shipped locally and declared font-display:block, so the
+        // first painted frame already has real metrics.
+        document.fonts.ready.then(function () {
+          sampleAudio();
+        });
+
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
