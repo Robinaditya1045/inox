@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/inox/inox/backend/internal/api/respond"
@@ -22,36 +23,53 @@ const (
 func RequireAuth(authService auth.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			sessionID := ""
-			cookie, err := r.Cookie(SessionCookieName)
-			if err == nil && cookie.Value != "" {
-				sessionID = cookie.Value
-			} else if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
-				sessionID = strings.TrimPrefix(authHeader, "Bearer ")
-			} else if xSession := r.Header.Get("X-Session-ID"); xSession != "" {
-				sessionID = xSession
-			} else if qSession := r.URL.Query().Get("session_id"); qSession != "" {
-				sessionID = qSession
-			}
-
-			if sessionID == "" {
+			sessionIDs := sessionIDCandidates(r)
+			if len(sessionIDs) == 0 {
 				respond.WriteError(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
-			session, err := authService.ValidateSession(r.Context(), sessionID)
-			if err != nil {
-				// Clear expired or invalid session cookie from client
-				ClearSessionCookie(w)
-				respond.WriteError(w, http.StatusUnauthorized, "session expired or invalid")
+			for _, sessionID := range sessionIDs {
+				session, err := authService.ValidateSession(r.Context(), sessionID)
+				if err != nil {
+					continue
+				}
+
+				// Store session in context for downstream route handlers
+				ctx := context.WithValue(r.Context(), sessionContextKey, session)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
-			// Store session in context for downstream route handlers
-			ctx := context.WithValue(r.Context(), sessionContextKey, session)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			// Clear expired or invalid session cookie from client
+			ClearSessionCookie(w)
+			respond.WriteError(w, http.StatusUnauthorized, "session expired or invalid")
 		})
 	}
+}
+
+// sessionIDCandidates returns every distinct session ID the request carries,
+// explicit credentials first. The browser attaches the cookie on its own, so it
+// can outlive the session the client actually holds; a stale one must not
+// shadow a valid token sent alongside it.
+func sessionIDCandidates(r *http.Request) []string {
+	var ids []string
+	add := func(id string) {
+		if id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+
+	if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+		add(strings.TrimPrefix(authHeader, "Bearer "))
+	}
+	add(r.Header.Get("X-Session-ID"))
+	add(r.URL.Query().Get("session_id"))
+	if cookie, err := r.Cookie(SessionCookieName); err == nil {
+		add(cookie.Value)
+	}
+
+	return ids
 }
 
 // GetSessionFromContext retrieves the authenticated session payload stored by RequireAuth.

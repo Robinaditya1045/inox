@@ -209,3 +209,77 @@ func TestMeHTTPHandler(t *testing.T) {
 		}
 	}
 }
+
+// The browser attaches the session cookie by itself, so it can outlive the
+// session the client actually holds. A stale cookie must not shadow a valid
+// token sent explicitly alongside it, or a logged-in user gets a 401 and the
+// frontend discards their session.
+func TestRequireAuthCredentialPrecedence(t *testing.T) {
+	mockSvc := newMockAuthService()
+	mockSvc.sessions["sess_live"] = &domain.Session{ID: "sess_live", UserID: "user-live"}
+	mockSvc.sessions["sess_other"] = &domain.Session{ID: "sess_other", UserID: "user-other"}
+
+	var gotUserID string
+	wrapped := middleware.RequireAuth(mockSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, _ := middleware.GetSessionFromContext(r.Context())
+		gotUserID = session.UserID
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name        string
+		cookie      string
+		bearer      string
+		xSessionID  string
+		query       string
+		wantCode    int
+		wantUserID  string
+		wantCleared bool
+	}{
+		{name: "stale cookie, valid bearer", cookie: "sess_stale", bearer: "sess_live", wantCode: http.StatusOK, wantUserID: "user-live"},
+		{name: "stale cookie, valid X-Session-ID", cookie: "sess_stale", xSessionID: "sess_live", wantCode: http.StatusOK, wantUserID: "user-live"},
+		{name: "stale cookie, valid query param", cookie: "sess_stale", query: "sess_live", wantCode: http.StatusOK, wantUserID: "user-live"},
+		{name: "stale bearer, valid cookie", cookie: "sess_live", bearer: "sess_stale", wantCode: http.StatusOK, wantUserID: "user-live"},
+		{name: "cookie and bearer both valid, bearer wins", cookie: "sess_other", bearer: "sess_live", wantCode: http.StatusOK, wantUserID: "user-live"},
+		{name: "nothing valid", cookie: "sess_stale", bearer: "sess_gone", wantCode: http.StatusUnauthorized, wantCleared: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotUserID = ""
+			target := "/api/v1/users/me"
+			if tt.query != "" {
+				target += "?session_id=" + tt.query
+			}
+			req := httptest.NewRequest("GET", target, nil)
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: middleware.SessionCookieName, Value: tt.cookie})
+			}
+			if tt.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			}
+			if tt.xSessionID != "" {
+				req.Header.Set("X-Session-ID", tt.xSessionID)
+			}
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("expected HTTP %d, got %d", tt.wantCode, rec.Code)
+			}
+			if gotUserID != tt.wantUserID {
+				t.Errorf("expected request to run as %q, got %q", tt.wantUserID, gotUserID)
+			}
+			cleared := false
+			for _, c := range rec.Result().Cookies() {
+				if c.Name == middleware.SessionCookieName && c.MaxAge < 0 {
+					cleared = true
+				}
+			}
+			if cleared != tt.wantCleared {
+				t.Errorf("expected session cookie cleared = %v, got %v", tt.wantCleared, cleared)
+			}
+		})
+	}
+}
