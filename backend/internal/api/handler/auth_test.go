@@ -76,7 +76,16 @@ func (m *mockAuthService) ResetPasswordWithToken(ctx context.Context, token, new
 }
 
 func (m *mockAuthService) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
-	return &domain.User{}, nil
+	avatar := "https://cdn.example/avatar.png"
+	return &domain.User{
+		ID:           userID,
+		Username:     "robin",
+		Email:        "robin@inox.com",
+		PasswordHash: "$2a$10$should-never-leave-the-server",
+		AvatarURL:    &avatar,
+		CreatedAt:    time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC),
+	}, nil
 }
 
 func (m *mockAuthService) UpdateAvatar(ctx context.Context, userID, avatarURL string, sessionID string) error {
@@ -153,5 +162,50 @@ func TestRequireAuthMiddleware(t *testing.T) {
 
 	if recAuth.Code != http.StatusOK {
 		t.Errorf("expected HTTP 200 OK for request with valid cookie, got %d", recAuth.Code)
+	}
+}
+
+// The frontend restores a session on page load by calling /users/me and
+// reading lowercase keys (`id`, `username`, ...). domain.User carries no JSON
+// tags, so serialising it directly emitted `ID`, `Username`, ... and every
+// refresh bounced a logged-in user back to /login.
+func TestMeHTTPHandler(t *testing.T) {
+	authHandler := handler.NewAuthHandler(newMockAuthService(), false)
+
+	req := httptest.NewRequest("GET", "/api/v1/users/me", nil)
+	req = req.WithContext(middleware.WithSessionContext(req.Context(), &domain.Session{
+		ID:     "sess_mock_http_token",
+		UserID: "user-uuid-1",
+	}))
+	rec := httptest.NewRecorder()
+
+	authHandler.Me(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200 OK, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not a JSON object: %v", err)
+	}
+
+	want := map[string]any{
+		"id":         "user-uuid-1",
+		"username":   "robin",
+		"email":      "robin@inox.com",
+		"avatar_url": "https://cdn.example/avatar.png",
+		"created_at": "2026-09-01T12:00:00Z",
+	}
+	for key, value := range want {
+		if body[key] != value {
+			t.Errorf("expected %q = %v, got %v (body: %s)", key, value, body[key], rec.Body.String())
+		}
+	}
+
+	for _, key := range []string{"password_hash", "PasswordHash"} {
+		if _, ok := body[key]; ok {
+			t.Errorf("response must not include %q (body: %s)", key, rec.Body.String())
+		}
 	}
 }

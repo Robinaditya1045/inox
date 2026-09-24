@@ -137,10 +137,23 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mask sensitive data
-	user.PasswordHash = ""
+	respond.WriteJSON(w, http.StatusOK, userResponse{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
+		CreatedAt: user.CreatedAt,
+	})
+}
 
-	respond.WriteJSON(w, http.StatusOK, user)
+// userResponse is the wire shape of a user profile. domain.User deliberately
+// carries no JSON tags, so it must never be written to a response directly.
+type userResponse struct {
+	ID        string    `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	AvatarURL *string   `json:"avatar_url"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UpdateAvatar handles user profile avatar updates.
