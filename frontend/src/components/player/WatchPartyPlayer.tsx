@@ -140,6 +140,20 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
               liveSyncDurationCount: 3,
               liveMaxLatencyDurationCount: 10,
               backBufferLength: 30,
+              // The master playlist is the one live route behind RequireAuth, and a
+              // bare hls.js request to the API's origin carries no session, so it
+              // 401s. Send it the way apiClient does. Every URI inside carries its
+              // own playback token, so those requests are left alone.
+              xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+                if (!isLiveMediaUrl(url)) return;
+                xhr.open("GET", url, true);
+                xhr.withCredentials = true;
+                const sessionId = localStorage.getItem("inox_session_id");
+                if (sessionId) {
+                  xhr.setRequestHeader("Authorization", `Bearer ${sessionId}`);
+                  xhr.setRequestHeader("X-Session-ID", sessionId);
+                }
+              },
             }
           : {}),
       });
