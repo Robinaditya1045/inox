@@ -38,6 +38,12 @@ interface WatchPartyPlayerProps {
   onOpenLibrary?: () => void;
 }
 
+// Backoff for restarting a stream once hls.js has given up on it. A fatal network
+// error means its own retries are already spent; live upstreams drop out routinely,
+// so the player keeps trying for as long as the viewer stays.
+const RETRY_BASE_MS = 2_000;
+const RETRY_MAX_MS = 30_000;
+
 export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   onOpenLibrary,
 }) => {
@@ -95,6 +101,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     const video = videoRef.current;
     const effectiveUrl = normalizeMediaUrl(mediaUrl);
     if (!video || !effectiveUrl) return;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Destroy any previous Hls instance
     if (hlsRef.current) {
@@ -159,6 +166,36 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       });
       hlsRef.current = hls;
 
+      // startLoad() only resumes a stream whose manifest has loaded; before that
+      // there is nothing to resume, and the manifest has to be requested again.
+      let retryDelayMs = RETRY_BASE_MS;
+      let recovering = false;
+      const scheduleRetry = () => {
+        recovering = true;
+        if (retryTimer) return;
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined;
+          if (hlsRef.current !== hls) return;
+          if (hls.levels.length === 0) {
+            hls.loadSource(effectiveUrl);
+          } else {
+            hls.startLoad();
+          }
+        }, retryDelayMs);
+        retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+      };
+      const clearRetry = () => {
+        recovering = false;
+        retryDelayMs = RETRY_BASE_MS;
+        setLoadError(null);
+      };
+
+      // Media is flowing again. Without this, the error notice outlives the
+      // outage and sits over a stream that is playing fine.
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        if (recovering) clearRetry();
+      });
+
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
         const parsedLevels = data.levels.map((l, i) => ({
           index: i,
@@ -168,7 +205,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         parsedLevels.sort((a, b) => b.height - a.height);
         setLevels(parsedLevels);
         setCurrentLevel(-1);
-        setLoadError(null);
+        clearRetry();
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
@@ -192,7 +229,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         });
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           setLoadError("Could not load this stream. Retrying…");
-          hls.startLoad();
+          scheduleRetry();
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           setLoadError("Playback error. Recovering…");
           hls.recoverMediaError();
@@ -212,6 +249,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     }
 
     return () => {
+      clearTimeout(retryTimer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
