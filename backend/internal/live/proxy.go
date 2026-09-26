@@ -318,11 +318,7 @@ func (p *Proxy) loadPlaylist(ctx context.Context, ch *domain.LiveChannel, upstre
 // sealed rather than encoded, so a client can neither read it nor point us at
 // somewhere we did not choose.
 func (p *Proxy) rewriteURI(ch *domain.LiveChannel, absolute string, kind URIKind, token string) string {
-	sealed, err := p.sealer.Seal(ch.ID, absolute)
-	if err != nil {
-		slog.Error("failed to seal upstream uri", "slug", ch.Slug, "error", err)
-		return absolute
-	}
+	sealed := p.sealer.Seal(ch.ID, absolute)
 	segment := pathResource
 	suffix := ""
 	if kind == URIPlaylist {

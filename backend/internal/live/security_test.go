@@ -19,10 +19,7 @@ func TestSealerRoundTripsAndRejectsTampering(t *testing.T) {
 	}
 
 	upstream := "https://cdn.example.com/live/seg1.ts?token=abc123&exp=999"
-	ref, err := sealer.Seal("channel-a", upstream)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
+	ref := sealer.Seal("channel-a", upstream)
 
 	// The upstream URL is a credential; a sealed ref that merely encodes it would
 	// hand the raw feed to anyone who can read a manifest.
@@ -55,6 +52,36 @@ func TestSealerRoundTripsAndRejectsTampering(t *testing.T) {
 	other, _ := live.NewSealer("a-completely-different-secret-value-here")
 	if _, err := other.Open("channel-a", ref); !errors.Is(err, live.ErrBadRef) {
 		t.Errorf("foreign-key open error = %v, want ErrBadRef", err)
+	}
+}
+
+// hls.js rejects a live playlist reload in which a segment's URI changed under the
+// same media sequence number, so every rewrite of a playlist must give an upstream
+// segment the same reference -- including a rewrite done by another process.
+func TestSealerIsStableAcrossPlaylistRefreshes(t *testing.T) {
+	sealer, err := live.NewSealer(testSecret)
+	if err != nil {
+		t.Fatalf("NewSealer: %v", err)
+	}
+	otherProcess, err := live.NewSealer(testSecret)
+	if err != nil {
+		t.Fatalf("NewSealer: %v", err)
+	}
+
+	seg := "https://cdn.example.com/live/seg1.ts?token=abc123"
+	first := sealer.Seal("channel-a", seg)
+	if again := sealer.Seal("channel-a", seg); again != first {
+		t.Errorf("segment resealed to a different ref:\n  %s\n  %s", first, again)
+	}
+	if elsewhere := otherProcess.Seal("channel-a", seg); elsewhere != first {
+		t.Errorf("another process sealed the segment to a different ref:\n  %s\n  %s", first, elsewhere)
+	}
+
+	if sealer.Seal("channel-b", seg) == first {
+		t.Error("the same segment sealed to the same ref for two channels")
+	}
+	if sealer.Seal("channel-a", "https://cdn.example.com/live/seg2.ts?token=abc123") == first {
+		t.Error("two different segments sealed to the same ref")
 	}
 }
 
