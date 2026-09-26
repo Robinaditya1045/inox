@@ -13,6 +13,9 @@ import {
   UserPlus,
   Check,
   AlertCircle,
+  MicOff,
+  ScreenShare,
+  Volume2,
 } from "lucide-react";
 import { useRoom } from "../../hooks/useRoom";
 import { useRTC } from "../../hooks/useRTC";
@@ -23,7 +26,7 @@ export const MemberList: React.FC = () => {
     usePresence();
   const { user } = useAuth();
   const { permissions, inviteUser, activeRoom } = useRoom();
-  const { remoteStreams, connectionState } = useRTC(activeRoom?.id);
+  const { peers: voicePeers, speakingIds } = useRTC(activeRoom?.id);
 
   const [inviteUsername, setInviteUsername] = useState("");
   const [isInviting, setIsInviting] = useState(false);
@@ -110,15 +113,14 @@ export const MemberList: React.FC = () => {
     }
   };
 
-  // Grouped the way a call-first client should read: who is audible right now,
-  // then everyone else by role, then the people who aren't here.
-  const voiceUserIds = new Set(remoteStreams.keys());
-  if (connectionState === "connected" && user?.id) {
-    voiceUserIds.add(user.id);
-  }
+  // Grouped the way a call-first client should read: who is in the call right
+  // now, then everyone else by role. Membership comes from the server's voice
+  // roster rather than from this client's own peer connection, which knows
+  // nothing about people it has no media for.
+  const voiceState = new Map(voicePeers.map((peer) => [peer.userId, peer]));
 
-  const inVoice = members.filter((m) => voiceUserIds.has(m.user_id));
-  const rest = members.filter((m) => !voiceUserIds.has(m.user_id));
+  const inVoice = members.filter((m) => voiceState.has(m.user_id));
+  const rest = members.filter((m) => !voiceState.has(m.user_id));
   const rank: Record<RoomRole, number> = {
     owner: 0,
     moderator: 1,
@@ -211,6 +213,27 @@ export const MemberList: React.FC = () => {
                           {member.username}{" "}
                           {isSelf && (
                             <span className={styles.selfLabel}>(You)</span>
+                          )}
+                          {voiceState.get(member.user_id)?.isMuted && (
+                            <MicOff
+                              size={12}
+                              style={{ color: "var(--color-danger)" }}
+                              aria-label="Muted"
+                            />
+                          )}
+                          {speakingIds.has(member.user_id) && (
+                            <Volume2
+                              size={12}
+                              style={{ color: "var(--color-speaking)" }}
+                              aria-label="Speaking"
+                            />
+                          )}
+                          {voiceState.get(member.user_id)?.isScreenSharing && (
+                            <ScreenShare
+                              size={12}
+                              style={{ color: "var(--color-accent)" }}
+                              aria-label="Sharing screen"
+                            />
                           )}
                         </span>
                         <div

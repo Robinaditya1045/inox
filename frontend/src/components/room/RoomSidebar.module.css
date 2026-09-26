@@ -206,3 +206,8 @@
   font-size: var(--text-label);
   color: var(--color-text-muted);
 }
+
+/* Blue ring on top of the green one: connected, and talking right now */
+.speaking {
+  box-shadow: 0 0 0 2px var(--color-speaking);
+}

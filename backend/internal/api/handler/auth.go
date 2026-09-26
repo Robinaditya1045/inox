@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -81,10 +82,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout revokes the Redis session and purges the cookie from browser memory.
+// It revokes every session the request carries, not just the cookie's: where
+// third-party cookies are blocked the client only ever sends its token.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("inox_session")
-	if err == nil && cookie.Value != "" {
-		_ = h.authService.Logout(r.Context(), cookie.Value)
+	var revokeErr error
+	for _, sessionID := range middleware.SessionIDsFromRequest(r) {
+		if err := h.authService.Logout(r.Context(), sessionID); err != nil {
+			revokeErr = err
+		}
 	}
 
 	sameSite := http.SameSiteLaxMode
@@ -101,6 +106,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.isProd,
 		SameSite: sameSite,
 	})
+
+	if revokeErr != nil {
+		slog.Error("failed to revoke session on logout", "error", revokeErr)
+		respond.WriteError(w, http.StatusServiceUnavailable, "failed to end session, try again shortly")
+		return
+	}
 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out successfully"})
 }
@@ -137,10 +148,23 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mask sensitive data
-	user.PasswordHash = ""
+	respond.WriteJSON(w, http.StatusOK, userResponse{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
+		CreatedAt: user.CreatedAt,
+	})
+}
 
-	respond.WriteJSON(w, http.StatusOK, user)
+// userResponse is the wire shape of a user profile. domain.User deliberately
+// carries no JSON tags, so it must never be written to a response directly.
+type userResponse struct {
+	ID        string    `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	AvatarURL *string   `json:"avatar_url"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UpdateAvatar handles user profile avatar updates.

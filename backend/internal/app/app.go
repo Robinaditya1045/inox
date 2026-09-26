@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -78,7 +79,15 @@ func (a *App) Run() error {
 		hub.SetRedisEventBus(redisEventBus)
 		hub.SetStateRepository(stateRepo)
 	}
-	sfuMgr := sfu.NewManager()
+	sfuMgr, err := sfu.NewNetworkedManager(sfu.NetworkConfig{
+		ICEServers: a.Config.WebRTCICEServers,
+		PortMin:    parsePort(a.Config.WebRTCPortMin),
+		PortMax:    parsePort(a.Config.WebRTCPortMax),
+		PublicIP:   a.Config.WebRTCPublicIP,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize sfu media manager: %w", err)
+	}
 	hub.SetSFUManager(sfuMgr)
 	go hub.Run()
 
@@ -160,12 +169,21 @@ func (a *App) Run() error {
 	// 6. Register router with wired handlers & middleware
 	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, liveHandler, friendHandler, a.DB, a.Redis)
 
+	// Whole-request read/write timeouts are wrong for this service. Uploads are
+	// large by design (the admin portal offers 1 GB multipart and 3 GB direct) and
+	// media responses stream for as long as someone is watching, so a 10s clock on
+	// the body killed a 252 MB upload at exactly 10.00s. The browser reported that
+	// as a CORS error, because the 502 the reverse proxy synthesises for a dropped
+	// upstream connection carries no CORS headers.
+	//
+	// ReadHeaderTimeout keeps the slowloris protection ReadTimeout was there for,
+	// without putting a clock on transfers whose duration depends on the client's
+	// bandwidth.
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%s", a.Config.HTTPPort),
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              fmt.Sprintf(":%s", a.Config.HTTPPort),
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -209,4 +227,15 @@ func (a *App) Run() error {
 
 	a.Logger.Info("server exited cleanly")
 	return nil
+}
+
+// parsePort converts a configured port string to the uint16 Pion expects,
+// yielding 0 (meaning "leave the range unpinned") for anything unparseable or
+// outside the valid port space.
+func parsePort(raw string) uint16 {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 || n > 65535 {
+		return 0
+	}
+	return uint16(n)
 }

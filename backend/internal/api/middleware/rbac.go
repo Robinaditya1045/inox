@@ -123,9 +123,12 @@ func RequireMetricsAccess(authService auth.AuthService) func(http.Handler) http.
 			}
 
 			// 3. Check if caller has an active admin session
-			cookie, err := r.Cookie("session")
-			if err == nil && cookie.Value != "" && authService != nil {
-				session, err := authService.ValidateSession(r.Context(), cookie.Value)
+			if authService != nil {
+				session, err := authenticate(r, authService)
+				if errors.Is(err, errSessionStoreUnavailable) {
+					respond.WriteError(w, http.StatusServiceUnavailable, "session store unavailable, try again shortly")
+					return
+				}
 				if err == nil && IsAdminSession(session) {
 					next.ServeHTTP(w, r)
 					return

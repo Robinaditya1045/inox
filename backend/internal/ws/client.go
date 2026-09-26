@@ -121,20 +121,12 @@ func (c *Client) WritePump() {
 				return
 			}
 
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			_, _ = w.Write(message)
-
-			// Add queued chat messages to the current websocket frame
-			n := len(c.Send)
-			for i := 0; i < n; i++ {
-				_, _ = w.Write([]byte{'\n'})
-				_, _ = w.Write(<-c.Send)
-			}
-
-			if err := w.Close(); err != nil {
+			// One event per frame. Packing several newline-separated events into one
+			// frame -- as gorilla's chat example does -- hands the browser a body that
+			// is not valid JSON, and JSON.parse drops the whole frame. Bursts are
+			// routine here (an SDP offer followed by a dozen ICE candidates), so that
+			// silently broke exactly the exchanges that matter most.
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 

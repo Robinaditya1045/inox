@@ -14,6 +14,9 @@ export type WSEventType =
   | "SFU_OFFER"
   | "SFU_ANSWER"
   | "SFU_ICE_CANDIDATE"
+  | "SFU_LEAVE"
+  | "SFU_STATE"
+  | "SFU_PEERS"
   | "LIVE_POSITION"
   | "LIVE_LEADER"
   | "LIVE_STATUS"
@@ -120,4 +123,29 @@ export interface WSSfuIcePayload {
   candidate: string;
   sdpMid?: string;
   sdpMLineIndex?: number;
+}
+
+/** What this client reports about itself; the SFU cannot see a muted microphone. */
+export interface WSSfuStatePayload {
+  is_muted: boolean;
+}
+
+/** One row of the server's voice roster. */
+export interface WSSfuPeer {
+  user_id: string;
+  username: string;
+  is_muted: boolean;
+  is_screen_sharing: boolean;
+}
+
+/**
+ * The authoritative list of who is in the call.
+ *
+ * A client cannot derive this from its own peer connection: it has no track for
+ * itself, none for anyone who is muted-from-the-start or has not published yet,
+ * and none at all when it is not in voice. The server sends the whole roster on
+ * join and on every change.
+ */
+export interface WSSfuPeersPayload {
+  peers: WSSfuPeer[];
 }

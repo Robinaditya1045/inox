@@ -1,6 +1,5 @@
 import React from "react";
 import type { Room } from "../../types/room";
-import { usePresence } from "../../hooks/usePresence";
 import { useRTC } from "../../hooks/useRTC";
 import { useAuth } from "../../hooks/useAuth";
 import { Avatar } from "../common/Avatar";
@@ -35,20 +34,13 @@ export const RoomSidebar: React.FC<RoomSidebarProps> = ({
   onOpenRoomMenu,
   isMediaPlaying,
 }) => {
-  const { members } = usePresence();
   const { user } = useAuth();
-  const { connectionState, remoteStreams, isAudioMuted, isScreenSharing } =
-    useRTC(activeRoom?.id);
+  const { peers, speakingIds } = useRTC(activeRoom?.id);
 
-  const inVoice = connectionState === "connected";
-
-  // Who the SFU is actually forwarding, resolved to names via the presence list
-  const remotePeers = Array.from(remoteStreams.keys()).map((userId) => ({
-    userId,
-    username: members.find((m) => m.user_id === userId)?.username || "Peer",
-  }));
-
-  const voiceCount = (inVoice ? 1 : 0) + remotePeers.length;
+  // The server's roster, so the channel lists everyone in the call -- including
+  // people this client has no media for yet, and everyone at all when you have
+  // not joined it yourself.
+  const voiceCount = peers.length;
 
   const channelClass = (channel: RoomChannel) =>
     `${styles.channel} ${activeChannel === channel ? styles.channelActive : ""}`;
@@ -120,44 +112,40 @@ export const RoomSidebar: React.FC<RoomSidebarProps> = ({
 
           {voiceCount > 0 && (
             <div className={styles.participants}>
-              {inVoice && (
-                <div className={styles.participant}>
-                  <span className={styles.participantAvatar}>
+              {peers.map((peer) => (
+                <div key={peer.userId} className={styles.participant}>
+                  <span
+                    className={`${styles.participantAvatar} ${
+                      speakingIds.has(peer.userId) ? styles.speaking : ""
+                    }`}
+                  >
                     <Avatar
-                      username={user?.username || "You"}
-                      src={user?.avatar_url}
+                      username={peer.username}
+                      src={peer.isLocal ? user?.avatar_url : undefined}
                       size="xs"
                     />
                   </span>
                   <span
-                    className={`${styles.participantName} ${styles.participantSelf}`}
+                    className={`${styles.participantName} ${
+                      peer.isLocal ? styles.participantSelf : ""
+                    }`}
                   >
-                    {user?.username || "You"}
+                    {peer.username}
                   </span>
-                  {isAudioMuted && (
+                  {peer.isMuted && (
                     <MicOff
                       size={13}
-                      style={{ color: "var(--color-danger)" }}
+                      style={{ color: "var(--color-danger)", flexShrink: 0 }}
                       aria-label="Muted"
                     />
                   )}
-                  {isScreenSharing && (
+                  {peer.isScreenSharing && (
                     <ScreenShare
                       size={13}
-                      style={{ color: "var(--color-accent)" }}
+                      style={{ color: "var(--color-accent)", flexShrink: 0 }}
                       aria-label="Sharing screen"
                     />
                   )}
-                </div>
-              )}
-              {remotePeers.map((peer) => (
-                <div key={peer.userId} className={styles.participant}>
-                  <span className={styles.participantAvatar}>
-                    <Avatar username={peer.username} size="xs" />
-                  </span>
-                  <span className={styles.participantName}>
-                    {peer.username}
-                  </span>
                 </div>
               ))}
             </div>

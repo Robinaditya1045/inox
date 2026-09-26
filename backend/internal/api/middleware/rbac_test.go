@@ -2,13 +2,33 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/inox/inox/backend/internal/auth"
 	"github.com/inox/inox/backend/internal/domain"
 )
+
+// fakeAuthService implements only session validation; any other AuthService
+// method panics through the nil embedded interface.
+type fakeAuthService struct {
+	auth.AuthService
+	sessions   map[string]*domain.Session
+	lookupErrs map[string]error
+}
+
+func (f *fakeAuthService) ValidateSession(ctx context.Context, sessionID string) (*domain.Session, error) {
+	if err, failing := f.lookupErrs[sessionID]; failing {
+		return nil, err
+	}
+	if s, ok := f.sessions[sessionID]; ok {
+		return s, nil
+	}
+	return nil, auth.ErrSessionNotFound
+}
 
 func TestRequireAdminRole(t *testing.T) {
 	// Set up admin emails env
@@ -114,5 +134,61 @@ func TestRequireMetricsAccess(t *testing.T) {
 	handler.ServeHTTP(rec3, req3)
 	if rec3.Code != http.StatusOK {
 		t.Errorf("expected 200 OK for valid Bearer token, got %d", rec3.Code)
+	}
+}
+
+// An admin must be able to reach /metrics with the session the rest of the API
+// accepts. This used to read a cookie named "session", which nothing ever sets.
+func TestRequireMetricsAccessAdminSession(t *testing.T) {
+	origAdminEmails := os.Getenv("ADMIN_EMAILS")
+	origToken := os.Getenv("METRICS_AUTH_TOKEN")
+	defer os.Setenv("ADMIN_EMAILS", origAdminEmails)
+	defer os.Setenv("METRICS_AUTH_TOKEN", origToken)
+	os.Setenv("ADMIN_EMAILS", "admin@inox.app")
+	os.Setenv("METRICS_AUTH_TOKEN", "")
+
+	svc := &fakeAuthService{
+		sessions: map[string]*domain.Session{
+			"sess_admin": {ID: "sess_admin", Email: "admin@inox.app"},
+			"sess_user":  {ID: "sess_user", Email: "user@inox.app"},
+		},
+		lookupErrs: map[string]error{"sess_unreachable": errors.New("redis: connection refused")},
+	}
+	handler := RequireMetricsAccess(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name     string
+		cookie   string
+		bearer   string
+		wantCode int
+	}{
+		{name: "admin session cookie", cookie: "sess_admin", wantCode: http.StatusOK},
+		{name: "admin session bearer", bearer: "sess_admin", wantCode: http.StatusOK},
+		{name: "non-admin session", cookie: "sess_user", wantCode: http.StatusForbidden},
+		{name: "unknown session", cookie: "sess_gone", wantCode: http.StatusForbidden},
+		{name: "no credentials", wantCode: http.StatusForbidden},
+		{name: "session store unreachable", bearer: "sess_unreachable", wantCode: http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			req.RemoteAddr = "203.0.113.7:54321"
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: tt.cookie})
+			}
+			if tt.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			}
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("expected HTTP %d, got %d", tt.wantCode, rec.Code)
+			}
+		})
 	}
 }
