@@ -167,6 +167,23 @@ export function secondsBehindEdge(video: HTMLVideoElement): number {
 }
 
 /**
+ * How much further behind the live edge the player is than it means to be.
+ *
+ * hls.js deliberately plays a few segments back from the edge (liveSyncDurationCount)
+ * so a slow segment does not stall playback, which with 5-second segments is 15
+ * seconds by design. The raw distance to the edge therefore never reads zero and
+ * says nothing on its own; the excess over hls.js's own target is what shows a
+ * player that has fallen behind.
+ */
+export function secondsBehindTarget(
+  video: HTMLVideoElement,
+  hls: Pick<Hls, "targetLatency"> | null,
+): number {
+  const target = hls?.targetLatency ?? 0;
+  return Math.max(0, secondsBehindEdge(video) - target);
+}
+
+/**
  * Keeps a seek target inside the playable window, with a small margin so the player
  * does not land exactly on a boundary that is about to move.
  */

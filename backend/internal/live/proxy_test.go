@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,15 +18,21 @@ import (
 // ── in-memory fakes ─────────────────────────────────────────
 
 type fakeRepo struct {
+	// Resolves finish on goroutines of their own, detached from any request.
+	mu       sync.Mutex
 	channels map[string]*domain.LiveChannel
 }
 
 func (f *fakeRepo) Create(_ context.Context, ch *domain.LiveChannel) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	ch.ID = "chan-" + ch.Slug
 	f.channels[ch.Slug] = ch
 	return nil
 }
 func (f *fakeRepo) GetBySlug(_ context.Context, slug string) (*domain.LiveChannel, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	ch, ok := f.channels[slug]
 	if !ok {
 		return nil, live.ErrChannelNotFound
@@ -38,6 +45,8 @@ func (f *fakeRepo) GetByID(context.Context, string) (*domain.LiveChannel, error)
 }
 func (f *fakeRepo) List(context.Context) ([]*domain.LiveChannel, error) { return nil, nil }
 func (f *fakeRepo) UpdateUpstream(_ context.Context, id, upstreamURL string, headers map[string]string, expiresAt *time.Time, isDVR bool, windowSecs int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, ch := range f.channels {
 		if ch.ID == id {
 			ch.UpstreamURL, ch.UpstreamHeaders, ch.UpstreamExpiresAt = upstreamURL, headers, expiresAt
@@ -46,7 +55,24 @@ func (f *fakeRepo) UpdateUpstream(_ context.Context, id, upstreamURL string, hea
 	}
 	return nil
 }
-func (f *fakeRepo) UpdateStatus(context.Context, string, domain.LiveChannelStatus, string) error {
+func (f *fakeRepo) UpdateStatus(_ context.Context, id string, status domain.LiveChannelStatus, lastErr string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, ch := range f.channels {
+		if ch.ID == id {
+			ch.Status, ch.LastError = status, lastErr
+		}
+	}
+	return nil
+}
+func (f *fakeRepo) RecordResolution(_ context.Context, id string, diag *domain.ResolveDiagnostics) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, ch := range f.channels {
+		if ch.ID == id {
+			ch.LastOutcome, ch.LastDiagnostics = diag.Outcome, diag
+		}
+	}
 	return nil
 }
 func (f *fakeRepo) Delete(context.Context, string) error { return nil }

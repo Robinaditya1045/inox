@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import Hls from "hls.js";
+import Hls, { type LoaderConfig } from "hls.js";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useRoomSocket } from "../../hooks/useRoomSocket";
@@ -12,7 +12,7 @@ import {
   isLiveMediaUrl,
   liveEdgeTime,
   roomLocalTime,
-  secondsBehindEdge,
+  secondsBehindTarget,
   toStreamPosition,
 } from "../../utils/liveSync";
 import { logger } from "../../utils/logger";
@@ -37,6 +37,41 @@ import styles from "./WatchPartyPlayer.module.css";
 interface WatchPartyPlayerProps {
   onOpenLibrary?: () => void;
 }
+
+// Backoff for restarting a stream once hls.js has given up on it. A fatal network
+// error means its own retries are already spent; live upstreams drop out routinely,
+// so the player keeps trying for as long as the viewer stays.
+const RETRY_BASE_MS = 2_000;
+const RETRY_MAX_MS = 30_000;
+
+// A live stream is resumed in place when it fails, which keeps the picture. Only if
+// that keeps failing is the master playlist reloaded: that rebuilds the media
+// pipeline -- the screen goes black -- and the one thing it fixes is an upstream the
+// server has re-resolved since this player loaded it.
+const LIVE_RELOAD_AFTER_ATTEMPTS = 3;
+
+// How hard hls.js tries each request of a live stream. The defaults are tuned for
+// on-demand video, where a segment is worth waiting for: they retry one for half a
+// minute. A live segment that has not arrived within a second or two is worthless --
+// the broadcast has moved on -- and waiting for it only guarantees a stall, so it
+// is dropped quickly and hls.js plays past the gap. Playlists are the lifeline and
+// get the patience instead.
+const LIVE_FRAG_POLICY: { default: LoaderConfig } = {
+  default: {
+    maxTimeToFirstByteMs: 8_000,
+    maxLoadTimeMs: 20_000,
+    timeoutRetry: { maxNumRetry: 1, retryDelayMs: 0, maxRetryDelayMs: 0 },
+    errorRetry: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 1_000 },
+  },
+};
+const LIVE_PLAYLIST_POLICY: { default: LoaderConfig } = {
+  default: {
+    maxTimeToFirstByteMs: 10_000,
+    maxLoadTimeMs: 20_000,
+    timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
+    errorRetry: { maxNumRetry: 4, retryDelayMs: 1_000, maxRetryDelayMs: 4_000 },
+  },
+};
 
 export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   onOpenLibrary,
@@ -95,6 +130,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     const video = videoRef.current;
     const effectiveUrl = normalizeMediaUrl(mediaUrl);
     if (!video || !effectiveUrl) return;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Destroy any previous Hls instance
     if (hlsRef.current) {
@@ -140,10 +176,62 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
               liveSyncDurationCount: 3,
               liveMaxLatencyDurationCount: 10,
               backBufferLength: 30,
+              fragLoadPolicy: LIVE_FRAG_POLICY,
+              playlistLoadPolicy: LIVE_PLAYLIST_POLICY,
+              // The master playlist is the one live route behind RequireAuth, and a
+              // bare hls.js request to the API's origin carries no session, so it
+              // 401s. Send it the way apiClient does. Every URI inside carries its
+              // own playback token, so those requests are left alone.
+              xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+                if (!isLiveMediaUrl(url)) return;
+                xhr.open("GET", url, true);
+                xhr.withCredentials = true;
+                const sessionId = localStorage.getItem("inox_session_id");
+                if (sessionId) {
+                  xhr.setRequestHeader("Authorization", `Bearer ${sessionId}`);
+                  xhr.setRequestHeader("X-Session-ID", sessionId);
+                }
+              },
             }
           : {}),
       });
       hlsRef.current = hls;
+
+      // startLoad() only resumes a stream whose manifest has loaded; before that
+      // there is nothing to resume, and the manifest has to be requested again.
+      let retryDelayMs = RETRY_BASE_MS;
+      let recovering = false;
+      let attempts = 0;
+      const scheduleRetry = () => {
+        recovering = true;
+        if (retryTimer) return;
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined;
+          if (hlsRef.current !== hls) return;
+          attempts += 1;
+          const reload =
+            hls.levels.length === 0 ||
+            (streamIsLive && attempts >= LIVE_RELOAD_AFTER_ATTEMPTS);
+          if (reload) {
+            hls.loadSource(effectiveUrl);
+          } else {
+            hls.startLoad();
+          }
+        }, retryDelayMs);
+        retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+      };
+      const clearRetry = () => {
+        recovering = false;
+        attempts = 0;
+        retryDelayMs = RETRY_BASE_MS;
+        setLoadError(null);
+      };
+
+      // Media is flowing again. Without this, the error notice outlives the
+      // outage and sits over a stream that is playing fine.
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        if (recovering) clearRetry();
+      });
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
         const parsedLevels = data.levels.map((l, i) => ({
@@ -154,7 +242,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         parsedLevels.sort((a, b) => b.height - a.height);
         setLevels(parsedLevels);
         setCurrentLevel(-1);
-        setLoadError(null);
+        clearRetry();
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
@@ -178,7 +266,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         });
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           setLoadError("Could not load this stream. Retrying…");
-          hls.startLoad();
+          scheduleRetry();
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           setLoadError("Playback error. Recovering…");
           hls.recoverMediaError();
@@ -198,6 +286,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     }
 
     return () => {
+      clearTimeout(retryTimer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -236,7 +325,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     if (!video) return;
     setProgress(video.currentTime);
     if (isLive) {
-      setBehindEdge(secondsBehindEdge(video));
+      setBehindEdge(secondsBehindTarget(video, hlsRef.current));
       return;
     }
     notifyLocalProgress(video.currentTime);

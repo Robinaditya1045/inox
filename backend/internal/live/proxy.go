@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,9 +27,26 @@ const (
 // only when the ladder itself changes, which is close to never.
 const masterCacheTTL = 30 * time.Second
 
+// Upstream resilience. Live CDNs -- above all ones that rotate edge hostnames -- drop
+// the odd request, and a viewer should not see it: one quick retry, server-side,
+// fixes most of them within the time a player is prepared to wait.
+const (
+	upstreamRetries    = 1
+	upstreamRetryPause = 250 * time.Millisecond
+	// playlistFetchTimeout bounds one playlist fetch, retry included. hls.js gives
+	// up on a playlist after ten seconds without a first byte, so an answer before
+	// then -- even a stale one -- beats letting it time out.
+	playlistFetchTimeout = 8 * time.Second
+	// masterStaleFor is how long a master playlist may stand in for a refresh that
+	// failed. Its variant list is still right long after it was fetched.
+	masterStaleFor = 5 * time.Minute
+)
+
 type cachedPlaylist struct {
 	body      []byte
-	expiresAt time.Time
+	expiresAt time.Time // fresh until
+	// staleUntil is how long this copy may stand in for a refresh that failed.
+	staleUntil time.Time
 }
 
 // Proxy serves live manifests and segments from our own origin.
@@ -171,15 +189,31 @@ func (p *Proxy) ServeMaster(w http.ResponseWriter, r *http.Request, slug, userID
 		return
 	}
 	if err := p.svc.EnsureResolved(r.Context(), ch); err != nil {
-		slog.Warn("live channel could not be resolved", "slug", slug, "error", err)
-		p.reportHealth(slug, false, "The stream source could not be reached.")
+		// The resolve itself has already logged what it saw; this line ties the
+		// failure to a viewer's request.
+		outcome, reason := failureOutcome(err)
+		slog.Warn("live master playlist unavailable", "slug", slug, "outcome", outcome, "reason", reason)
+		p.reportHealth(slug, false, viewerNotice(err))
 		http.Error(w, "live stream is currently unavailable", http.StatusBadGateway)
 		return
 	}
 
 	token := p.tokens.Mint(ch.ID, userID, time.Now())
 	body, pl, err := p.loadPlaylist(r.Context(), ch, ch.UpstreamURL, token, masterCacheTTL)
+	if err != nil && upstreamRejected(err) {
+		// An upstream refusing a manifest it served before has almost always let
+		// its signature expire, and nothing else would notice: the stored URL still
+		// looks valid. Re-resolving is the one thing that can fix it.
+		if rerr := p.svc.Refresh(r.Context(), ch); rerr == nil {
+			body, pl, err = p.loadPlaylist(r.Context(), ch, ch.UpstreamURL, token, masterCacheTTL)
+		} else {
+			slog.Warn("live upstream refused its manifest and could not be refreshed", "slug", slug, "error", rerr)
+		}
+	}
 	if err != nil {
+		if r.Context().Err() != nil {
+			return // the viewer went away; there is no one to answer
+		}
 		slog.Warn("failed to fetch live master playlist", "slug", slug, "error", err)
 		p.reportHealth(slug, false, "The broadcast is not responding.")
 		http.Error(w, "live stream is currently unavailable", http.StatusBadGateway)
@@ -203,7 +237,15 @@ func (p *Proxy) ServePlaylist(w http.ResponseWriter, r *http.Request, slug, ref,
 	ttl := 2 * time.Second
 	body, pl, err := p.loadPlaylist(r.Context(), ch, upstream, token, ttl)
 	if err != nil {
+		if r.Context().Err() != nil {
+			// The player abandoned the request -- a quality switch, a reload.
+			// That is not the broadcast failing, and must not be announced as one.
+			return
+		}
 		slog.Warn("failed to fetch live media playlist", "slug", slug, "error", err)
+		if upstreamRejected(err) {
+			p.refreshBehind(ch)
+		}
 		p.reportHealth(slug, false, "The broadcast stopped sending video.")
 		http.Error(w, "live stream is currently unavailable", http.StatusBadGateway)
 		return
@@ -220,10 +262,21 @@ func (p *Proxy) ServeResource(w http.ResponseWriter, r *http.Request, slug, ref,
 		return
 	}
 
-	resp, err := p.fetcher.Get(r.Context(), upstream, ch.UpstreamHeaders)
+	resp, err := p.fetchUpstream(r.Context(), ch, upstream)
 	if err != nil {
+		if r.Context().Err() != nil {
+			return // the player moved on
+		}
 		slog.Warn("failed to fetch live segment", "slug", slug, "error", err)
-		http.Error(w, "segment unavailable", http.StatusBadGateway)
+		// A segment the upstream says it does not have is never going to appear:
+		// it aged out of the window, or its edge never received it. A 404 lets the
+		// player skip it at once -- hls.js treats a missing live segment as a gap --
+		// where a 502 has it retry for half a minute while the picture stalls.
+		status := http.StatusBadGateway
+		if upstreamRejected(err) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, "segment unavailable", status)
 		return
 	}
 	defer resp.Body.Close()
@@ -241,6 +294,22 @@ func (p *Proxy) ServeResource(w http.ResponseWriter, r *http.Request, slug, ref,
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		slog.Debug("live segment copy interrupted", "slug", slug, "error", err)
 	}
+}
+
+// refreshBehind starts a re-resolve of a channel whose upstream refused a playlist:
+// its signature or session cookies have lapsed. The player will ask for the master
+// playlist again once its retries run out, and a resolve started now -- a browser
+// resolve takes seconds -- has a fresh upstream waiting by then. Refresh rate-limits
+// itself, however many viewers hit the refusal.
+func (p *Proxy) refreshBehind(ch *domain.LiveChannel) {
+	detached := *ch // Refresh updates the channel it is given
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
+		defer cancel()
+		if err := p.svc.Refresh(ctx, &detached); err != nil {
+			slog.Debug("live channel not refreshed after a refused playlist", "slug", ch.Slug, "error", err)
+		}
+	}()
 }
 
 // authorize verifies the playback token and opens the sealed upstream reference.
@@ -264,6 +333,13 @@ func (p *Proxy) authorize(w http.ResponseWriter, r *http.Request, slug, ref, tok
 
 // loadPlaylist fetches and rewrites a manifest, collapsing concurrent requests for
 // the same upstream URL and reusing the result for ttl.
+//
+// The fetch is detached from the request that started it: every viewer polling this
+// playlist waits on the same fetch, and one of them giving up -- a player abandons
+// a playlist request whenever it switches quality -- must not fail it for the rest.
+// And when a refresh fails for a reason that may pass, the last good copy is served
+// instead: a live playlist a few seconds old costs the player nothing, since it just
+// asks again, while an error costs a retry cycle and, often enough, the picture.
 func (p *Proxy) loadPlaylist(ctx context.Context, ch *domain.LiveChannel, upstreamURL, token string, ttl time.Duration) ([]byte, *Playlist, error) {
 	key := ch.ID + "|" + upstreamURL
 
@@ -278,8 +354,10 @@ func (p *Proxy) loadPlaylist(ctx context.Context, ch *domain.LiveChannel, upstre
 		body []byte
 		pl   *Playlist
 	}
-	out, err, _ := p.group.Do(key, func() (any, error) {
-		raw, err := p.fetcher.GetBytes(ctx, upstreamURL, ch.UpstreamHeaders, MaxManifestBytes)
+	fetched := p.group.DoChan(key, func() (any, error) {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), playlistFetchTimeout)
+		defer cancel()
+		raw, err := p.fetchPlaylist(fctx, ch, upstreamURL)
 		if err != nil {
 			return nil, err
 		}
@@ -300,29 +378,109 @@ func (p *Proxy) loadPlaylist(ctx context.Context, ch *domain.LiveChannel, upstre
 			effectiveTTL = time.Second
 		}
 
+		// A master's variant list outlives any outage worth riding out; a media
+		// playlist can stand in for a few target durations, which the player's
+		// buffer covers.
+		staleFor := masterStaleFor
+		if !pl.IsMaster {
+			staleFor = min(max(3*time.Duration(pl.TargetDuration*float64(time.Second)), 6*time.Second), 20*time.Second)
+		}
+
+		now := time.Now()
 		p.mu.Lock()
-		p.cache[key] = &cachedPlaylist{body: pl.Body, expiresAt: time.Now().Add(effectiveTTL)}
+		p.cache[key] = &cachedPlaylist{body: pl.Body, expiresAt: now.Add(effectiveTTL), staleUntil: now.Add(staleFor)}
 		p.pruneLocked()
 		p.mu.Unlock()
 
 		return &result{body: pl.Body, pl: pl}, nil
 	})
-	if err != nil {
-		return nil, nil, err
+
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case out := <-fetched:
+		if out.Err == nil {
+			res := out.Val.(*result)
+			return res.body, res.pl, nil
+		}
+		// Only for failures that may pass: an upstream refusing the URL has to be
+		// seen at once, since re-resolving is what fixes that. A fetch that hit its
+		// own timeout (playlistFetchTimeout, not the caller's ctx, which is handled
+		// above) is exactly the stall this fallback exists for, so serve stale for it
+		// too even though retryable() rejects a deadline for the retry logic.
+		staleable := retryable(out.Err) || errors.Is(out.Err, context.DeadlineExceeded)
+		if ok && staleable && time.Now().Before(entry.staleUntil) {
+			slog.Debug("serving last good live playlist in place of a failed refresh",
+				"slug", ch.Slug, "error", out.Err)
+			return entry.body, nil, nil
+		}
+		return nil, nil, out.Err
 	}
-	res := out.(*result)
-	return res.body, res.pl, nil
+}
+
+// upstream is the fetcher for a channel's upstream: its guards, with the channel's
+// session cookies.
+func (p *Proxy) upstream(ch *domain.LiveChannel) *Fetcher {
+	return p.fetcher.WithCookies(p.svc.UpstreamCookies(ch))
+}
+
+// fetchPlaylist reads a playlist, retrying once when the failure is one a second
+// attempt can fix.
+func (p *Proxy) fetchPlaylist(ctx context.Context, ch *domain.LiveChannel, rawURL string) ([]byte, error) {
+	fetcher := p.upstream(ch)
+	for attempt := 0; ; attempt++ {
+		body, err := fetcher.GetBytes(ctx, rawURL, ch.UpstreamHeaders, MaxManifestBytes)
+		if err == nil || attempt == upstreamRetries || !retryable(err) || !pause(ctx, upstreamRetryPause) {
+			return body, err
+		}
+	}
+}
+
+// fetchUpstream opens a resource, retrying once when the failure is one a second
+// attempt can fix. Only the request is retried: once bytes are on their way to the
+// player, a failure mid-body can only be reported.
+func (p *Proxy) fetchUpstream(ctx context.Context, ch *domain.LiveChannel, rawURL string) (*http.Response, error) {
+	fetcher := p.upstream(ch)
+	for attempt := 0; ; attempt++ {
+		resp, err := fetcher.Get(ctx, rawURL, ch.UpstreamHeaders)
+		if err == nil || attempt == upstreamRetries || !retryable(err) || !pause(ctx, upstreamRetryPause) {
+			return resp, err
+		}
+	}
+}
+
+// retryable reports whether a failed upstream request is worth repeating: the
+// upstream was briefly unwell or the connection failed, as opposed to it answering
+// that the URL is wrong or gone, or the request being refused on our side.
+func retryable(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, ErrHostNotAllowed) || errors.Is(err, ErrBlockedAddress) {
+		return false
+	}
+	var status *UpstreamStatusError
+	if errors.As(err, &status) {
+		return status.Code >= 500 || status.Code == http.StatusTooManyRequests
+	}
+	return true // connection refused or reset, TLS, a truncated body
+}
+
+// pause waits d, reporting false if ctx ends first.
+func pause(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // rewriteURI maps one upstream URI to its address on this proxy. The upstream URL is
 // sealed rather than encoded, so a client can neither read it nor point us at
 // somewhere we did not choose.
 func (p *Proxy) rewriteURI(ch *domain.LiveChannel, absolute string, kind URIKind, token string) string {
-	sealed, err := p.sealer.Seal(ch.ID, absolute)
-	if err != nil {
-		slog.Error("failed to seal upstream uri", "slug", ch.Slug, "error", err)
-		return absolute
-	}
+	sealed := p.sealer.Seal(ch.ID, absolute)
 	segment := pathResource
 	suffix := ""
 	if kind == URIPlaylist {
@@ -343,18 +501,33 @@ func (p *Proxy) recordEdge(slug string, pl *Playlist) {
 	p.mu.Unlock()
 }
 
-// pruneLocked drops expired playlist entries. Called under the write lock on every
-// insert, which is often enough to bound the map without a background sweeper.
+// pruneLocked drops playlist entries too old even to stand in for a failed refresh.
+// Called under the write lock on every insert, which is often enough to bound the
+// map without a background sweeper.
 func (p *Proxy) pruneLocked() {
 	if len(p.cache) < 64 {
 		return
 	}
 	now := time.Now()
 	for k, v := range p.cache {
-		if now.After(v.expiresAt) {
+		if now.After(v.staleUntil) {
 			delete(p.cache, k)
 		}
 	}
+}
+
+// upstreamRejected reports whether an upstream's answer means the URL itself is no
+// longer good, as opposed to the upstream being briefly unwell.
+func upstreamRejected(err error) bool {
+	var status *UpstreamStatusError
+	if !errors.As(err, &status) {
+		return false
+	}
+	switch status.Code {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusGone:
+		return true
+	}
+	return false
 }
 
 func writePlaylist(w http.ResponseWriter, body []byte) {

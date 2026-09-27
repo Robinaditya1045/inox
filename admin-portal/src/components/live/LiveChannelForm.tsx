@@ -5,11 +5,16 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { CreateLiveChannelRequest, LiveTestResult } from "@/types/live";
 import {
+  OutcomeBadge,
+  ResolveDiagnosticsView,
+} from "@/components/live/ResolveDiagnostics";
+import {
   AlertCircle,
   CheckCircle2,
   FlaskConical,
   Loader2,
   Plus,
+  ShieldAlert,
 } from "lucide-react";
 
 interface LiveChannelFormProps {
@@ -23,6 +28,8 @@ const RESOLVER_HELP: Record<string, string> = {
   api: "The source URL is a provider endpoint returning JSON; give the path to the manifest URL inside it.",
   static:
     "The source URL is a web page. Its HTML and inline scripts are scanned for a manifest.",
+  browser:
+    "The source URL is a web page whose player only builds its stream URL once it runs. The page is loaded in a headless browser, and the manifest its player requests — from the page or any frame in it — is used. Slower: a test can take up to half a minute.",
 };
 
 export function LiveChannelForm({
@@ -34,6 +41,7 @@ export function LiveChannelForm({
   const [sourceUrl, setSourceUrl] = React.useState("");
   const [resolver, setResolver] = React.useState(resolvers[0] ?? "direct");
   const [jsonPath, setJsonPath] = React.useState("");
+  const [manifestPattern, setManifestPattern] = React.useState("");
   const [referer, setReferer] = React.useState("");
   const [ttlSeconds, setTtlSeconds] = React.useState("");
 
@@ -49,6 +57,8 @@ export function LiveChannelForm({
     if (referer.trim()) config.headers = { Referer: referer.trim() };
     if (resolver === "api" && jsonPath.trim())
       config.json_path = jsonPath.trim();
+    if (resolver === "browser" && manifestPattern.trim())
+      config.manifest_pattern = manifestPattern.trim();
     if (ttlSeconds.trim()) config.ttl_seconds = Number(ttlSeconds);
 
     return {
@@ -61,7 +71,16 @@ export function LiveChannelForm({
       is_dvr: !!test?.window_seconds && test.window_seconds > 30,
       dvr_window_seconds: Math.round(test?.window_seconds ?? 0),
     };
-  }, [title, resolver, sourceUrl, referer, jsonPath, ttlSeconds, test]);
+  }, [
+    title,
+    resolver,
+    sourceUrl,
+    referer,
+    jsonPath,
+    manifestPattern,
+    ttlSeconds,
+    test,
+  ]);
 
   const handleTest = async () => {
     setIsTesting(true);
@@ -85,6 +104,7 @@ export function LiveChannelForm({
       setTitle("");
       setSourceUrl("");
       setJsonPath("");
+      setManifestPattern("");
       setReferer("");
       setTtlSeconds("");
       setTest(null);
@@ -99,6 +119,7 @@ export function LiveChannelForm({
 
   const canSubmit =
     title.trim() !== "" && sourceUrl.trim() !== "" && !isCreating;
+  const sourceIsPage = resolver === "static" || resolver === "browser";
 
   return (
     <form
@@ -141,7 +162,7 @@ export function LiveChannelForm({
 
       <div className="space-y-1.5">
         <Label htmlFor="live-source">
-          {resolver === "static"
+          {sourceIsPage
             ? "Page URL"
             : resolver === "api"
               ? "Provider API URL"
@@ -155,7 +176,7 @@ export function LiveChannelForm({
             setTest(null);
           }}
           placeholder={
-            resolver === "static"
+            sourceIsPage
               ? "https://example.com/watch/news24"
               : "https://cdn.example.com/live/master.m3u8"
           }
@@ -179,6 +200,26 @@ export function LiveChannelForm({
             />
           </div>
         )}
+        {resolver === "browser" && (
+          <div className="space-y-1.5">
+            <Label htmlFor="live-pattern">
+              Manifest URL must match (optional)
+            </Label>
+            <Input
+              id="live-pattern"
+              value={manifestPattern}
+              onChange={(e) => {
+                setManifestPattern(e.target.value);
+                setTest(null);
+              }}
+              placeholder="/live/main/"
+            />
+            <p className="text-[11px] text-zinc-500">
+              A regular expression, for pages that load more than one stream —
+              adverts, previews.
+            </p>
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="live-referer">Referer sent upstream (optional)</Label>
           <Input
@@ -187,6 +228,11 @@ export function LiveChannelForm({
             onChange={(e) => setReferer(e.target.value)}
             placeholder="https://example.com/"
           />
+          {resolver === "browser" && (
+            <p className="text-[11px] text-zinc-500">
+              Leave empty to reuse the one the page's player sent.
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="live-ttl">Re-resolve after (seconds, optional)</Label>
@@ -244,12 +290,35 @@ export function LiveChannelForm({
 /** Shows what the resolver actually reached, so failures are diagnosable here. */
 function TestResultPanel({ result }: { result: LiveTestResult }) {
   if (!result.ok) {
+    // DRM is not a fault to fix but a property of the source, so it is not shown
+    // as an error.
+    const drm = result.outcome === "DRM_PROTECTED";
     return (
-      <div className="rounded-md border border-rose-500/25 bg-rose-500/10 p-3">
-        <p className="flex items-center gap-2 font-mono text-xs text-rose-300">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+      <div
+        className={`space-y-2 rounded-md border p-3 ${
+          drm
+            ? "border-purple-500/25 bg-purple-500/10"
+            : "border-rose-500/25 bg-rose-500/10"
+        }`}
+      >
+        {result.outcome && (
+          <OutcomeBadge outcome={result.outcome} reason={result.reason} />
+        )}
+        <p
+          className={`flex items-start gap-2 font-mono text-xs ${
+            drm ? "text-purple-200" : "text-rose-300"
+          }`}
+        >
+          {drm ? (
+            <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+          )}
           {result.error || "The source could not be resolved."}
         </p>
+        {result.diagnostics && (
+          <ResolveDiagnosticsView diagnostics={result.diagnostics} />
+        )}
       </div>
     );
   }
@@ -290,11 +359,31 @@ function TestResultPanel({ result }: { result: LiveTestResult }) {
             EXPIRES {new Date(result.expires_at).toLocaleTimeString()}
           </Badge>
         )}
+        {result.upstream_headers && result.upstream_headers.length > 0 && (
+          <Badge variant="outline" className="text-[10px]">
+            SENDS {result.upstream_headers.join(" · ")}
+          </Badge>
+        )}
       </div>
       {result.is_master && (
         <p className="font-mono text-[11px] text-zinc-400">
           Master playlist — viewers get adaptive bitrate switching.
         </p>
+      )}
+      {result.reason === "clear_stream_alongside_drm" && (
+        <p className="font-mono text-[11px] text-amber-300">
+          The page also uses DRM. Check this is the channel and not a preview.
+        </p>
+      )}
+      {result.diagnostics && (
+        <details className="text-[11px] text-zinc-400">
+          <summary className="cursor-pointer select-none">
+            What the resolver saw
+          </summary>
+          <div className="mt-2">
+            <ResolveDiagnosticsView diagnostics={result.diagnostics} />
+          </div>
+        </details>
       )}
     </div>
   );

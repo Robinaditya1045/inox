@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
@@ -23,6 +24,13 @@ type Resolution struct {
 	ExpiresAt   time.Time         `json:"expires_at"`
 	IsDVR       bool              `json:"is_dvr"`
 	WindowSecs  int               `json:"window_seconds"`
+	// Cookies is the upstream session the manifest was found in: cookies the
+	// provider API, the page or the page's player were given, which the proxy sends
+	// back with every request for the stream. Nil when there were none to keep.
+	Cookies http.CookieJar `json:"-"`
+	// Diagnostics is what the resolver saw on the way, where it has anything to
+	// add to the outcome; see domain.ResolveDiagnostics for what may go in it.
+	Diagnostics *domain.ResolveDiagnostics `json:"-"`
 }
 
 // Resolver turns one kind of operator-supplied source into a Resolution.
@@ -99,7 +107,10 @@ func NewAPIResolver(f *Fetcher) Resolver { return &apiResolver{fetcher: f} }
 func (a *apiResolver) ID() string { return domain.ResolverAPI }
 
 func (a *apiResolver) Resolve(ctx context.Context, ch *domain.LiveChannel) (*Resolution, error) {
-	raw, err := a.fetcher.GetBytes(ctx, ch.SourceURL, configHeaders(ch, "api_headers"), MaxManifestBytes)
+	// A provider that answers with a session cookie as well as a URL usually wants
+	// it back on the manifest.
+	jar := newCookieJar()
+	raw, err := a.fetcher.WithCookies(jar).GetBytes(ctx, ch.SourceURL, configHeaders(ch, "api_headers"), MaxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("provider api request failed: %w", err)
 	}
@@ -121,7 +132,7 @@ func (a *apiResolver) Resolve(ctx context.Context, ch *domain.LiveChannel) (*Res
 	if !ok || manifest == "" {
 		return nil, fmt.Errorf("json_path %q did not resolve to a url string", path)
 	}
-	return finish(ch, absolutizeAgainst(ch.SourceURL, manifest)), nil
+	return finishWith(ch, absolutizeAgainst(ch.SourceURL, manifest), jar), nil
 }
 
 // ── static ──────────────────────────────────────────────────────────────────
@@ -149,19 +160,26 @@ func NewStaticResolver(f *Fetcher) Resolver { return &staticResolver{fetcher: f}
 func (s *staticResolver) ID() string { return domain.ResolverStatic }
 
 func (s *staticResolver) Resolve(ctx context.Context, ch *domain.LiveChannel) (*Resolution, error) {
-	page, err := s.fetcher.GetBytes(ctx, ch.SourceURL, configHeaders(ch, "page_headers"), MaxManifestBytes)
+	// Pages that sign their stream often do it with a cookie set on the page
+	// itself, which the manifest then has to be requested with.
+	jar := newCookieJar()
+	page, err := s.fetcher.WithCookies(jar).GetBytes(ctx, ch.SourceURL, configHeaders(ch, "page_headers"), MaxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch source page: %w", err)
 	}
 
+	found := ""
 	if m := manifestPattern.Find(page); m != nil {
 		// JSON string literals escape their slashes; unescape before use.
-		return finish(ch, strings.ReplaceAll(string(m), `\/`, `/`)), nil
+		found = strings.ReplaceAll(string(m), `\/`, `/`)
+	} else if m := relativeManifestPattern.FindSubmatch(page); m != nil {
+		found = absolutizeAgainst(ch.SourceURL, string(m[1]))
 	}
-	if m := relativeManifestPattern.FindSubmatch(page); m != nil {
-		return finish(ch, absolutizeAgainst(ch.SourceURL, string(m[1]))), nil
+	if found != "" {
+		return finishWith(ch, found, jar), nil
 	}
-	return nil, fmt.Errorf("no .m3u8 or .mpd URL found in the page source; this site likely builds its stream URL at runtime")
+	return nil, resolveFailure(domain.OutcomeNoStreamFound, "no_manifest_in_page",
+		"no .m3u8 or .mpd URL found in the page source; this site likely builds its stream URL at runtime", nil)
 }
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -169,9 +187,23 @@ func (s *staticResolver) Resolve(ctx context.Context, ch *domain.LiveChannel) (*
 // finish applies the channel's operator-configured playback headers and TTL to a
 // freshly discovered manifest URL.
 func finish(ch *domain.LiveChannel, manifestURL string) *Resolution {
+	return finishWith(ch, manifestURL, nil)
+}
+
+// finishWith is finish with a cookie jar already open -- the api and static
+// resolvers pass the one they fetched through. An operator-set Cookie header is
+// folded into it, scoped to the manifest host, rather than left in the header set
+// the proxy would send to every host.
+func finishWith(ch *domain.LiveChannel, manifestURL string, jar http.CookieJar) *Resolution {
+	headers := configHeaders(ch, "headers")
+	if hasCookieHeader(headers) && jar == nil {
+		jar = newCookieJar()
+	}
+	headers, _ = scopeCookieHeader(headers, manifestURL, jar)
 	res := &Resolution{
 		ManifestURL: manifestURL,
-		Headers:     configHeaders(ch, "headers"),
+		Headers:     headers,
+		Cookies:     jar,
 		Protocol:    ch.Protocol,
 		IsDVR:       ch.IsDVR,
 		WindowSecs:  ch.DVRWindowSecs,
@@ -190,6 +222,15 @@ func finish(ch *domain.LiveChannel, manifestURL string) *Resolution {
 		res.ExpiresAt = time.Now().Add(time.Duration(ttl) * time.Second)
 	}
 	return res
+}
+
+func hasCookieHeader(headers map[string]string) bool {
+	for name := range headers {
+		if http.CanonicalHeaderKey(name) == "Cookie" {
+			return true
+		}
+	}
+	return false
 }
 
 func configString(ch *domain.LiveChannel, key string) string {

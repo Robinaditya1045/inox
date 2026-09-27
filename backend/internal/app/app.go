@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -136,11 +137,20 @@ func (a *App) Run() error {
 	// interface, so the proxy, the refresh path and the room sync behind it are
 	// written once.
 	liveFetcher := live.NewFetcher(a.Config.LiveSourceAllowedHosts, a.Config.IsProd())
-	liveRegistry := live.NewRegistry(
+	liveResolvers := []live.Resolver{
 		live.NewDirectResolver(),
 		live.NewAPIResolver(liveFetcher),
 		live.NewStaticResolver(liveFetcher),
-	)
+	}
+	// Pages that only reveal their stream once their scripts run need a real
+	// browser. Offered only where a Chromium exists; the admin portal lists
+	// whatever the registry holds.
+	liveBrowser := a.newLiveBrowser(liveFetcher)
+	if liveBrowser != nil {
+		budget := time.Duration(parsePositiveInt(a.Config.LiveBrowserTimeout, 30)) * time.Second
+		liveResolvers = append(liveResolvers, live.NewBrowserResolver(liveBrowser, liveFetcher, budget))
+	}
+	liveRegistry := live.NewRegistry(liveResolvers...)
 	liveService := live.NewService(live.NewRepository(a.DB), mediaRepo, liveRegistry, liveFetcher, a.Config.LiveProxyBaseURL)
 
 	var liveHandler *handler.LiveHandler
@@ -210,6 +220,9 @@ func (a *App) Run() error {
 
 	a.Logger.Info("shutting down real-time WebSocket hub, media processor, and analytics worker...")
 	mediaProcessor.Shutdown(shutdownCtx)
+	if liveBrowser != nil {
+		liveBrowser.Close()
+	}
 	eventAggregator.Stop()
 	telemetryHub.Stop()
 	hub.Shutdown()
@@ -227,6 +240,49 @@ func (a *App) Run() error {
 
 	a.Logger.Info("server exited cleanly")
 	return nil
+}
+
+// newLiveBrowser prepares the headless Chromium behind the "browser" live resolver,
+// or returns nil when there is none to use. Nothing launches here: Chromium starts
+// on the first resolve that needs it and stops again when resolves dry up.
+func (a *App) newLiveBrowser(fetcher *live.Fetcher) *live.Browser {
+	path := strings.TrimSpace(a.Config.LiveBrowserPath)
+	if strings.EqualFold(path, "off") {
+		a.Logger.Info("browser live resolver disabled by LIVE_BROWSER_PATH=off")
+		return nil
+	}
+	if path == "" {
+		found, ok := live.FindChromium()
+		if !ok {
+			a.Logger.Info("no Chromium on PATH; the browser live resolver is unavailable until LIVE_BROWSER_PATH points at one")
+			return nil
+		}
+		path = found
+	} else if _, err := exec.LookPath(path); err != nil {
+		a.Logger.Error("LIVE_BROWSER_PATH is not an executable; the browser live resolver is unavailable", "path", path, "error", err)
+		return nil
+	}
+
+	noSandbox := strings.EqualFold(strings.TrimSpace(a.Config.LiveBrowserNoSandbox), "true")
+	if noSandbox {
+		a.Logger.Warn("LIVE_BROWSER_NO_SANDBOX is set: channel pages will run in Chromium without its sandbox")
+	}
+	a.Logger.Info("browser live resolver enabled", "chromium", path)
+	return live.NewBrowser(live.BrowserConfig{
+		ExecPath:       path,
+		MaxConcurrency: parsePositiveInt(a.Config.LiveBrowserConcurrency, 2),
+		NoSandbox:      noSandbox,
+	}, fetcher)
+}
+
+// parsePositiveInt reads a positive integer setting, falling back when it is unset
+// or nonsense.
+func parsePositiveInt(raw string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 // parsePort converts a configured port string to the uint16 Pion expects,

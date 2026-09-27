@@ -38,9 +38,22 @@ const MaxManifestBytes = 8 << 20
 // check performed at dial time on every hop.
 type Fetcher struct {
 	client        *http.Client
+	dialer        *net.Dialer
 	allowedHosts  []string
 	allowAny      bool
 	allowLoopback bool
+}
+
+// UpstreamStatusError is an upstream that answered, but with an HTTP error status.
+// Kept distinct from transport failures because the two call for different handling:
+// a 403 on a manifest that worked an hour ago means its signature expired, while a
+// timeout means nothing about the URL at all.
+type UpstreamStatusError struct {
+	Code int
+}
+
+func (e *UpstreamStatusError) Error() string {
+	return fmt.Sprintf("upstream returned %d", e.Code)
 }
 
 // Option adjusts Fetcher construction.
@@ -101,6 +114,7 @@ func NewFetcher(allowedHosts string, isProd bool, opts ...Option) *Fetcher {
 		return nil
 	}
 
+	f.dialer = dialer
 	f.client = &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -126,7 +140,7 @@ func NewFetcher(allowedHosts string, isProd bool, opts ...Option) *Fetcher {
 func (f *Fetcher) Get(ctx context.Context, rawURL string, headers map[string]string) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("malformed upstream url: %w", err)
+		return nil, fmt.Errorf("malformed upstream url: %w", redactedError(err))
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("unsupported upstream scheme %q", u.Scheme)
@@ -137,7 +151,7 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string, headers map[string]str
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, redactedError(err)
 	}
 	// A default User-Agent because a fair number of origins reject requests without
 	// one outright; any operator-configured value overwrites it below.
@@ -148,13 +162,37 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string, headers map[string]str
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return nil, err
+		// The URL is a credential; see redactedError.
+		return nil, redactedError(err)
 	}
 	if resp.StatusCode >= 400 {
 		resp.Body.Close()
-		return nil, fmt.Errorf("upstream returned %d", resp.StatusCode)
+		return nil, &UpstreamStatusError{Code: resp.StatusCode}
 	}
 	return resp, nil
+}
+
+// WithCookies returns a Fetcher that sends jar's cookies with every request and
+// keeps any an upstream sets in it -- an upstream session, for streams whose CDN
+// hands out a cookie on the manifest and wants it back on every segment. Guards,
+// allowlist and connection pool are shared with f. A nil jar returns f unchanged.
+func (f *Fetcher) WithCookies(jar http.CookieJar) *Fetcher {
+	if jar == nil {
+		return f
+	}
+	client := *f.client
+	client.Jar = jar
+	scoped := *f
+	scoped.client = &client
+	return &scoped
+}
+
+// DialContext opens a raw connection through the same dial-time address guard every
+// fetch uses. It exists for the headless browser's egress proxy: a page's scripts
+// choose their own destinations, and they must not be able to reach anything a
+// channel's source URL could not.
+func (f *Fetcher) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return f.dialer.DialContext(ctx, network, address)
 }
 
 // GetBytes fetches a resource and reads at most limit bytes of it.

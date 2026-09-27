@@ -104,6 +104,16 @@ services:
     container_name: inox-backend
     restart: unless-stopped
     network_mode: host
+    # For the headless Chromium behind the "browser" live resolver. Its sandbox is
+    # built from user namespaces, which Docker's default seccomp profile refuses to
+    # create, so without this Chromium cannot start sandboxed. The sandbox is the
+    # control that matters here: channel pages are untrusted third-party code, and
+    # an unsandboxed renderer runs as the server's own user -- able to read its
+    # environment from /proc and to open sockets around the egress guard. The
+    # alternative is LIVE_BROWSER_NO_SANDBOX=true in .env.prod, which keeps Docker's
+    # filter and gives up Chromium's.
+    security_opt:
+      - seccomp=unconfined
     env_file: .env.prod
     volumes:
       - storage_data:/app/storage_data
