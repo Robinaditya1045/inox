@@ -19,8 +19,11 @@ import (
 // in licence URLs, in licence requests. None of it may reach diagnostics or errors.
 const secret = "SECRET-7f3a"
 
-// eme is the EME configuration the fixture players ask for.
-const eme = `[{initDataTypes: ['cenc', 'keyids'], videoCapabilities: [{contentType: 'video/mp4; codecs="avc1.42E01E"'}]}]`
+// eme is the EME configuration the fixture players ask for. It offers VP9/WebM as
+// well as H.264/MP4 so requestMediaKeySystemAccess is granted on any build: an
+// open-source Chromium ships without the proprietary H.264 codec and would reject an
+// MP4-only capability, stopping the EME flow before it confirms.
+const eme = `[{initDataTypes: ['cenc', 'keyids'], videoCapabilities: [{contentType: 'video/webm; codecs="vp9"'}, {contentType: 'video/mp4; codecs="avc1.42E01E"'}]}]`
 
 // drmSite serves fixture players, each a page that behaves the way one kind of real
 // player does, plus the manifests and licence server they use.
