@@ -16,6 +16,7 @@ import (
 // is off unless LIVE_BROWSER_TEST_SANDBOX=true.
 func chromiumForTest(t *testing.T, idle time.Duration, concurrency int) *Browser {
 	t.Helper()
+	AcquireBrowserSlot(t)
 	path := os.Getenv("LIVE_BROWSER_PATH")
 	if path == "" {
 		found, ok := FindChromium()

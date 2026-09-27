@@ -31,6 +31,7 @@ func browserForTest(t *testing.T) *live.Browser {
 
 func browserWith(t *testing.T, fetcher *live.Fetcher) *live.Browser {
 	t.Helper()
+	live.AcquireBrowserSlot(t)
 	path := os.Getenv("LIVE_BROWSER_PATH")
 	if path == "" {
 		found, ok := live.FindChromium()
@@ -379,8 +380,10 @@ func TestBrowserResolverExplainsWhenNothingIsRequested(t *testing.T) {
 		t.Fatalf("error = %v, want it to say no manifest was requested", err)
 	}
 	expectOutcome(t, err, domain.OutcomeNoStreamFound, "no_manifest_requested")
-	// timeout_seconds is honoured: the page is not watched for the default budget.
-	if elapsed := time.Since(start); elapsed > 15*time.Second {
+	// timeout_seconds is honoured: the page is watched for ~5s, not the 20s default.
+	// The bound has slack for a cold Chromium launch on a slow runner (the launch is
+	// inside Resolve here) while still catching a resolve that watched the full 20s.
+	if elapsed := time.Since(start); elapsed > 18*time.Second {
 		t.Errorf("resolve took %s, want it bounded by timeout_seconds", elapsed)
 	}
 }
