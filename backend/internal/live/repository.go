@@ -23,6 +23,7 @@ type Repository interface {
 	List(ctx context.Context) ([]*domain.LiveChannel, error)
 	UpdateUpstream(ctx context.Context, id string, upstreamURL string, headers map[string]string, expiresAt *time.Time, isDVR bool, windowSecs int) error
 	UpdateStatus(ctx context.Context, id string, status domain.LiveChannelStatus, lastErr string) error
+	RecordResolution(ctx context.Context, id string, diag *domain.ResolveDiagnostics) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -41,7 +42,7 @@ const selectColumns = `
 	       c.resolver_config, c.fallback_sources, c.protocol, c.is_dvr, c.dvr_window_seconds,
 	       c.status, COALESCE(c.upstream_url, ''), c.upstream_headers, c.upstream_expires_at,
 	       c.last_resolved_at, COALESCE(c.last_error, ''), c.created_by, c.created_at, c.updated_at,
-	       COALESCE(a.title, '')
+	       COALESCE(c.last_outcome, ''), c.last_diagnostics, COALESCE(a.title, '')
 	FROM live_channels c
 	LEFT JOIN media_assets a ON a.id = c.media_asset_id
 `
@@ -134,6 +135,24 @@ func (r *postgresRepository) UpdateStatus(ctx context.Context, id string, status
 	return nil
 }
 
+// RecordResolution keeps the outcome and diagnostics of a channel's latest resolve.
+func (r *postgresRepository) RecordResolution(ctx context.Context, id string, diag *domain.ResolveDiagnostics) error {
+	raw, err := json.Marshal(diag)
+	if err != nil {
+		return fmt.Errorf("failed to encode resolve diagnostics: %w", err)
+	}
+	res, err := r.db.Exec(ctx,
+		`UPDATE live_channels SET last_outcome = $2, last_diagnostics = $3 WHERE id = $1`,
+		id, string(diag.Outcome), raw)
+	if err != nil {
+		return fmt.Errorf("failed to record live channel resolve: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return ErrChannelNotFound
+	}
+	return nil
+}
+
 func (r *postgresRepository) Delete(ctx context.Context, id string) error {
 	res, err := r.db.Exec(ctx, `DELETE FROM live_channels WHERE id = $1`, id)
 	if err != nil {
@@ -162,14 +181,14 @@ func (r *postgresRepository) queryOne(ctx context.Context, query string, args ..
 
 func scanChannel(rows pgx.Rows) (*domain.LiveChannel, error) {
 	ch := &domain.LiveChannel{}
-	var cfg, fallbacks, headers []byte
+	var cfg, fallbacks, headers, diagnostics []byte
 
 	err := rows.Scan(
 		&ch.ID, &ch.MediaAssetID, &ch.Slug, &ch.Resolver, &ch.SourceURL,
 		&cfg, &fallbacks, &ch.Protocol, &ch.IsDVR, &ch.DVRWindowSecs,
 		&ch.Status, &ch.UpstreamURL, &headers, &ch.UpstreamExpiresAt,
 		&ch.LastResolvedAt, &ch.LastError, &ch.CreatedBy, &ch.CreatedAt, &ch.UpdatedAt,
-		&ch.Title,
+		&ch.LastOutcome, &diagnostics, &ch.Title,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan live channel: %w", err)
@@ -179,6 +198,9 @@ func scanChannel(rows pgx.Rows) (*domain.LiveChannel, error) {
 	_ = json.Unmarshal(cfg, &ch.ResolverConfig)
 	_ = json.Unmarshal(fallbacks, &ch.Fallbacks)
 	_ = json.Unmarshal(headers, &ch.UpstreamHeaders)
+	if len(diagnostics) > 0 {
+		_ = json.Unmarshal(diagnostics, &ch.LastDiagnostics)
+	}
 
 	if ch.ResolverConfig == nil {
 		ch.ResolverConfig = map[string]any{}

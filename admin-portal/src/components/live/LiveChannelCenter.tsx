@@ -12,6 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  OutcomeBadge,
+  ResolveDiagnosticsView,
+} from "@/components/live/ResolveDiagnostics";
 import type { LiveChannel, LiveChannelStatus } from "@/types/live";
 import {
   AlertCircle,
@@ -215,12 +219,36 @@ function ChannelRow({
           >
             {channel.status.toUpperCase()}
           </Badge>
+          {channel.last_outcome && (
+            <OutcomeBadge
+              outcome={channel.last_outcome}
+              reason={channel.last_diagnostics?.reason}
+            />
+          )}
           {/* Resolver failures are what operators spend their time on, so the
               message is shown in full rather than truncated to a status word. */}
           {channel.last_error && (
-            <p className="max-w-xs font-mono text-[11px] leading-snug text-rose-400/90">
+            <p
+              className={`max-w-xs font-mono text-[11px] leading-snug ${
+                channel.last_outcome === "DRM_PROTECTED"
+                  ? "text-purple-300/90"
+                  : "text-rose-400/90"
+              }`}
+            >
               {channel.last_error}
             </p>
+          )}
+          {channel.last_diagnostics && (
+            <details className="max-w-md text-[11px] text-zinc-500">
+              <summary className="cursor-pointer select-none">
+                What the resolver saw
+              </summary>
+              <div className="mt-1.5">
+                <ResolveDiagnosticsView
+                  diagnostics={channel.last_diagnostics}
+                />
+              </div>
+            </details>
           )}
         </div>
       </TableCell>

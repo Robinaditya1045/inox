@@ -32,7 +32,10 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w
 # ==========================================
 # Stage 2: Minimal Production Runtime
 # ==========================================
-FROM alpine:3.19 AS runner
+# Tracks a current Alpine release because of Chromium, below: 3.19's build was two
+# years behind on security fixes. The move also takes ffmpeg from 6.1 to 8.1, which
+# runs the worker's ladder and emits the progress keys it parses unchanged.
+FROM alpine:3.24 AS runner
 
 # Copy CA certificates and timezone data from builder
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
@@ -45,6 +48,14 @@ WORKDIR /app
 # meaning uploaded videos are never transcoded into multi-bitrate HLS segments.
 # The worker is the process that shells out to it; server and worker share one image.
 RUN apk add --no-cache ffmpeg
+
+# Chromium backs the "browser" live resolver, which loads a channel's page and
+# watches what its player requests to find the stream. Those pages are untrusted
+# third-party code, which is why it must be a current build. It adds about 680 MB;
+# build with --build-arg WITH_CHROMIUM=false to leave it out, and the server simply
+# does not offer that resolver.
+ARG WITH_CHROMIUM=true
+RUN if [ "$WITH_CHROMIUM" = "true" ]; then apk add --no-cache chromium; fi
 
 # Create a non-privileged system user for Kubernetes security compliance.
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

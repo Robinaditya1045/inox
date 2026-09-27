@@ -62,6 +62,7 @@ const MOCK_CHANNELS: LiveChannel[] = [
     upstream_expires_at: null,
     last_resolved_at: new Date(Date.now() - 600_000).toISOString(),
     last_error: "no .m3u8 or .mpd URL found in the page source",
+    last_outcome: "NO_STREAM_FOUND",
     created_by: null,
     created_at: new Date(Date.now() - 172_800_000).toISOString(),
     updated_at: new Date().toISOString(),

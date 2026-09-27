@@ -172,6 +172,10 @@ development; production is stricter.
 | `STORAGE_DIR` | `./storage_data` | Local-disk fallback location |
 | `MEDIA_STREAM_BASE_URL` | `http://localhost:8080/media/stream` | Baked into asset URLs |
 | `LIVE_SOURCE_ALLOWED_HOSTS` | unset | Outbound fetch allowlist; empty refuses every live channel in production |
+| `LIVE_BROWSER_PATH` | found on `PATH` | Chromium for the `browser` live resolver; `off` disables it |
+| `LIVE_BROWSER_MAX_CONCURRENCY` | `2` | Channel pages resolved at once; the rest queue |
+| `LIVE_BROWSER_TIMEOUT_SECONDS` | `30` | How long a page gets to request its manifest |
+| `LIVE_BROWSER_NO_SANDBOX` | `false` | Only where Chromium cannot create its sandbox |
 | `WEBRTC_ICE_SERVERS` | public STUN servers | Comma separated |
 | `WEBRTC_PORT_MIN` / `WEBRTC_PORT_MAX` | `50000` / `50100` | UDP range the SFU binds media to |
 | `WEBRTC_PUBLIC_IP` | unset | Required behind NAT; see operational notes |

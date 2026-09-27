@@ -26,6 +26,10 @@ type Config struct {
 	CORSAllowedOrigins     string
 	LiveProxyBaseURL       string
 	LiveSourceAllowedHosts string
+	LiveBrowserPath        string
+	LiveBrowserConcurrency string
+	LiveBrowserTimeout     string
+	LiveBrowserNoSandbox   string
 	WebRTCICEServers       string
 	WebRTCPortMin          string
 	WebRTCPortMax          string
@@ -57,9 +61,18 @@ func Load() (*Config, error) {
 		// production; elsewhere it allows any public host with a startup warning, so
 		// that local development does not push operators towards a wildcard.
 		LiveSourceAllowedHosts: getEnv("LIVE_SOURCE_ALLOWED_HOSTS", ""),
-		WebRTCICEServers:       getEnv("WEBRTC_ICE_SERVERS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"),
-		WebRTCPortMin:          getEnv("WEBRTC_PORT_MIN", "50000"),
-		WebRTCPortMax:          getEnv("WEBRTC_PORT_MAX", "50100"),
+		// Headless Chromium for the "browser" live resolver. Empty finds one on PATH;
+		// "off" leaves the resolver out even where a browser is installed.
+		LiveBrowserPath: getEnv("LIVE_BROWSER_PATH", ""),
+		// Pages resolved at once, one tab each. Beyond this, resolves queue.
+		LiveBrowserConcurrency: getEnv("LIVE_BROWSER_MAX_CONCURRENCY", "2"),
+		// How long a page gets to request its manifest; a channel can override it.
+		LiveBrowserTimeout: getEnv("LIVE_BROWSER_TIMEOUT_SECONDS", "30"),
+		// Only for hosts where Chromium cannot create its sandbox's user namespaces.
+		LiveBrowserNoSandbox: getEnv("LIVE_BROWSER_NO_SANDBOX", "false"),
+		WebRTCICEServers:     getEnv("WEBRTC_ICE_SERVERS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"),
+		WebRTCPortMin:        getEnv("WEBRTC_PORT_MIN", "50000"),
+		WebRTCPortMax:        getEnv("WEBRTC_PORT_MAX", "50100"),
 		// Set to the VM's public address when the host sits behind 1:1 NAT (Oracle
 		// Cloud, EC2, GCE). Left empty the SFU advertises its private IP, which no
 		// remote browser can route to, and voice chat never leaves "checking".
