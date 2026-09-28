@@ -1,12 +1,21 @@
 .header {
   height: var(--header-height);
   flex-shrink: 0;
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-2) 0 var(--space-4);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   border-bottom: 1px solid var(--color-border-subtle);
+  box-shadow: 0 1px 0 rgba(2, 4, 12, 0.35);
   background: var(--color-surface-1);
+  position: relative;
+  z-index: var(--z-raised);
+}
+
+/* Only on phones, where the channel list lives in a drawer */
+.header .menuBtn {
+  display: none;
+  margin-left: calc(var(--space-2) * -1);
 }
 
 .context {
@@ -14,123 +23,160 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1;
 }
 
+.channelIcon {
+  display: inline-flex;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+/* Re-keyed on channel change so the title eases in rather than snapping */
 .channelName {
+  min-width: 0;
   font-size: var(--text-subhead);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-tight);
   color: var(--color-text-primary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: var(--animate-fade-in);
+}
+
+/* The chat toggle carries an unread count, like a channel with new messages */
+.badgeHost {
+  position: relative;
+}
+
+.unread {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+  color: #fff;
+  font-size: var(--text-micro);
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+  border: 2px solid var(--color-surface-1);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: var(--animate-pop-in);
 }
 
 .rule {
   width: 1px;
-  height: 20px;
+  height: 24px;
+  margin: 0 var(--space-1);
   background: var(--color-border-default);
   flex-shrink: 0;
 }
 
 .topic {
-  font-size: var(--text-meta);
+  min-width: 0;
+  font-size: var(--text-compact);
   font-weight: 500;
   color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  animation: var(--animate-fade-in);
 }
 
-.spacer {
-  flex: 1;
-}
-
-.iconBtn {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
+.actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  gap: var(--space-1);
   flex-shrink: 0;
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast);
 }
 
-.iconBtn:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-}
-
-.iconBtnActive {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
+.divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--space-1);
+  background: var(--color-border-default);
 }
 
 .action {
-  height: 30px;
+  height: 32px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid var(--color-accent-border);
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
-  font-family: inherit;
-  font-size: var(--text-meta);
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.action:hover {
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
-  border-color: transparent;
-}
-
-.actionCopied {
-  border-color: var(--color-success-border);
-  background: var(--color-success-subtle);
-  color: var(--color-success);
-}
-
-.actionCopied:hover {
-  background: var(--color-success);
-  color: var(--color-text-on-accent);
-}
-
-.leave {
-  height: 30px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-default);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-family: inherit;
+  gap: var(--space-1-5);
   font-size: var(--text-meta);
   font-weight: 600;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast),
-    border-color var(--transition-fast);
+    border-color var(--transition-fast),
+    transform var(--transition-instant);
+}
+
+.action:active {
+  transform: scale(0.96);
+}
+
+.invite {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.invite:hover {
+  background: var(--color-accent-hover);
+}
+
+.inviteCopied,
+.inviteCopied:hover {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  box-shadow: inset 0 0 0 1px var(--color-success-border);
+}
+
+.actionIcon {
+  display: inline-flex;
+  animation: var(--animate-pop-in);
+}
+
+.leave {
+  color: var(--color-text-secondary);
 }
 
 .leave:hover {
   background: var(--color-danger-subtle);
-  color: var(--color-danger);
-  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+@media (max-width: 767px) {
+  .header .menuBtn {
+    display: inline-flex;
+  }
+
+  .header {
+    padding-left: var(--space-3);
+  }
+
+  .rule,
+  .topic,
+  .divider {
+    display: none;
+  }
+
+  /* Icon-only on phones; the aria-label still names the action */
+  .actionLabel {
+    display: none;
+  }
+
+  .action {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
 }

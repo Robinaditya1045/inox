@@ -1,291 +1,233 @@
-import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { useRoom } from "../../hooks/useRoom";
 import { useFriends } from "../../hooks/useFriends";
+import { useInvitationActions } from "../../hooks/useInvitationActions";
 import { CreateRoomModal } from "../room/CreateRoomModal";
 import { Badge } from "../common/Badge";
+import { Button } from "../common/Button";
+import { IconButton } from "../common/IconButton";
+import { Avatar } from "../common/Avatar";
+import { Skeleton } from "../common/Skeleton";
+import { EmptyState } from "../common/EmptyState";
 import { UserTray } from "../room/UserTray";
-import { Plus, Lock, Globe, Bell, Check, X, Tv, Users } from "lucide-react";
+import { Plus, Lock, Bell, Check, X, Users, Tv, Radio } from "lucide-react";
+import { stagger } from "../../utils/motion";
+import {
+  isStreaming,
+  sortRoomsByActivity,
+  viewersOf,
+} from "../../utils/roomActivity";
 import styles from "./HomeSidebar.module.css";
 
 export const HomeSidebar: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const {
-    rooms,
-    activeRoom,
-    invitations,
-    acceptInvitation,
-    declineInvitation,
-    isLoadingRoom,
-  } = useRoom();
+  const { rooms, activeRoom, invitations, hasLoadedRooms } = useRoom();
   const { friends, incomingRequests } = useFriends();
-  const navigate = useNavigate();
+  const invites = useInvitationActions();
+
+  const showSkeleton = !hasLoadedRooms && rooms.length === 0;
+  // Same order as the lobby: streaming rooms first, then occupied, then empty.
+  const orderedRooms = useMemo(() => sortRoomsByActivity(rooms), [rooms]);
 
   return (
     <>
-      <aside className={styles.sidebar} aria-label="Rooms & Invitations">
-        {/* Header */}
+      <aside className={styles.sidebar} aria-label="Rooms and invitations">
         <div className={styles.header}>
-          <span className={styles.headerTitle}>Rooms</span>
-          <button
-            className={styles.addButton}
+          <span className={styles.headerTitle}>Lobby</span>
+          <IconButton
+            label="Create a room"
+            size="sm"
             onClick={() => setIsCreateOpen(true)}
-            title="Create Room"
-            aria-label="Create Room"
+            tooltipSide="bottom"
           >
             <Plus size={16} />
-          </button>
+          </IconButton>
         </div>
 
-        {/* Friends — the lobby's other destination, kept above the room list so a
-            waiting friend request is visible without opening the page. */}
-        <div className={styles.section}>
-          <NavLink
-            to="/friends"
-            style={({ isActive }) => ({
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              padding: "6px var(--space-2)",
-              borderRadius: "var(--radius-lg)",
-              textDecoration: "none",
-              fontSize: "var(--text-compact)",
-              fontWeight: isActive ? 600 : 500,
-              color: isActive
-                ? "var(--color-text-primary)"
-                : "var(--color-text-secondary)",
-              background: isActive ? "var(--color-surface-2)" : "transparent",
-              transition: "background-color var(--transition-fast)",
-            })}
-          >
-            <Users
-              size={14}
-              style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
-            />
-            <span style={{ flex: 1 }}>Friends</span>
-            {incomingRequests.length > 0 ? (
-              <Badge variant="danger">{incomingRequests.length}</Badge>
-            ) : (
-              friends.length > 0 && (
-                <span
-                  style={{
-                    fontSize: "var(--text-label)",
-                    color: "var(--color-text-muted)",
-                  }}
-                >
-                  {friends.length}
-                </span>
-              )
-            )}
-          </NavLink>
-        </div>
-
-        {/* Pending Invitations */}
-        {invitations.length > 0 && (
-          <div className={`${styles.section} ${styles.inviteSection}`}>
-            <div className={styles.sectionLabel}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Bell size={12} />
-                Invites
+        <div className={styles.scroll}>
+          {/* Friends — the lobby's other destination, kept above the room list so a
+              waiting friend request is visible without opening the page. */}
+          <nav className={styles.section} aria-label="Lobby">
+            <NavLink
+              to="/friends"
+              className={({ isActive }) =>
+                `${styles.navItem} ${isActive ? styles.navItemActive : ""}`
+              }
+            >
+              <span className={styles.navIcon} aria-hidden="true">
+                <Users size={20} />
               </span>
-              <Badge variant="danger">{invitations.length}</Badge>
-            </div>
+              <span className={styles.navLabel}>
+                <span className={styles.navName}>Friends</span>
+              </span>
+              {incomingRequests.length > 0 ? (
+                <Badge variant="danger" pop>
+                  {incomingRequests.length}
+                </Badge>
+              ) : (
+                friends.length > 0 && (
+                  <span className={styles.count}>{friends.length}</span>
+                )
+              )}
+            </NavLink>
+          </nav>
 
-            {invitations.map((inv) => (
-              <div
-                key={inv.id}
-                style={{
-                  padding: "8px var(--space-2)",
-                  borderRadius: "var(--radius-lg)",
-                  background: "var(--color-surface-2)",
-                  border: "1px solid var(--color-border-default)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "var(--space-2)",
-                }}
-              >
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
-                >
-                  <span
-                    style={{
-                      fontSize: "var(--text-compact)",
-                      fontWeight: 600,
-                      color: "var(--color-text-primary)",
-                    }}
-                  >
-                    {inv.room_name || "Private Room"}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "var(--text-label)",
-                      color: "var(--color-text-muted)",
-                    }}
-                  >
-                    from @{inv.inviter_name || "someone"}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: "var(--space-1)" }}>
-                  <button
-                    onClick={async () => {
-                      try {
-                        const joined = await acceptInvitation(inv.id);
-                        navigate(`/room/${joined.id}`);
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "4px",
-                      borderRadius: "var(--radius-md)",
-                      background: "var(--color-success-subtle)",
-                      color: "var(--color-success)",
-                      border: "1px solid var(--color-success-border)",
-                      fontSize: "var(--text-label)",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 4,
-                      transition: "background-color var(--transition-fast)",
-                    }}
-                  >
-                    <Check size={11} /> Accept
-                  </button>
-                  <button
-                    onClick={() => declineInvitation(inv.id)}
-                    style={{
-                      flex: 1,
-                      padding: "4px",
-                      borderRadius: "var(--radius-md)",
-                      background: "transparent",
-                      color: "var(--color-text-muted)",
-                      border: "1px solid var(--color-border-default)",
-                      fontSize: "var(--text-label)",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <X size={11} /> Decline
-                  </button>
-                </div>
+          {/* Pending Invitations */}
+          {invitations.length > 0 && (
+            <section
+              className={styles.section}
+              aria-labelledby="sidebar-invites"
+            >
+              <div className={styles.sectionLabel}>
+                <span className={styles.sectionLabelText} id="sidebar-invites">
+                  <Bell size={12} aria-hidden="true" />
+                  Invites
+                </span>
+                <Badge variant="danger" pop>
+                  {invitations.length}
+                </Badge>
               </div>
-            ))}
-          </div>
-        )}
 
-        {/* Room List */}
-        <div className={styles.scrollList}>
-          <div className={styles.sectionLabel}>
-            <span>Active Rooms ({rooms.length})</span>
-          </div>
-
-          {rooms.length === 0 && !isLoadingRoom && (
-            <div className={styles.emptyState}>
-              No rooms are live.
-              <br />
-              <button
-                onClick={() => setIsCreateOpen(true)}
-                style={{
-                  marginTop: "var(--space-2)",
-                  color: "var(--color-accent)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "var(--text-compact)",
-                  fontWeight: 600,
-                }}
-              >
-                Create one →
-              </button>
-            </div>
+              {invitations.map((inv, i) => (
+                <div key={inv.id} className={styles.invite} style={stagger(i)}>
+                  <div>
+                    <div className={styles.inviteName}>
+                      {inv.room_name || "Private Room"}
+                    </div>
+                    <div className={styles.inviteFrom}>
+                      from @{inv.inviter_name || "someone"}
+                    </div>
+                  </div>
+                  <div className={styles.inviteActions}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<X size={12} />}
+                      isLoading={invites.isBusy(inv, "decline")}
+                      disabled={invites.isBusy(inv, "accept")}
+                      onClick={() => invites.decline(inv)}
+                    >
+                      Decline
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Check size={12} />}
+                      isLoading={invites.isBusy(inv, "accept")}
+                      disabled={invites.isBusy(inv, "decline")}
+                      onClick={() => invites.accept(inv)}
+                    >
+                      Join
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </section>
           )}
 
-          {rooms.map((room) => {
-            const isActive = activeRoom?.id === room.id;
-            const memberCount = room.members?.length ?? 0;
-
-            return (
-              <NavLink
-                key={room.id}
-                to={`/room/${room.id}`}
-                title={room.name}
-                style={({ isActive: navActive }) => ({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-2)",
-                  padding: "6px var(--space-2)",
-                  borderRadius: "var(--radius-lg)",
-                  textDecoration: "none",
-                  color:
-                    navActive || isActive
-                      ? "var(--color-text-primary)"
-                      : "var(--color-text-secondary)",
-                  background:
-                    navActive || isActive
-                      ? "var(--color-surface-2)"
-                      : "transparent",
-                  fontWeight: navActive || isActive ? 600 : 400,
-                  fontSize: "var(--text-compact)",
-                  transition:
-                    "background-color var(--transition-fast), color var(--transition-fast)",
-                })}
+          {/* Room List */}
+          <section className={styles.section} aria-labelledby="sidebar-rooms">
+            <div className={styles.sectionLabel}>
+              <span id="sidebar-rooms">Active rooms — {rooms.length}</span>
+              <IconButton
+                label="Create a room"
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsCreateOpen(true)}
               >
-                <Tv
-                  size={14}
-                  style={{
-                    color: isActive
-                      ? "var(--color-accent)"
-                      : "var(--color-text-muted)",
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    flex: 1,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {room.name}
-                </span>
-                {memberCount > 0 && (
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 2,
-                      color: "var(--color-text-muted)",
-                      fontSize: "var(--text-label)",
-                      flexShrink: 0,
-                    }}
+                <Plus size={14} />
+              </IconButton>
+            </div>
+
+            {showSkeleton && (
+              <div aria-busy="true" aria-label="Loading rooms">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className={styles.skeletonRow}>
+                    <Skeleton
+                      width={32}
+                      height={32}
+                      radius="var(--radius-lg)"
+                    />
+                    <div className={styles.skeletonText}>
+                      <Skeleton width={`${70 - i * 12}%`} height={10} />
+                      <Skeleton width="36%" height={8} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {rooms.length === 0 && hasLoadedRooms && (
+              <EmptyState
+                compact
+                icon={<Tv size={20} />}
+                title="No rooms are live"
+                description="Start one and invite your friends."
+                action={
+                  <Button
+                    size="sm"
+                    icon={<Plus size={14} />}
+                    onClick={() => setIsCreateOpen(true)}
                   >
-                    <Users size={10} />
-                    {memberCount}
+                    Create room
+                  </Button>
+                }
+              />
+            )}
+
+            {orderedRooms.map((room, i) => {
+              const isCurrent = activeRoom?.id === room.id;
+              const memberCount = room.members?.length ?? 0;
+              const streaming = isStreaming(room);
+              const here = viewersOf(room);
+
+              return (
+                <NavLink
+                  key={room.id}
+                  to={`/room/${room.id}`}
+                  title={room.name}
+                  style={stagger(i + 1)}
+                  className={({ isActive }) =>
+                    `${styles.navItem} ${isActive || isCurrent ? styles.navItemActive : ""}`
+                  }
+                >
+                  <Avatar username={room.name} size="sm" shape="square" />
+                  <span className={styles.navLabel}>
+                    <span className={styles.navName}>{room.name}</span>
+                    <span className={styles.navMeta}>
+                      {streaming ? (
+                        <span className={styles.streamingMeta}>
+                          <Radio size={11} aria-hidden="true" />
+                          Streaming · {here} watching
+                        </span>
+                      ) : here > 0 ? (
+                        <>
+                          <span className={styles.liveDot} aria-hidden="true" />
+                          {here} here now
+                        </>
+                      ) : memberCount > 0 ? (
+                        <>
+                          {memberCount}{" "}
+                          {memberCount === 1 ? "member" : "members"}
+                        </>
+                      ) : (
+                        "No one here yet"
+                      )}
+                      {room.is_private && (
+                        <>
+                          {" · "}
+                          <Lock size={10} aria-label="Private" />
+                        </>
+                      )}
+                    </span>
                   </span>
-                )}
-                {room.is_private ? (
-                  <Lock
-                    size={11}
-                    style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
-                  />
-                ) : (
-                  <Globe
-                    size={11}
-                    style={{ color: "var(--color-text-muted)", flexShrink: 0 }}
-                  />
-                )}
-              </NavLink>
-            );
-          })}
+                </NavLink>
+              );
+            })}
+          </section>
         </div>
+
         <UserTray />
       </aside>
 

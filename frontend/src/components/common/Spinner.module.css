@@ -1,0 +1,16 @@
+.spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  border: 2px solid color-mix(in srgb, var(--spinner-color) 22%, transparent);
+  border-top-color: var(--spinner-color);
+  animation: var(--animate-spin);
+}
+
+/* A loading indicator is essential motion: keep it turning, just slower. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

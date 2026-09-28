@@ -1,9 +1,15 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Modal } from "../common/Modal";
-import { TextField as Input } from "../common/TextField";
+import { TextField } from "../common/TextField";
 import { Button } from "../common/Button";
+import { Avatar } from "../common/Avatar";
+import { EmptyState } from "../common/EmptyState";
 import { useAuth } from "../../hooks/useAuth";
-import { apiClient as api } from "../../api/client";
+import { useRoom } from "../../hooks/useRoom";
+import { useToast } from "../../hooks/useToast";
+import { apiClient as api, APIError } from "../../api/client";
+import { tabIds } from "../../utils/tabs";
 import {
   User,
   Bell,
@@ -11,9 +17,10 @@ import {
   Shield,
   Image as ImageIcon,
   Camera,
+  Check,
+  LogOut,
 } from "lucide-react";
 import styles from "./SettingsShell.module.css";
-import profileStyles from "./ProfileSettingsTab.module.css";
 
 interface SettingsShellProps {
   isOpen: boolean;
@@ -22,11 +29,14 @@ interface SettingsShellProps {
 
 type SettingsTab = "profile" | "appearance" | "notifications" | "privacy";
 
+const TAB_PREFIX = "settings";
+
 const ProfileSettingsTab: React.FC = () => {
   const { user, mutateUser } = useAuth();
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,73 +44,85 @@ const ProfileSettingsTab: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
+    setSaved(false);
 
     try {
       await api.put("/users/profile/avatar", { avatar_url: avatarUrl });
       if (mutateUser && user) {
         mutateUser({ ...user, avatar_url: avatarUrl });
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Failed to update avatar");
+      setSaved(true);
+    } catch (err) {
+      setError(
+        err instanceof APIError && err.message
+          ? err.message
+          : "Failed to update avatar",
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className={profileStyles.profileTab}>
-      <div className={profileStyles.avatarSection}>
-        <div className={profileStyles.avatarPreviewContainer}>
-          <div className={profileStyles.avatarWrapper}>
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt="Avatar Preview"
-                className={profileStyles.avatarImage}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src =
-                    "https://via.placeholder.com/120?text=Error";
-                }}
-              />
-            ) : (
-              <div className={profileStyles.avatarPlaceholder}>
-                {user?.username?.[0]?.toUpperCase() || "U"}
-              </div>
-            )}
-            <div className={profileStyles.cameraIconWrapper}>
-              <Camera size={16} />
-            </div>
-          </div>
+    <>
+      <div className={styles.profileCard}>
+        <div className={styles.avatarPreview}>
+          <Avatar
+            src={avatarUrl || undefined}
+            username={user?.username || "U"}
+            size="xl"
+          />
+          <span className={styles.cameraBadge} aria-hidden="true">
+            <Camera size={13} />
+          </span>
+        </div>
+        <div className={styles.identity}>
+          <span className={styles.identityName}>{user?.username}</span>
+          <span className={styles.identityMeta}>{user?.email}</span>
         </div>
       </div>
 
-      <div className={profileStyles.formSection}>
-        <h3 className={profileStyles.sectionHeading}>Avatar Settings</h3>
-        {error && <div className={profileStyles.errorBox}>{error}</div>}
-
-        <form onSubmit={handleSubmit} className={profileStyles.form}>
-          <Input
-            label="Avatar Image URL"
-            type="url"
-            placeholder="https://example.com/my-avatar.png"
-            value={avatarUrl}
-            onChange={(e) => setAvatarUrl(e.target.value)}
-            icon={<ImageIcon size={18} />}
-          />
-
-          <div className={profileStyles.actions}>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={isLoading || avatarUrl === user?.avatar_url}
-              isLoading={isLoading}
-            >
-              Save Changes
-            </Button>
+      <form onSubmit={handleSubmit} className={styles.form}>
+        {error && (
+          <div className={styles.errorBox} role="alert">
+            {error}
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        <TextField
+          label="Avatar image URL"
+          type="url"
+          name="avatar-url"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="https://example.com/avatar.png"
+          value={avatarUrl}
+          onChange={(e) => {
+            setAvatarUrl(e.target.value);
+            setSaved(false);
+          }}
+          icon={<ImageIcon size={16} />}
+          helperText="A square image of at least 128×128 works best."
+        />
+
+        <div className={styles.formActions}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!avatarUrl.trim() || avatarUrl === user?.avatar_url}
+            isLoading={isLoading}
+          >
+            Save changes
+          </Button>
+          {saved && (
+            <span className={styles.saved} role="status">
+              <Check size={14} aria-hidden="true" /> Saved
+            </span>
+          )}
+        </div>
+      </form>
+    </>
   );
 };
 
@@ -109,6 +131,11 @@ export const SettingsShell: React.FC<SettingsShellProps> = ({
   onClose,
 }) => {
   const [activeTab, setActiveTab] = React.useState<SettingsTab>("profile");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const { logout } = useAuth();
+  const { disconnectFromRoom } = useRoom();
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     { id: "profile", label: "My Account", icon: <User size={16} /> },
@@ -116,55 +143,115 @@ export const SettingsShell: React.FC<SettingsShellProps> = ({
     { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
     { id: "privacy", label: "Privacy & Safety", icon: <Shield size={16} /> },
   ];
+  const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
+  const ids = tabIds(TAB_PREFIX, active.id);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // Hang up and close the room socket before the session goes: otherwise
+      // the microphone keeps publishing to the room after logout.
+      disconnectFromRoom();
+      await logout();
+      onClose();
+      navigate("/login", { replace: true });
+    } catch {
+      toast({ tone: "danger", title: "Couldn't log you out. Try again." });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings" maxWidth="800px">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Settings"
+      maxWidth="800px"
+      flush
+    >
       <div className={styles.layout}>
-        {/* Sidebar */}
-        <div className={styles.sidebar}>
-          <div className={styles.sidebarSection}>
+        <nav className={styles.sidebar} aria-label="Settings sections">
+          <div
+            className={styles.sidebarSection}
+            role="tablist"
+            aria-orientation="vertical"
+            aria-label="User settings"
+          >
             <span className={styles.sectionTitle}>User Settings</span>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`${styles.tabBtn} ${activeTab === tab.id ? styles.tabBtnActive : ""}`}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
-            ))}
+            {tabs.map((tab) => {
+              const tabIdSet = tabIds(TAB_PREFIX, tab.id);
+              const selected = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  id={tabIdSet.tab}
+                  aria-selected={selected}
+                  aria-controls={tabIdSet.panel}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={styles.tabBtn}
+                >
+                  <span aria-hidden="true">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
-        </div>
 
-        {/* Main Content Area */}
-        <div className={styles.content}>
-          <h2 className={styles.contentTitle}>
-            {tabs.find((t) => t.id === activeTab)?.label}
-          </h2>
+          <div className={styles.logout}>
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${styles.logoutBtn}`}
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+            >
+              <LogOut size={16} aria-hidden="true" />
+              <span>{isLoggingOut ? "Logging out…" : "Log out"}</span>
+            </button>
+          </div>
+        </nav>
 
-          <div className={styles.settingsGroup}>
+        <div
+          className={styles.content}
+          role="tabpanel"
+          id={ids.panel}
+          aria-labelledby={ids.tab}
+        >
+          <div key={active.id} className={styles.panel}>
+            <h2 className={styles.contentTitle}>{active.label}</h2>
+
             {activeTab === "profile" && <ProfileSettingsTab />}
 
             {activeTab === "appearance" && (
-              <div className={styles.placeholder}>
-                <Monitor size={32} className={styles.placeholderIcon} />
-                <p>Appearance settings will go here.</p>
-              </div>
+              <EmptyState
+                card
+                compact
+                icon={<Monitor size={20} />}
+                title="Appearance settings are coming soon"
+                description="Inox uses a dark theme tuned for watching video."
+              />
             )}
 
             {activeTab === "notifications" && (
-              <div className={styles.placeholder}>
-                <Bell size={32} className={styles.placeholderIcon} />
-                <p>Notification settings will go here.</p>
-              </div>
+              <EmptyState
+                card
+                compact
+                icon={<Bell size={20} />}
+                title="Notification settings are coming soon"
+                description="Invites and friend requests show up in the lobby for now."
+              />
             )}
 
             {activeTab === "privacy" && (
-              <div className={styles.placeholder}>
-                <Shield size={32} className={styles.placeholderIcon} />
-                <p>Privacy settings will go here.</p>
-              </div>
+              <EmptyState
+                card
+                compact
+                icon={<Shield size={20} />}
+                title="Privacy settings are coming soon"
+                description="Private rooms are already invite-only."
+              />
             )}
           </div>
         </div>

@@ -14,6 +14,8 @@ interface MessageItemProps {
   authorRole?: RoomRole;
   /** Current user's name, used to highlight @mentions of them. */
   currentUsername?: string;
+  /** Tighter layout for the narrow side panel */
+  compact?: boolean;
 }
 
 function formatTime(isoString: string): string {
@@ -44,7 +46,7 @@ function renderBody(text: string, currentUsername?: string): React.ReactNode {
 }
 
 export const MessageItem: React.FC<MessageItemProps> = React.memo(
-  ({ message, isOwn, isGroupLeader, authorRole, currentUsername }) => {
+  ({ message, isOwn, isGroupLeader, authorRole, currentUsername, compact }) => {
     const [copied, setCopied] = useState(false);
 
     const mentionsMe =
@@ -52,6 +54,8 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(
       new RegExp(`@${currentUsername}\\b`, "i").test(message.message);
 
     const handleCopy = () => {
+      // Missing outside secure contexts (plain http); nothing to copy with.
+      if (!navigator.clipboard?.writeText) return;
       navigator.clipboard
         .writeText(message.message)
         .then(() => {
@@ -65,6 +69,7 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(
       <div
         className={[
           styles.row,
+          compact ? styles.compact : "",
           isGroupLeader ? styles.rowLeader : "",
           mentionsMe ? styles.rowMention : "",
         ]
@@ -73,7 +78,10 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(
       >
         <div className={styles.gutter}>
           {isGroupLeader ? (
-            <Avatar username={message.username || "U"} size="sm" />
+            <Avatar
+              username={message.username || "U"}
+              size={compact ? "sm" : "md"}
+            />
           ) : (
             <span className={styles.hoverTime}>
               {formatTime(message.created_at)}
@@ -103,9 +111,9 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(
                 </span>
               )}
 
-              <span className={styles.time}>
+              <time className={styles.time} dateTime={message.created_at}>
                 {formatTime(message.created_at)}
-              </span>
+              </time>
             </div>
           )}
 
@@ -116,12 +124,13 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(
 
         <div className={styles.actions}>
           <button
-            className={styles.actionBtn}
+            type="button"
+            className={`${styles.actionBtn} ${copied ? styles.copied : ""}`}
             onClick={handleCopy}
-            aria-label="Copy message text"
+            aria-label={copied ? "Copied" : "Copy message text"}
             title={copied ? "Copied" : "Copy text"}
           >
-            {copied ? <Check size={15} /> : <Copy size={15} />}
+            {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
         </div>
       </div>

@@ -1,90 +1,181 @@
 .overlay {
-  background-color: var(--color-surface-overlay);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   position: fixed;
   inset: 0;
-  animation: overlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
   z-index: var(--z-modal);
+  background-color: var(--color-backdrop);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
+.overlay[data-state="open"] {
+  animation: overlayIn var(--duration-normal) var(--ease-out);
+}
+
+.overlay[data-state="closed"] {
+  animation: overlayOut var(--duration-exit) var(--ease-in) forwards;
+}
+
+/* Centred with inset + auto margins rather than a translate, so transform is
+   free for the entrance and exit animations. */
 .content {
-  background-color: var(--color-surface-1);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-modal);
-  border: 1px solid var(--color-border-default);
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 90vw;
-  max-width: 450px;
-  max-height: 85vh;
-  padding: 0;
+  inset: 0;
+  z-index: calc(var(--z-modal) + 1);
+  margin: auto;
+  width: min(calc(100% - var(--space-8)), var(--modal-max-width, 480px));
+  height: fit-content;
+  max-height: min(88dvh, 760px);
   display: flex;
   flex-direction: column;
-  animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: calc(var(--z-modal) + 1);
+  background-color: var(--color-surface-1);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-modal), var(--shadow-inset-highlight);
   outline: none;
+  overflow: hidden;
+}
+
+.content[data-state="open"] {
+  animation: contentIn var(--duration-enter) var(--ease-out);
+}
+
+.content[data-state="closed"] {
+  animation: contentOut var(--duration-exit) var(--ease-in) forwards;
 }
 
 .header {
-  padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--color-border-subtle);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-4) var(--space-6);
+  flex-shrink: 0;
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .title {
-  margin: 0;
-  font-weight: 600;
-  color: var(--color-text-primary);
   font-size: var(--text-heading);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
 }
 
-.body {
-  padding: var(--space-6);
-  overflow-y: auto;
+.description {
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
 }
 
 .closeBtn {
-  font-family: inherit;
-  border-radius: var(--radius-md);
-  height: 28px;
-  width: 28px;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
-  position: relative;
-  background: transparent;
-  border: none;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-instant);
 }
 
 .closeBtn:hover {
-  background-color: var(--color-surface-2);
+  background-color: var(--color-fill-hover);
   color: var(--color-text-primary);
 }
 
-@keyframes overlayShow {
-  from {
-    opacity: 0;
+.closeBtn:active {
+  transform: scale(0.92);
+}
+
+.body {
+  padding: 0 var(--space-6) var(--space-6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+}
+
+.bodyFlush {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+/* Phones: a bottom sheet the thumb can reach, instead of a floating card */
+@media (max-width: 640px) {
+  .content {
+    inset: auto 0 0 0;
+    margin: 0;
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom);
   }
-  to {
-    opacity: 1;
+
+  .content[data-state="open"] {
+    animation: sheetIn var(--duration-slow) var(--ease-out);
+  }
+
+  .content[data-state="closed"] {
+    animation: sheetOut var(--duration-normal) var(--ease-in) forwards;
+  }
+
+  .header {
+    padding: var(--space-5) var(--space-4) var(--space-3) var(--space-5);
+  }
+
+  .body {
+    padding: 0 var(--space-5) var(--space-5);
   }
 }
 
-@keyframes contentShow {
+@keyframes overlayIn {
   from {
     opacity: 0;
-    transform: translate(-50%, -48%) scale(0.96);
   }
+}
+
+@keyframes overlayOut {
   to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes contentIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
+@keyframes contentOut {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheetOut {
+  to {
+    transform: translateY(100%);
   }
 }

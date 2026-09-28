@@ -19,7 +19,20 @@ import {
 } from "lucide-react";
 import { useRoom } from "../../hooks/useRoom";
 import { useRTC } from "../../hooks/useRTC";
+import { Avatar } from "../common/Avatar";
+import { Button } from "../common/Button";
+import { IconButton } from "../common/IconButton";
+import { Spinner } from "../common/Spinner";
+import { stagger } from "../../utils/motion";
+import menuStyles from "../common/Menu.module.css";
 import styles from "./MemberList.module.css";
+
+const ROLE_LABEL: Record<RoomRole, string> = {
+  owner: "Owner",
+  moderator: "Moderator",
+  member: "Member",
+  guest: "Guest",
+};
 
 export const MemberList: React.FC = () => {
   const { members, isLoadingMembers, kickMember, updateRole, canModerate } =
@@ -32,6 +45,7 @@ export const MemberList: React.FC = () => {
   const [isInviting, setIsInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,57 +58,15 @@ export const MemberList: React.FC = () => {
       setInviteSuccess(`Invited @${inviteUsername.trim()}`);
       setInviteUsername("");
       setTimeout(() => setInviteSuccess(null), 4000);
-    } catch (err: any) {
-      setInviteError(err?.message || "Failed to invite user");
+    } catch (err) {
+      setInviteError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to invite user",
+      );
     } finally {
       setIsInviting(false);
     }
-  };
-
-  const getRoleBadge = (role: RoomRole) => {
-    switch (role) {
-      case "owner":
-        return {
-          label: "Owner",
-          color: "var(--color-accent)",
-          bg: "var(--color-accent-subtle)",
-          border: "var(--color-accent-border)",
-          icon: <Crown size={12} color="currentColor" />,
-        };
-      case "moderator":
-        return {
-          label: "Mod",
-          color: "var(--color-accent-cyan)",
-          bg: "rgba(6, 182, 212, 0.15)",
-          border: "rgba(6, 182, 212, 0.4)",
-          icon: <ShieldAlert size={12} color="currentColor" />,
-        };
-      case "member":
-        return {
-          label: "Member",
-          color: "var(--color-success)",
-          bg: "var(--color-success-subtle)",
-          border: "var(--color-success-border)",
-          icon: <UserCheck size={12} color="currentColor" />,
-        };
-      default:
-        return {
-          label: "Guest",
-          color: "var(--color-text-secondary)",
-          bg: "var(--color-surface-3)",
-          border: "var(--color-border-default)",
-          icon: null,
-        };
-    }
-  };
-
-  const getInitials = (name: string): string => {
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
   };
 
   const handleRoleChange = async (targetId: string, newRole: RoomRole) => {
@@ -142,176 +114,256 @@ export const MemberList: React.FC = () => {
       {/* Invite Section for Private Rooms */}
       {(permissions?.can_invite_users || activeRoom?.is_private) && (
         <div className={styles.inviteSection}>
-          <div className={styles.inviteHeader}>
-            <UserPlus size={14} className={styles.inviteIcon} />
-            <span>Invite to Room</span>
-          </div>
+          <label className={styles.inviteHeader} htmlFor="member-invite-input">
+            <UserPlus
+              size={14}
+              className={styles.inviteIcon}
+              aria-hidden="true"
+            />
+            Invite to room
+          </label>
           <form onSubmit={handleInvite} className={styles.inviteForm}>
             <input
+              id="member-invite-input"
               type="text"
-              placeholder="Username..."
+              name="invite-username"
+              placeholder="Username…"
+              autoComplete="off"
+              spellCheck={false}
               value={inviteUsername}
               onChange={(e) => setInviteUsername(e.target.value)}
               disabled={isInviting}
               className={styles.inviteInput}
             />
-            <button
+            <Button
               type="submit"
-              disabled={isInviting || !inviteUsername.trim()}
-              className={styles.inviteBtn}
+              size="sm"
+              isLoading={isInviting}
+              disabled={!inviteUsername.trim()}
             >
-              {isInviting ? "..." : "Invite"}
-            </button>
+              Invite
+            </Button>
           </form>
-          {inviteSuccess && (
-            <span className={styles.inviteSuccess}>
-              <Check size={12} /> {inviteSuccess}
-            </span>
-          )}
-          {inviteError && (
-            <span className={styles.inviteError}>
-              <AlertCircle size={12} /> {inviteError}
-            </span>
-          )}
+          <div aria-live="polite">
+            {inviteSuccess && (
+              <span
+                className={`${styles.inviteFeedback} ${styles.inviteSuccess}`}
+              >
+                <Check size={12} aria-hidden="true" /> {inviteSuccess}
+              </span>
+            )}
+            {inviteError && (
+              <span
+                className={`${styles.inviteFeedback} ${styles.inviteError}`}
+              >
+                <AlertCircle size={12} aria-hidden="true" /> {inviteError}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
       {isLoadingMembers && (
-        <div className={styles.header}>
-          <span className={styles.loadingText}>Updating...</span>
+        <div className={styles.updating} role="status">
+          <Spinner size={12} label={null} />
+          Updating…
         </div>
       )}
 
       <div className={styles.list}>
         {groups.map((group) =>
           group.members.length === 0 ? null : (
-            <div key={group.key} className={styles.group}>
-              <div className={styles.groupLabel}>
+            <section
+              key={group.key}
+              className={styles.group}
+              aria-label={`${group.label}, ${group.members.length}`}
+            >
+              <div className={styles.groupLabel} aria-hidden="true">
                 {group.label} — {group.members.length}
               </div>
-              {group.members.map((member) => {
-                const badge = getRoleBadge(member.role);
+              {group.members.map((member, i) => {
                 const isSelf = member.user_id === user?.id;
                 const showAdminControls = !isSelf && canModerate(member);
+                const voice = voiceState.get(member.user_id);
+                const isSpeaking = speakingIds.has(member.user_id);
+                const roleClass =
+                  member.role === "owner"
+                    ? styles.owner
+                    : member.role === "moderator"
+                      ? styles.moderator
+                      : "";
 
                 return (
-                  <div key={member.user_id} className={styles.memberItem}>
-                    <div className={styles.memberInfo}>
-                      {/* Avatar with Online Pulse */}
-                      <div className={styles.avatarWrapper}>
-                        <div
-                          className={`${styles.avatar} ${isSelf ? styles.avatarSelf : styles.avatarOther}`}
-                        >
-                          {getInitials(member.username)}
-                        </div>
-                        <div className={styles.onlineBadge} />
-                      </div>
+                  <div
+                    key={member.user_id}
+                    className={`${styles.memberItem} ${roleClass}`}
+                    style={stagger(i)}
+                  >
+                    <span
+                      className={
+                        isSpeaking ? styles.speakingAvatar : styles.idleAvatar
+                      }
+                    >
+                      <Avatar
+                        username={member.username}
+                        src={isSelf ? user?.avatar_url : undefined}
+                        size="sm"
+                        status="online"
+                      />
+                    </span>
 
-                      {/* Name and Role */}
-                      <div className={styles.memberDetails}>
-                        <span className={styles.memberName}>
-                          {member.username}{" "}
-                          {isSelf && (
-                            <span className={styles.selfLabel}>(You)</span>
-                          )}
-                          {voiceState.get(member.user_id)?.isMuted && (
+                    <div className={styles.memberDetails}>
+                      <span className={styles.memberName}>
+                        <span className={styles.nameText}>
+                          {member.username}
+                        </span>
+                        {member.role === "owner" && (
+                          <span className={styles.roleIcon}>
+                            <Crown size={13} aria-label="Room owner" />
+                          </span>
+                        )}
+                        {member.role === "moderator" && (
+                          <span className={styles.roleIcon}>
+                            <ShieldAlert size={13} aria-label="Moderator" />
+                          </span>
+                        )}
+                        {isSelf && (
+                          <span className={styles.selfLabel}>(you)</span>
+                        )}
+                        <span className={styles.stateIcons}>
+                          {voice?.isMuted && (
                             <MicOff
                               size={12}
-                              style={{ color: "var(--color-danger)" }}
+                              className={styles.muted}
                               aria-label="Muted"
                             />
                           )}
-                          {speakingIds.has(member.user_id) && (
+                          {isSpeaking && (
                             <Volume2
                               size={12}
-                              style={{ color: "var(--color-speaking)" }}
+                              className={styles.speaking}
                               aria-label="Speaking"
                             />
                           )}
-                          {voiceState.get(member.user_id)?.isScreenSharing && (
+                          {voice?.isScreenSharing && (
                             <ScreenShare
                               size={12}
-                              style={{ color: "var(--color-accent)" }}
+                              className={styles.sharing}
                               aria-label="Sharing screen"
                             />
                           )}
                         </span>
-                        <div
-                          className={styles.roleBadge}
-                          style={{
-                            background: badge.bg,
-                            border: `1px solid ${badge.border}`,
-                            color: badge.color,
-                          }}
-                        >
-                          {badge.icon}
-                          <span>{badge.label}</span>
-                        </div>
-                      </div>
+                      </span>
+                      <span className={styles.roleText}>
+                        {ROLE_LABEL[member.role]}
+                      </span>
                     </div>
 
                     {/* Moderation Actions Menu */}
                     {showAdminControls && (
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <button
-                            className={styles.actionBtn}
-                            aria-label="Manage member"
-                          >
-                            <MoreVertical size={16} />
-                          </button>
-                        </DropdownMenu.Trigger>
+                      <DropdownMenu.Root
+                        onOpenChange={(open) =>
+                          setOpenMenuFor(open ? member.user_id : null)
+                        }
+                      >
+                        <span
+                          className={styles.actionSlot}
+                          data-open={
+                            openMenuFor === member.user_id || undefined
+                          }
+                        >
+                          <DropdownMenu.Trigger asChild>
+                            <IconButton
+                              label={`Manage ${member.username}`}
+                              size="sm"
+                              tooltip={false}
+                            >
+                              <MoreVertical size={16} />
+                            </IconButton>
+                          </DropdownMenu.Trigger>
+                        </span>
 
                         <DropdownMenu.Portal>
                           <DropdownMenu.Content
-                            className={styles.dropdownContent}
+                            className={menuStyles.content}
                             sideOffset={4}
                             align="end"
                           >
-                            <DropdownMenu.Label
-                              className={styles.dropdownLabel}
-                            >
-                              Change Role
+                            <DropdownMenu.Label className={menuStyles.label}>
+                              Change role
                             </DropdownMenu.Label>
 
                             <DropdownMenu.Item
-                              className={styles.dropdownItem}
-                              onClick={() =>
+                              className={menuStyles.item}
+                              onSelect={() =>
                                 handleRoleChange(member.user_id, "moderator")
                               }
-                              style={{ color: "var(--color-accent-cyan)" }}
                             >
-                              <ShieldAlert size={14} /> Promote to Mod
+                              <span className={menuStyles.itemIcon}>
+                                <ShieldAlert size={15} />
+                              </span>
+                              <span className={menuStyles.itemLabel}>
+                                Promote to Mod
+                              </span>
+                              {member.role === "moderator" && (
+                                <span className={menuStyles.itemCheck}>
+                                  <Check size={14} />
+                                </span>
+                              )}
                             </DropdownMenu.Item>
 
                             <DropdownMenu.Item
-                              className={styles.dropdownItem}
-                              onClick={() =>
+                              className={menuStyles.item}
+                              onSelect={() =>
                                 handleRoleChange(member.user_id, "member")
                               }
-                              style={{ color: "var(--color-success)" }}
                             >
-                              <UserCheck size={14} /> Set as Member
+                              <span className={menuStyles.itemIcon}>
+                                <UserCheck size={15} />
+                              </span>
+                              <span className={menuStyles.itemLabel}>
+                                Set as Member
+                              </span>
+                              {member.role === "member" && (
+                                <span className={menuStyles.itemCheck}>
+                                  <Check size={14} />
+                                </span>
+                              )}
                             </DropdownMenu.Item>
 
                             <DropdownMenu.Item
-                              className={styles.dropdownItem}
-                              onClick={() =>
+                              className={menuStyles.item}
+                              onSelect={() =>
                                 handleRoleChange(member.user_id, "guest")
                               }
                             >
-                              <Shield size={14} /> Demote to Guest
+                              <span className={menuStyles.itemIcon}>
+                                <Shield size={15} />
+                              </span>
+                              <span className={menuStyles.itemLabel}>
+                                Demote to Guest
+                              </span>
+                              {member.role === "guest" && (
+                                <span className={menuStyles.itemCheck}>
+                                  <Check size={14} />
+                                </span>
+                              )}
                             </DropdownMenu.Item>
 
                             <DropdownMenu.Separator
-                              className={styles.dropdownSeparator}
+                              className={menuStyles.separator}
                             />
 
                             <DropdownMenu.Item
-                              className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`}
-                              onClick={() => handleKick(member.user_id)}
+                              className={`${menuStyles.item} ${menuStyles.danger}`}
+                              onSelect={() => handleKick(member.user_id)}
                             >
-                              <UserMinus size={14} /> Kick from Room
+                              <span className={menuStyles.itemIcon}>
+                                <UserMinus size={15} />
+                              </span>
+                              <span className={menuStyles.itemLabel}>
+                                Kick from Room
+                              </span>
                             </DropdownMenu.Item>
                           </DropdownMenu.Content>
                         </DropdownMenu.Portal>
@@ -320,7 +372,7 @@ export const MemberList: React.FC = () => {
                   </div>
                 );
               })}
-            </div>
+            </section>
           ),
         )}
       </div>

@@ -1,0 +1,315 @@
+.page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.content {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-8) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* ── Greeting ─────────────────────────────────────────────── */
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  animation: var(--animate-rise-in);
+}
+
+.heroTitle {
+  font-size: var(--text-display);
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  color: var(--color-text-primary);
+}
+
+.heroMeta {
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+}
+
+.heroMeta strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+/* ── Sections ─────────────────────────────────────────────── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.sectionHeader h2 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* ── Invitations ──────────────────────────────────────────── */
+.inviteList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: var(--space-3);
+}
+
+.invite {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-accent-border);
+  box-shadow:
+    var(--shadow-card),
+    inset 3px 0 0 var(--color-accent);
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+.inviteText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inviteName {
+  font-size: var(--text-compact);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inviteFrom {
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.inviteActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ── Now streaming: bigger cards, since the picture is the point ── */
+.streamGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: var(--space-4);
+}
+
+/* ── Room cards ───────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: var(--space-3);
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-card);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+/* Lift on hover: the card comes toward you, the shadow deepens with it */
+.card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-default);
+  background: color-mix(
+    in srgb,
+    var(--color-canvas) 80%,
+    var(--color-surface-2)
+  );
+  box-shadow: var(--shadow-raised);
+}
+
+.card:active {
+  transform: translateY(0) scale(0.99);
+  transition-duration: var(--duration-instant);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cardTitle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cardName {
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardPrivacy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 28px;
+}
+
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.presenceDot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-offline);
+}
+
+.presenceDotLive {
+  background: var(--color-live);
+  box-shadow: 0 0 0 3px var(--color-success-subtle);
+}
+
+/* The join affordance slides in from the right on hover or keyboard focus */
+.joinChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-size: var(--text-label);
+  font-weight: 700;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.card:hover .joinChip,
+.card:focus-visible .joinChip {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (hover: none) {
+  .joinChip {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Skeleton ─────────────────────────────────────────────── */
+.skeletonCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.skeletonLines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (max-width: 767px) {
+  .content {
+    padding: var(--space-5) var(--space-4) var(--space-8);
+    gap: var(--space-6);
+  }
+
+  .heroTitle {
+    font-size: var(--text-title);
+  }
+
+  .invite {
+    flex-wrap: wrap;
+  }
+
+  .inviteActions {
+    width: 100%;
+  }
+
+  .inviteActions > * {
+    flex: 1;
+  }
+}

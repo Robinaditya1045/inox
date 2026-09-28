@@ -1,0 +1,267 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    border-color var(--transition-fast);
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: var(--color-border-default);
+  box-shadow: var(--shadow-raised);
+}
+
+.card:active {
+  transform: translateY(0) scale(0.99);
+  transition-duration: var(--duration-instant);
+}
+
+/* ── Preview ─────────────────────────────────────────────── */
+.preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--color-canvas-deep);
+  isolation: isolate;
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+
+.card:hover .image,
+.card:hover .placeholderIcon {
+  transform: scale(1.04);
+}
+
+/* No artwork: a wash of the room's own colour behind a media glyph */
+.placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(
+      120% 90% at 20% 0%,
+      color-mix(in srgb, var(--room-hue) 55%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      90% 80% at 100% 100%,
+      color-mix(in srgb, var(--room-hue) 25%, transparent),
+      transparent 70%
+    ),
+    var(--color-surface-2);
+}
+
+.placeholderIcon {
+  display: inline-flex;
+  color: var(--color-media-glyph);
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+
+/* Legibility for the chips sitting on top of the picture */
+.preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    var(--color-media-scrim) 0%,
+    transparent 38%,
+    transparent 62%,
+    var(--color-media-scrim) 100%
+  );
+  pointer-events: none;
+}
+
+.chips {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-2);
+  left: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-micro);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-media);
+}
+
+.statusLive {
+  background: var(--color-danger);
+}
+
+.statusPlaying {
+  background: var(--color-media-scrim-strong);
+  box-shadow: inset 0 0 0 1px var(--color-media-edge);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Three bars bouncing out of step: "something is playing" at a glance */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+
+.eq > span {
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--color-live);
+  transform-origin: bottom;
+  animation: eq 900ms var(--ease-in-out) infinite alternate;
+}
+
+.eq > span:nth-child(2) {
+  animation-delay: -300ms;
+}
+
+.eq > span:nth-child(3) {
+  animation-delay: -600ms;
+}
+
+.statusLive .eq > span {
+  background: var(--color-on-media);
+}
+
+@keyframes eq {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.viewers {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-media-scrim-strong);
+  box-shadow: inset 0 0 0 1px var(--color-media-edge);
+  color: var(--color-on-media);
+  font-size: var(--text-label);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* The play affordance blooms in the middle on hover or keyboard focus */
+.playHint {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-media);
+  box-shadow: var(--shadow-menu);
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--duration-normal) var(--ease-spring);
+}
+
+.playHint svg {
+  margin-left: 3px;
+}
+
+.card:hover .playHint,
+.card:focus-visible .playHint {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ── Caption ─────────────────────────────────────────────── */
+.body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  min-width: 0;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mediaTitle {
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roomLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.roomName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.roomLine svg {
+  flex-shrink: 0;
+}
+
+@media (hover: none) {
+  .playHint {
+    display: none;
+  }
+}

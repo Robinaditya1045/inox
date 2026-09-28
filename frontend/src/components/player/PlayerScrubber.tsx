@@ -1,4 +1,5 @@
-import React from "react";
+import React, { type CSSProperties } from "react";
+import styles from "./PlayerScrubber.module.css";
 
 interface PlayerScrubberProps {
   duration: number;
@@ -29,61 +30,27 @@ export const PlayerScrubber: React.FC<PlayerScrubberProps> = React.memo(
     };
 
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <span
-          style={{
-            fontSize: "0.72rem",
-            fontWeight: 600,
-            color: "var(--color-text-secondary)",
-            minWidth: "36px",
-            textAlign: "right",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
+      <div className={styles.scrubber}>
+        <span className={`${styles.time} ${styles.timeCurrent}`}>
           {formatTime(progress)}
         </span>
-        <div
-          style={{
-            flex: 1,
-            position: "relative",
-            height: "16px",
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <input
-            type="range"
-            min={0}
-            max={duration || 100}
-            step="0.1"
-            value={progress}
-            onChange={handleScrubberChange}
-            disabled={!canControl}
-            aria-label="Video Playback Scrubber"
-            aria-valuemin={0}
-            aria-valuemax={duration || 100}
-            aria-valuenow={progress}
-            aria-valuetext={`${formatTime(progress)} of ${formatTime(duration)}`}
-            style={{
-              width: "100%",
-              height: "4px",
-              borderRadius: "2px",
-              background: `linear-gradient(to right, var(--color-accent-purple) 0%, var(--color-accent-purple) ${pct}%, rgba(255,255,255,0.15) ${pct}%, rgba(255,255,255,0.15) 100%)`,
-              appearance: "none",
-              cursor: canControl ? "pointer" : "not-allowed",
-              outline: "none",
-            }}
-          />
-        </div>
-        <span
-          style={{
-            fontSize: "0.72rem",
-            fontWeight: 600,
-            color: "var(--color-text-muted)",
-            minWidth: "36px",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
+        <input
+          type="range"
+          min={0}
+          max={duration || 100}
+          step="0.1"
+          value={progress}
+          onChange={handleScrubberChange}
+          disabled={!canControl}
+          aria-label="Video Playback Scrubber"
+          aria-valuemin={0}
+          aria-valuemax={duration || 100}
+          aria-valuenow={progress}
+          aria-valuetext={`${formatTime(progress)} of ${formatTime(duration)}`}
+          className={styles.range}
+          style={{ "--fill": `${pct}%` } as CSSProperties}
+        />
+        <span className={`${styles.time} ${styles.timeTotal}`}>
           {formatTime(duration)}
         </span>
       </div>

@@ -1,15 +1,22 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1-5);
   width: 100%;
 }
 
 .label {
   font-size: var(--text-label);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   color: var(--color-text-secondary);
   font-family: var(--font-sans);
+}
+
+.required {
+  color: var(--color-danger-text);
+  margin-left: 2px;
 }
 
 .inputWrapper {
@@ -21,47 +28,111 @@
 .icon {
   position: absolute;
   left: var(--space-3);
-  color: var(--color-text-muted);
   display: flex;
   align-items: center;
+  color: var(--color-text-muted);
   pointer-events: none;
+  transition: color var(--transition-fast);
+}
+
+.inputWrapper:focus-within .icon {
+  color: var(--color-accent-text);
 }
 
 .input {
   width: 100%;
-  padding: 10px var(--space-3);
-  background: var(--color-surface-1);
+  height: 40px;
+  padding: 0 var(--space-3);
+  background: var(--color-canvas-deep);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: var(--text-body);
   font-family: var(--font-sans);
-  transition: all var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.input:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+
+/* Inputs draw their own focus treatment in place of the global outline */
+.input:focus-visible {
   outline: none;
-}
-
-.inputWithIcon {
-  padding-left: 36px;
-}
-
-.input:focus {
   border-color: var(--color-accent-border);
   box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
-.inputError {
+.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.inputWithIcon {
+  padding-left: 38px;
+}
+
+.inputWithTrailing {
+  padding-right: 42px;
+}
+
+.inputError,
+.inputError:hover:not(:disabled) {
   border-color: var(--color-danger-border);
 }
 
-.inputError:focus {
+.inputError:focus-visible {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 3px var(--color-danger-subtle);
 }
 
+.trailing {
+  position: absolute;
+  right: var(--space-1);
+  display: flex;
+  align-items: center;
+}
+
+.revealBtn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.revealBtn:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-fill-hover);
+}
+
 .errorText {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
   font-size: var(--text-meta);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-weight: 500;
+  animation: var(--animate-rise-in);
+}
+
+.errorText svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .helperText {

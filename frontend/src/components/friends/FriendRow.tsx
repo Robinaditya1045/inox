@@ -1,4 +1,4 @@
-import React, { type ReactNode } from "react";
+import React, { type CSSProperties, type ReactNode } from "react";
 import { Avatar } from "../common/Avatar";
 import styles from "../../pages/FriendsPage.module.css";
 
@@ -9,6 +9,7 @@ interface FriendRowProps {
   meta?: string;
   /** Trailing controls — the only thing that differs between the four lists. */
   children?: ReactNode;
+  style?: CSSProperties;
 }
 
 export const FriendRow: React.FC<FriendRowProps> = ({
@@ -16,10 +17,11 @@ export const FriendRow: React.FC<FriendRowProps> = ({
   avatarUrl,
   meta,
   children,
+  style,
 }) => {
   return (
-    <div className={styles.row}>
-      <Avatar src={avatarUrl} username={username} size="sm" />
+    <div className={styles.row} style={style}>
+      <Avatar src={avatarUrl} username={username} size="md" />
       <div className={styles.identity}>
         <span className={styles.username}>{username}</span>
         {meta && <span className={styles.meta}>{meta}</span>}

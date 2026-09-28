@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal } from "../common/Modal";
-import { TextField as Input } from "../common/TextField";
+import { TextField } from "../common/TextField";
 import { Button } from "../common/Button";
 import { useRoom } from "../../hooks/useRoom";
 import { Tv, Lock, Globe, AlertCircle } from "lucide-react";
@@ -19,6 +19,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const privacyDescId = useId();
 
   const { createRoom, isLoadingRoom, roomError, clearRoomError } = useRoom();
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     setValidationError(null);
 
     if (!name.trim()) {
-      setValidationError("Room name is required.");
+      setValidationError("Give your room a name.");
       return;
     }
 
@@ -48,22 +49,34 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Create Watch Party Room">
-      <form onSubmit={handleSubmit} className={styles.form}>
-        {(roomError || validationError) && (
-          <div className={styles.errorBox}>
-            <AlertCircle size={18} style={{ flexShrink: 0 }} />
-            <span>{validationError || roomError}</span>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Create a room"
+      description="Pick a name. You can invite people once you're inside."
+    >
+      <form onSubmit={handleSubmit} className={styles.form} noValidate>
+        {roomError && (
+          <div className={styles.errorBox} role="alert">
+            <AlertCircle size={16} aria-hidden="true" />
+            <span>{roomError}</span>
           </div>
         )}
 
-        <Input
-          label="Room Name"
+        <TextField
+          label="Room name"
           type="text"
-          placeholder="e.g. Cyberpunk Anime Night"
+          name="room-name"
+          autoComplete="off"
+          placeholder="Friday night sci-fi…"
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          icon={<Tv size={18} />}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (validationError) setValidationError(null);
+          }}
+          icon={<Tv size={16} />}
+          error={validationError}
+          maxLength={80}
           required
         />
 
@@ -72,34 +85,40 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           type="button"
           role="switch"
           aria-checked={isPrivate}
+          // The visible title follows the state; the switch's own name stays
+          // "Private room" so on/off keeps meaning the same thing to a screen reader.
+          aria-label="Private room"
+          aria-describedby={privacyDescId}
           className={styles.privacyBtn}
           onClick={() => setIsPrivate(!isPrivate)}
         >
-          <div className={styles.privacyContent}>
-            <div
+          <span className={styles.privacyContent}>
+            <span
               className={`${styles.privacyIcon} ${isPrivate ? styles.privacyIconPrivate : styles.privacyIconPublic}`}
+              aria-hidden="true"
             >
-              {isPrivate ? <Lock size={18} /> : <Globe size={18} />}
-            </div>
-            <div className={styles.privacyText}>
+              <span key={String(isPrivate)} className={styles.privacyIconGlyph}>
+                {isPrivate ? <Lock size={17} /> : <Globe size={17} />}
+              </span>
+            </span>
+            <span className={styles.privacyText}>
               <span className={styles.privacyTitle}>
-                {isPrivate ? "Private Room" : "Public Room"}
+                {isPrivate ? "Private room" : "Public room"}
               </span>
-              <span className={styles.privacyDesc}>
+              <span id={privacyDescId} className={styles.privacyDesc}>
                 {isPrivate
-                  ? "Only invited members with direct link can join"
-                  : "Visible in lobby for anyone to join"}
+                  ? "Hidden from the lobby. People join by invite or with the room link."
+                  : "Anyone in the lobby can see and join it."}
               </span>
-            </div>
-          </div>
+            </span>
+          </span>
 
-          <div
-            className={`${styles.switchTrack} ${isPrivate ? styles.switchTrackPrivate : ""}`}
+          <span
+            className={`${styles.switchTrack} ${isPrivate ? styles.switchTrackOn : ""}`}
+            aria-hidden="true"
           >
-            <div
-              className={`${styles.switchThumb} ${isPrivate ? styles.switchThumbPrivate : ""}`}
-            />
-          </div>
+            <span className={styles.switchThumb} />
+          </span>
         </button>
 
         <div className={styles.footer}>

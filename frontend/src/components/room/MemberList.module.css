@@ -1,55 +1,73 @@
 .container {
+  --avatar-ring: var(--color-canvas);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-2) var(--space-4);
   overflow-y: auto;
-  gap: var(--space-3);
+  overscroll-behavior: contain;
+  gap: var(--space-4);
 }
 
+/* ── Invite ───────────────────────────────────────────────── */
 .inviteSection {
-  padding: var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border-default);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  padding: var(--space-3);
+  margin: 0 var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-subtle);
 }
 
 .inviteHeader {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-label);
-  font-weight: 600;
+  gap: var(--space-1-5);
+  font-size: var(--text-meta);
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .inviteIcon {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .inviteForm {
   display: flex;
-  gap: var(--space-1);
+  gap: var(--space-1-5);
 }
 
 .inviteInput {
   flex: 1;
-  padding: 6px var(--space-2);
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-md);
-  background: var(--color-surface-2);
+  background: var(--color-canvas-deep);
   border: 1px solid var(--color-border-default);
   color: var(--color-text-primary);
-  font-size: var(--text-label);
-  outline: none;
-  transition: all var(--transition-fast);
+  font-size: var(--text-meta);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
-.inviteInput:focus {
+.inviteInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.inviteInput:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+
+.inviteInput:focus-visible {
+  outline: none;
   border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
 .inviteInput:disabled {
@@ -57,258 +75,182 @@
   cursor: not-allowed;
 }
 
-.inviteBtn {
-  padding: 6px var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
-  border: none;
+.inviteFeedback {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--text-label);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.inviteBtn:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
-.inviteBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  font-weight: 500;
+  animation: var(--animate-rise-in);
 }
 
 .inviteSuccess {
-  font-size: var(--text-meta);
   color: var(--color-success);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
 .inviteError {
-  font-size: var(--text-meta);
-  color: var(--color-danger);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
+  color: var(--color-danger-text);
 }
 
-.header {
+/* ── Groups & rows ────────────────────────────────────────── */
+.updating {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--color-border-subtle);
-}
-
-.headerTitle {
-  font-size: var(--text-meta);
-  font-weight: 600;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  font-size: var(--text-label);
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.loadingText {
-  font-size: var(--text-meta);
-  color: var(--color-accent);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
 
-.memberItem {
-  padding: 10px var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border-default);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: relative;
-  transition: all var(--transition-fast);
-}
-
-.memberItem:hover {
-  background: var(--color-surface-2);
-}
-
-.memberInfo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.avatarWrapper {
-  position: relative;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  color: var(--color-text-on-accent);
-  font-size: var(--text-label);
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.avatarSelf {
-  background: var(--color-accent);
-}
-
-.avatarOther {
-  background: var(--color-surface-3);
-  color: var(--color-text-primary);
-}
-
-.onlineBadge {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--color-success);
-  border: 2px solid var(--color-surface-1);
-}
-
-.memberDetails {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.memberName {
-  font-size: var(--text-compact);
-  font-weight: 600;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.selfLabel {
-  color: var(--color-text-muted);
-  font-weight: 400;
-}
-
-.roleBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-xl);
-  font-size: var(--text-meta);
-  font-weight: 700;
-  width: fit-content;
-}
-
-.actionBtn {
-  padding: 6px;
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  transition: all var(--transition-fast);
-}
-
-.actionBtn:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-}
-
-/* Dropdown styling */
-.dropdownContent {
-  min-width: 160px;
-  background-color: var(--color-surface-overlay);
-  border-radius: var(--radius-md);
-  padding: var(--space-1);
-  box-shadow: var(--shadow-dropdown);
-  border: 1px solid var(--color-border-subtle);
-  animation: slideUpAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 50;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.dropdownLabel {
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--text-meta);
-  color: var(--color-text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.dropdownItem {
-  font-size: var(--text-compact);
-  line-height: 1;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 8px var(--space-2);
-  position: relative;
-  user-select: none;
-  outline: none;
-  cursor: pointer;
-}
-
-.dropdownItem[data-highlighted] {
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
-}
-
-.dropdownItemDanger {
-  color: var(--color-danger);
-}
-
-.dropdownItemDanger[data-highlighted] {
-  background-color: var(--color-danger-subtle);
-  color: var(--color-danger);
-}
-
-.dropdownSeparator {
-  height: 1px;
-  background-color: var(--color-border-subtle);
-  margin: var(--space-1) 0;
-}
-
-@keyframes slideUpAndFade {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Role/voice grouping — sections inside the member rail */
 .group {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-bottom: var(--space-4);
 }
 
 .groupLabel {
   padding: 0 var(--space-2) var(--space-1);
-  font-size: 11px;
+  font-size: var(--text-micro);
   font-weight: 700;
   color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caps);
   user-select: none;
+}
+
+.memberItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+.memberItem:hover {
+  --avatar-ring: color-mix(in srgb, var(--color-canvas) 88%, #94a3cc);
+  background: var(--color-fill-hover);
+}
+
+.speakingAvatar {
+  display: inline-flex;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 2px var(--color-speaking);
+  transition: box-shadow var(--transition-fast);
+}
+
+.idleAvatar {
+  display: inline-flex;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 2px transparent;
+  transition: box-shadow var(--transition-fast);
+}
+
+.memberDetails {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.memberName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-compact);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.memberItem:hover .memberName {
+  color: var(--color-text-primary);
+}
+
+.nameText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner .nameText {
+  color: var(--color-role-owner);
+}
+
+.moderator .nameText {
+  color: var(--color-role-mod);
+}
+
+.roleIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.owner .roleIcon {
+  color: var(--color-role-owner);
+}
+
+.moderator .roleIcon {
+  color: var(--color-role-mod);
+}
+
+.selfLabel {
+  color: var(--color-text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.stateIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.muted {
+  color: var(--color-danger-text);
+}
+
+.speaking {
+  color: var(--color-speaking);
+}
+
+.sharing {
+  color: var(--color-accent-text);
+}
+
+.roleText {
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* Revealed on row hover or keyboard focus, like a message toolbar */
+.actionSlot {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.memberItem:hover .actionSlot,
+.actionSlot:focus-within,
+.actionSlot[data-open] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .actionSlot {
+    opacity: 1;
+  }
 }

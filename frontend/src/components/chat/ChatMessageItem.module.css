@@ -1,40 +1,48 @@
 .row {
   display: flex;
-  gap: var(--space-3);
-  padding: 2px var(--space-4);
+  gap: var(--space-4);
+  padding: 2px var(--space-4) 2px var(--space-4);
   position: relative;
+  transition: background-color var(--transition-instant);
+  /* New messages rise in; history mounts at once, so it simply fades up together */
+  animation: var(--animate-rise-in);
 }
 
 .rowLeader {
-  padding-top: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: 2px;
 }
 
 .row:hover {
-  background: var(--color-surface-2);
+  background: var(--color-fill-hover);
 }
 
-.row:hover .actions {
+.row:hover .actions,
+.row:focus-within .actions {
   opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
+
 .row:hover .hoverTime {
   opacity: 1;
 }
 
 /* Messages that mention you get an accent rail, like an unread marker you can't miss */
 .rowMention {
-  background: var(--color-accent-subtle);
-  box-shadow: inset 2px 0 0 var(--color-accent);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-warning);
 }
 
 .rowMention:hover {
-  background: rgba(79, 115, 224, 0.18);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 
 .gutter {
-  width: 36px;
+  width: 40px;
   flex-shrink: 0;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   padding-top: 2px;
 }
 
@@ -43,10 +51,11 @@
   font-size: 10px;
   font-weight: 500;
   color: var(--color-text-muted);
-  line-height: 1.5;
+  line-height: 22px;
   opacity: 0;
   transition: opacity var(--transition-instant);
   user-select: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .body {
@@ -57,30 +66,33 @@
 .meta {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
-  margin-bottom: 2px;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin-bottom: 1px;
 }
 
 .username {
-  font-size: var(--text-compact);
-  font-weight: 700;
+  font-size: var(--text-body);
+  font-weight: 600;
   color: var(--color-text-primary);
-  line-height: 1.2;
+  line-height: 1.375;
 }
 
 .usernameOwn {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
+  align-self: center;
   gap: 3px;
   padding: 1px 5px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   font-size: 10px;
   font-weight: 700;
   line-height: 1.4;
+  letter-spacing: 0.03em;
 }
 
 .badgeOwner {
@@ -97,49 +109,65 @@
   font-size: var(--text-label);
   font-weight: 500;
   color: var(--color-text-muted);
-  line-height: 1.2;
+  line-height: 1.375;
+  font-variant-numeric: tabular-nums;
 }
 
 .text {
   margin: 0;
-  font-size: var(--text-compact);
-  line-height: 1.5;
-  color: var(--color-text-primary);
-  word-break: break-word;
+  font-size: var(--text-body);
+  line-height: 1.375;
+  color: color-mix(
+    in srgb,
+    var(--color-text-primary) 92%,
+    var(--color-text-secondary)
+  );
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .mention {
-  padding: 1px 3px;
-  border-radius: 3px;
+  padding: 0 2px;
+  border-radius: var(--radius-xs);
   background: var(--color-mention);
   color: var(--color-mention-text);
   font-weight: 600;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.mention:hover {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
 }
 
 /* Hover toolbar */
 .actions {
   position: absolute;
-  top: -10px;
+  top: -14px;
   right: var(--space-4);
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: 2px;
   border-radius: var(--radius-md);
   background: var(--color-surface-3);
   border: 1px solid var(--color-border-default);
   box-shadow: var(--shadow-menu);
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transform: translateY(2px);
+  pointer-events: none;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+  z-index: var(--z-raised);
 }
 
 .actionBtn {
-  width: 26px;
-  height: 26px;
-  border: none;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius-sm);
-  background: transparent;
   color: var(--color-text-secondary);
   display: flex;
   align-items: center;
@@ -151,6 +179,52 @@
 }
 
 .actionBtn:hover {
-  background: var(--color-surface-1);
+  background: var(--color-fill-active);
   color: var(--color-text-primary);
+}
+
+.copied {
+  color: var(--color-success);
+}
+
+/* Side panel: narrower gutter, smaller type, hover toolbar tucked in */
+.compact {
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+}
+
+.compact.rowLeader {
+  margin-top: var(--space-3);
+}
+
+.compact .gutter {
+  width: 32px;
+}
+
+.compact .username,
+.compact .text {
+  font-size: var(--text-compact);
+}
+
+.compact .actions {
+  right: var(--space-2);
+}
+
+@media (hover: none) {
+  .actions {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .row {
+    gap: var(--space-3);
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .gutter {
+    width: 32px;
+  }
 }

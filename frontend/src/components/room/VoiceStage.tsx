@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRTC } from "../../hooks/useRTC";
 import { usePermissions } from "../../hooks/usePermissions";
 import { Avatar } from "../common/Avatar";
+import { Tooltip } from "../common/Tooltip";
 import type { VoicePeer } from "../../types/rtc";
 import {
   Headphones,
@@ -90,6 +91,7 @@ const ParticipantTile: React.FC<TileProps> = ({
 
       {peer.isScreenSharing && onTogglePin && (
         <button
+          type="button"
           className={styles.tilePin}
           onClick={onTogglePin}
           aria-label={
@@ -196,72 +198,97 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
     <div className={styles.controls}>
       {inVoice || isJoining ? (
         <>
-          <button
-            className={`${styles.ctrl} ${isAudioMuted ? styles.ctrlDanger : ""}`}
-            onClick={toggleMute}
-            aria-label={isAudioMuted ? "Unmute microphone" : "Mute microphone"}
-            aria-pressed={isAudioMuted}
-            title={isAudioMuted ? "Unmute" : "Mute"}
-          >
-            {isAudioMuted ? <MicOff size={18} /> : <Mic size={18} />}
-          </button>
-
-          <button
-            className={`${styles.ctrl} ${isDeafened ? styles.ctrlDanger : ""}`}
-            onClick={toggleDeafen}
-            aria-label={isDeafened ? "Undeafen" : "Deafen"}
-            aria-pressed={isDeafened}
-            title={isDeafened ? "Undeafen" : "Deafen"}
-          >
-            {isDeafened ? <HeadphoneOff size={18} /> : <Headphones size={18} />}
-          </button>
-
-          {permissions.can_share_screen && (
+          <Tooltip content={isAudioMuted ? "Unmute" : "Mute"}>
             <button
-              className={`${styles.ctrl} ${isScreenSharing ? styles.ctrlAccent : ""}`}
-              onClick={toggleScreenShare}
+              type="button"
+              className={`${styles.ctrl} ${isAudioMuted ? styles.ctrlDanger : ""}`}
+              onClick={toggleMute}
               aria-label={
-                isScreenSharing ? "Stop presenting" : "Present your screen"
+                isAudioMuted ? "Unmute microphone" : "Mute microphone"
               }
-              aria-pressed={isScreenSharing}
-              title={isScreenSharing ? "Stop presenting" : "Present now"}
+              aria-pressed={isAudioMuted}
             >
-              {isScreenSharing ? (
-                <ScreenShareOff size={18} />
+              {isAudioMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+          </Tooltip>
+
+          <Tooltip content={isDeafened ? "Undeafen" : "Deafen"}>
+            <button
+              type="button"
+              className={`${styles.ctrl} ${isDeafened ? styles.ctrlDanger : ""}`}
+              onClick={toggleDeafen}
+              aria-label={isDeafened ? "Undeafen" : "Deafen"}
+              aria-pressed={isDeafened}
+            >
+              {isDeafened ? (
+                <HeadphoneOff size={20} />
               ) : (
-                <MonitorUp size={18} />
+                <Headphones size={20} />
               )}
             </button>
+          </Tooltip>
+
+          {permissions.can_share_screen && (
+            <Tooltip
+              content={isScreenSharing ? "Stop presenting" : "Present now"}
+            >
+              <button
+                type="button"
+                className={`${styles.ctrl} ${isScreenSharing ? styles.ctrlAccent : ""}`}
+                onClick={toggleScreenShare}
+                aria-label={
+                  isScreenSharing ? "Stop presenting" : "Present your screen"
+                }
+                aria-pressed={isScreenSharing}
+              >
+                {isScreenSharing ? (
+                  <ScreenShareOff size={20} />
+                ) : (
+                  <MonitorUp size={20} />
+                )}
+              </button>
+            </Tooltip>
           )}
 
           {presenter && (
-            <button
-              className={styles.ctrl}
-              onClick={toggleFullscreen}
-              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
-              title={isFullscreen ? "Exit full screen" : "Full screen"}
+            <Tooltip
+              content={isFullscreen ? "Exit full screen" : "Full screen"}
             >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
+              <button
+                type="button"
+                className={styles.ctrl}
+                onClick={toggleFullscreen}
+                aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+              >
+                {isFullscreen ? (
+                  <Minimize2 size={20} />
+                ) : (
+                  <Maximize2 size={20} />
+                )}
+              </button>
+            </Tooltip>
           )}
 
-          <button
-            className={`${styles.ctrl} ${styles.ctrlLeave}`}
-            onClick={disconnectAudio}
-            aria-label="Leave voice"
-            title="Leave voice"
-          >
-            <PhoneOff size={18} />
-          </button>
+          <Tooltip content="Leave voice">
+            <button
+              type="button"
+              className={`${styles.ctrl} ${styles.ctrlLeave}`}
+              onClick={disconnectAudio}
+              aria-label="Leave voice"
+            >
+              <PhoneOff size={20} />
+            </button>
+          </Tooltip>
         </>
       ) : (
         permissions.can_stream_audio && (
           <button
+            type="button"
             className={styles.joinBtn}
             onClick={() => void connectAudio()}
             aria-label="Join voice channel"
           >
-            <Radio size={15} aria-hidden="true" />
+            <Radio size={16} aria-hidden="true" />
             Join voice
           </button>
         )
@@ -273,7 +300,9 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
     return (
       <div className={styles.shell}>
         <div className={styles.empty}>
-          <Radio size={30} aria-hidden="true" />
+          <span className={styles.emptyIcon} aria-hidden="true">
+            <Radio size={28} />
+          </span>
           <span className={styles.emptyTitle}>
             {isJoining ? "Connecting…" : "No one is in voice"}
           </span>
@@ -324,6 +353,7 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
             <div className={styles.stageActions}>
               {sharing.length > 1 && (
                 <button
+                  type="button"
                   className={styles.stageBtn}
                   onClick={() =>
                     setPinnedId((prev) =>
@@ -350,6 +380,7 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
                 </button>
               )}
               <button
+                type="button"
                 className={styles.stageBtn}
                 onClick={toggleFullscreen}
                 aria-label={isFullscreen ? "Exit full screen" : "Full screen"}

@@ -9,8 +9,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
+  /** Leading icon */
   icon?: React.ReactNode;
+  /** Trailing icon, for forward actions ("Continue →") */
+  trailingIcon?: React.ReactNode;
   fullWidth?: boolean;
+  ref?: React.Ref<HTMLButtonElement>;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -19,9 +23,11 @@ export const Button: React.FC<ButtonProps> = ({
   size = "md",
   isLoading = false,
   icon,
+  trailingIcon,
   fullWidth = false,
   className = "",
   disabled,
+  type = "button",
   ...props
 }) => {
   const cls = [
@@ -36,15 +42,35 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
+      type={type}
       disabled={disabled || isLoading}
-      aria-disabled={disabled || isLoading || undefined}
       aria-busy={isLoading || undefined}
+      data-loading={isLoading || undefined}
       className={cls}
       {...props}
     >
-      {isLoading && <Spinner size={size === "sm" ? 14 : 16} />}
-      {!isLoading && icon && <span className={styles.icon}>{icon}</span>}
-      {children && <span>{children}</span>}
+      <span className={styles.content}>
+        {icon && (
+          <span className={styles.icon} aria-hidden="true">
+            {icon}
+          </span>
+        )}
+        {children}
+        {trailingIcon && (
+          <span className={styles.icon} aria-hidden="true">
+            {trailingIcon}
+          </span>
+        )}
+      </span>
+      {isLoading && (
+        <span className={styles.spinner}>
+          <Spinner
+            size={size === "sm" ? 14 : 16}
+            color="currentColor"
+            label={null}
+          />
+        </span>
+      )}
     </button>
   );
 };

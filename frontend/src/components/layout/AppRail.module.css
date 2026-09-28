@@ -1,17 +1,12 @@
 .rail {
   width: var(--rail-width);
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  padding: var(--space-2) 0;
+  align-items: center;
   gap: var(--space-2);
+  padding: var(--space-3) 0;
   background: var(--color-canvas-deep);
-  border-right: 1px solid var(--color-border-subtle);
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
@@ -21,105 +16,114 @@
   display: none;
 }
 
-/* Each slot carries the left-edge activity pill plus the icon itself */
+.list {
+  display: contents;
+}
+
+/* Each slot carries the edge pill plus the icon itself */
 .slot {
+  --pill-scale: 0;
+  position: relative;
+  width: 100%;
   display: flex;
-  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  animation: var(--animate-scale-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
 }
 
+/* The pill grows with interest: a nub on hover, full height when you are here.
+   Height is animated with scaleY so it stays on the compositor. */
 .pill {
-  width: 3px;
-  height: 8px;
-  border-radius: 0 3px 3px 0;
-  background: transparent;
-  flex-shrink: 0;
-  transition:
-    height var(--transition-fast),
-    background-color var(--transition-fast);
-}
-
-.slot:hover .pill {
-  height: 18px;
-  background: var(--color-text-secondary);
-}
-
-.pillActive,
-.slot:hover .pillActive {
-  height: 28px;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 0 4px 4px 0;
   background: var(--color-text-primary);
+  transform: scaleY(var(--pill-scale));
+  transition: transform var(--duration-normal) var(--ease-out);
+  pointer-events: none;
 }
 
-.pillUnread {
-  height: 10px;
-  background: var(--color-text-primary);
+.slot:hover {
+  --pill-scale: 0.5;
+}
+
+.slot[data-active] {
+  --pill-scale: 1;
 }
 
 .item {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  margin-left: var(--space-2);
-  border-radius: var(--radius-full);
-  color: var(--color-text-secondary);
+  width: var(--rail-item-size);
+  height: var(--rail-item-size);
+  border-radius: 50%;
+  color: var(--color-text-primary);
   background: var(--color-surface-2);
-  border: none;
-  cursor: pointer;
-  text-decoration: none;
-  font-size: var(--text-meta);
+  font-size: var(--text-compact);
   font-weight: 700;
   letter-spacing: -0.01em;
-  flex-shrink: 0;
-  position: relative;
+  cursor: pointer;
+  text-decoration: none;
   transition:
-    border-radius var(--transition-fast),
+    border-radius var(--duration-normal) var(--ease-out),
     background-color var(--transition-fast),
-    color var(--transition-fast);
+    color var(--transition-fast),
+    transform var(--transition-instant);
 }
 
-/* Squircle-on-hover is the affordance that says "this is a room, not a button" */
-.item:hover {
+.item:active {
+  transform: translateY(1px);
+}
+
+/* Circle → squircle is the affordance that says "you can go here" */
+.item:hover,
+.slot[data-active] .item {
   border-radius: var(--radius-xl);
   background: var(--color-accent);
   color: var(--color-text-on-accent);
 }
 
-.itemActive {
-  border-radius: var(--radius-xl);
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
+/* The create action reads as an action, not a place */
+.itemCreate {
+  color: var(--color-success);
 }
 
-.itemHome {
-  border-radius: var(--radius-xl);
+.itemCreate:hover {
+  background: var(--color-success);
+  color: var(--color-canvas-deep);
 }
 
-.itemHomeActive {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
+.itemCreate svg {
+  transition: transform var(--duration-normal) var(--ease-spring);
 }
 
-.itemGhost {
+.itemCreate:hover svg {
+  transform: rotate(90deg);
+}
+
+.itemYou {
+  --avatar-ring: var(--color-canvas-deep);
   background: transparent;
-  border: 1px dashed var(--color-border-strong);
-  color: var(--color-success);
+  padding: 0;
 }
 
-.itemGhost:hover {
-  background: var(--color-success-subtle);
-  border-color: var(--color-success-border);
-  color: var(--color-success);
+.itemYou:hover {
+  background: transparent;
 }
 
 .divider {
-  width: 24px;
-  height: 1px;
-  margin: 0 auto;
-  background: var(--color-border-default);
-  border-radius: var(--radius-full);
+  width: 32px;
+  height: 2px;
   flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-border-default);
 }
 
 .spacer {
@@ -127,25 +131,95 @@
   min-height: var(--space-2);
 }
 
+/* Only where no sidebar carries the user tray (tablet and phone) */
+.compactOnly {
+  display: none;
+}
+
 .badge {
   position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  right: -4px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: var(--radius-full);
   background: var(--color-danger);
   color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
+  font-size: var(--text-micro);
+  font-weight: 800;
+  line-height: 14px;
   text-align: center;
-  border: 2px solid var(--color-canvas-deep);
+  border: 3px solid var(--color-canvas-deep);
+  font-variant-numeric: tabular-nums;
+  animation: var(--animate-pop-in);
 }
 
+@media (max-width: 1023px) {
+  .compactOnly {
+    display: flex;
+  }
+
+  .rail[data-variant="room"] .compactOnly {
+    display: none;
+  }
+}
+
+/* Phone: a bottom navigation bar that scrolls sideways when there are many
+   rooms. The pill moves to the top edge and grows horizontally. */
 @media (max-width: 767px) {
   .rail {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3)
+      calc(var(--space-2) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--color-border-subtle);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .slot {
+    width: auto;
+    padding: 0 2px;
+  }
+
+  .pill {
+    left: 50%;
+    top: calc(var(--space-2) * -1);
+    width: 28px;
+    height: 3px;
+    margin: 0 0 0 -14px;
+    border-radius: 0 0 3px 3px;
+    transform: scaleX(var(--pill-scale));
+  }
+
+  .item {
+    width: 40px;
+    height: 40px;
+  }
+
+  .divider {
+    width: 2px;
+    height: 24px;
+    align-self: center;
+    margin: 0 var(--space-1);
+  }
+
+  .spacer {
     display: none;
+  }
+
+  .compactOnly,
+  .rail[data-variant="room"] .compactOnly {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .badge {
+    right: -6px;
+    bottom: auto;
+    top: -4px;
   }
 }

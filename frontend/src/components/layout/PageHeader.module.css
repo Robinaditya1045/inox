@@ -1,0 +1,78 @@
+.header {
+  min-height: var(--header-height);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  box-shadow: 0 1px 0 rgba(2, 4, 12, 0.35);
+  background: var(--color-surface-1);
+  position: relative;
+  z-index: var(--z-raised);
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.icon {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.title {
+  font-size: var(--text-subhead);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.rule {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border-default);
+  flex-shrink: 0;
+}
+
+.middle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Phones: whatever sits in the middle (tabs) drops to its own row */
+@media (max-width: 767px) {
+  .header {
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding: 0 var(--space-3);
+  }
+
+  .titleGroup {
+    height: var(--header-height);
+    flex: 1;
+  }
+
+  .hasMiddle .rule {
+    display: none;
+  }
+
+  .hasMiddle .middle {
+    order: 3;
+    flex-basis: 100%;
+    padding-bottom: var(--space-2);
+  }
+}
