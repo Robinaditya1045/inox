@@ -25,7 +25,7 @@ export function Button({
   ref,
   ...props 
 }: ButtonProps) {
-  const baseStyles = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] disabled:pointer-events-none disabled:opacity-50 cursor-pointer select-none active:scale-[0.98]"
+  const baseStyles = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] disabled:pointer-events-none disabled:opacity-50 cursor-pointer select-none active:scale-[0.98]"
   
   const variantStyles = {
     default: "bg-white text-black hover:bg-zinc-200 shadow-md font-bold",

@@ -12,6 +12,47 @@
   /* Geist Mono is loaded in index.html and is the intended `font-mono` face. */
   --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Motion — the same vocabulary as the viewer app (frontend/src/styles/theme.css):
+     `ease-snappy` for things arriving, `ease-exit` for things leaving, and a
+     handful of named entrances exposed as `animate-*` utilities. */
+  --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  --animate-enter: enter 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-overlay-in: overlay-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-overlay-out: overlay-out 150ms cubic-bezier(0.4, 0, 1, 1) both;
+  --animate-dialog-in: dialog-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-dialog-out: dialog-out 150ms cubic-bezier(0.4, 0, 1, 1) both;
+
+  @keyframes enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes overlay-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+  }
+  @keyframes dialog-out {
+    to {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
 }
 
 :root {
@@ -35,6 +76,10 @@
   --input: #27272a;
   --ring: #d4d4d8;
   --radius: 0.5rem;
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
@@ -87,20 +132,34 @@ body {
   border-color: rgba(6, 182, 212, 0.4);
 }
 
-/* Micro-animations & Transitions */
-@keyframes pulse-subtle {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.85;
-    transform: scale(0.98);
+/* Keyboard focus: a visible ring on anything focusable that does not draw its
+   own. In the base layer so the primitives' `focus-visible:outline-none` +
+   `ring-*` utilities still win where they are used. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid #34d399;
+    outline-offset: 2px;
   }
 }
-.animate-pulse-subtle {
-  animation: pulse-subtle 3s infinite ease-in-out;
+
+/* Honour reduced motion everywhere: entrances land on their final frame and
+   decorative loops (pulse, bounce) stop. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* A spinner is status, not decoration: keep it turning, slowly. */
+  .animate-spin {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /*
@@ -125,7 +184,9 @@ body {
   background: #111111;
   border: 1px solid #27272a;
   border-radius: var(--radius);
-  transition: all 0.2s ease;
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease;
 }
 .surface-card:hover {
   border-color: #3f3f46;

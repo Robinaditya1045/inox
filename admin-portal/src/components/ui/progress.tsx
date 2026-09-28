@@ -12,7 +12,7 @@ export function Progress({ className, value = 0, ...props }: ProgressProps) {
       {...props}
     >
       <div
-        className="h-full w-full flex-1 bg-emerald-500 transition-all duration-300 ease-in-out"
+        className="h-full w-full flex-1 bg-emerald-500 transition-transform duration-300 ease-snappy"
         style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
       />
     </div>

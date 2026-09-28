@@ -60,7 +60,7 @@ export function TabsTrigger({ className, value, children, ...props }: TabsTrigge
       aria-selected={isActive}
       onClick={() => onValueChange(value)}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all cursor-pointer",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-[color,background-color,border-color,transform] duration-150 ease-snappy cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
         isActive
           ? "bg-zinc-800 text-white shadow-sm border border-zinc-700/50"
           : "hover:text-zinc-200 hover:bg-zinc-800/30",
@@ -84,8 +84,7 @@ export function TabsContent({ className, value, children, ...props }: TabsConten
   return (
     <div
       role="tabpanel"
-      className={cn("mt-2 ring-offset-background focus-visible:outline-none animate-pulse-subtle", className)}
-      style={{ animationDuration: "0.3s", animationIterationCount: 1 }}
+      className={cn("mt-2 ring-offset-background focus-visible:outline-none animate-enter", className)}
       {...props}
     >
       {children}

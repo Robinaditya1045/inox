@@ -32,7 +32,7 @@ export const MetricCard = React.memo(function MetricCard({
   footerText,
 }: MetricCardProps) {
   return (
-    <Card className="border-zinc-800 bg-gradient-to-br from-[#111111] to-[#16161a] hover:border-zinc-700 transition-all duration-200 shadow-lg">
+    <Card className="border-zinc-800 bg-gradient-to-br from-[#111111] to-[#16161a] hover:border-zinc-700 hover:-translate-y-0.5 transition-[border-color,box-shadow,transform] duration-200 ease-snappy shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center space-x-2">
           <CardTitle className="text-xs font-semibold uppercase tracking-wider text-zinc-400">

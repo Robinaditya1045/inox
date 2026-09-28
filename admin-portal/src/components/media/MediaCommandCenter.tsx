@@ -21,7 +21,7 @@ export function MediaCommandCenter() {
   }, [assets])
 
   return (
-    <div className="space-y-6 animate-pulse-subtle" style={{ animationDuration: "0.3s", animationIterationCount: 1 }}>
+    <div className="space-y-6 animate-enter">
       {/* Top Banner & Control Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-zinc-800 bg-gradient-to-r from-zinc-900/80 to-zinc-950/80 backdrop-blur-md">
         <div className="flex items-center space-x-3">

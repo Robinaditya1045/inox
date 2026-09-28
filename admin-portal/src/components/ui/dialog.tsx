@@ -40,6 +40,12 @@ export function DialogTrigger({ children, asChild, ...props }: React.HTMLAttribu
 
 export function DialogContent({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   const { open, onOpenChange } = React.useContext(DialogContext)
+  const panelRef = React.useRef<HTMLDivElement | null>(null)
+
+  // Stays mounted after `open` turns false until the exit animation finishes,
+  // so the dialog leaves the way it arrived instead of vanishing.
+  const [present, setPresent] = React.useState(open)
+  if (open && !present) setPresent(true)
 
   // Escape-to-close and background scroll locking: this dialog is hand-rolled
   // rather than built on Radix, so neither behaviour came for free. Without them
@@ -62,19 +68,38 @@ export function DialogContent({ className, children, ...props }: React.HTMLAttri
     }
   }, [open, onOpenChange])
 
-  if (!open) return null
+  // Move focus onto the dialog itself on open, and hand it back to whatever
+  // opened it on close. Deliberately not the first control inside: in the room
+  // inspector that is "Terminate Room", one stray Enter away from firing.
+  React.useEffect(() => {
+    if (!open) return
+    const opener = document.activeElement as HTMLElement | null
+    panelRef.current?.focus()
+    return () => opener?.focus?.()
+  }, [open])
+
+  if (!present) return null
+
+  const state = open ? "open" : "closed"
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+        data-state={state}
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out"
         onClick={() => onOpenChange(false)}
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
+        data-state={state}
+        onAnimationEnd={(e) => {
+          if (e.target === e.currentTarget && !open) setPresent(false)
+        }}
         className={cn(
-          "relative z-50 grid w-full max-w-lg gap-4 border border-zinc-800 bg-[#111111] p-6 shadow-2xl duration-200 rounded-xl sm:max-w-lg",
+          "relative z-50 grid w-full max-w-lg gap-4 border border-zinc-800 bg-[#111111] p-6 shadow-2xl rounded-t-xl sm:rounded-xl max-h-[92dvh] overflow-y-auto overscroll-contain outline-none data-[state=open]:animate-dialog-in data-[state=closed]:animate-dialog-out",
           className
         )}
         {...props}
@@ -84,7 +109,7 @@ export function DialogContent({ className, children, ...props }: React.HTMLAttri
           type="button"
           aria-label="Close dialog"
           onClick={() => onOpenChange(false)}
-          className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 text-zinc-400 hover:text-white cursor-pointer"
+          className="absolute right-4 top-4 rounded-md p-1 opacity-70 transition-[opacity,background-color,color] duration-150 hover:opacity-100 hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
         >
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
