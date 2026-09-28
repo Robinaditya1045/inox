@@ -99,6 +99,7 @@ func (a *App) Run() error {
 	isProd := strings.ToLower(a.Config.Environment) == "production"
 	authHandler := handler.NewAuthHandler(authService, isProd)
 	roomHandler := handler.NewRoomHandler(roomService)
+	roomHandler.SetActivitySource(hub)
 	wsHandler := handler.NewWSHandler(hub)
 	chatHandler := handler.NewChatHandler(chatService)
 	adminHandler := handler.NewAdminHandler(telemetryHub)

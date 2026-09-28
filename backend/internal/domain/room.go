@@ -74,6 +74,24 @@ type Room struct {
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`
 	Members         []*RoomMember `json:"members,omitempty"`
+
+	// Activity is set only when someone is connected to the room right now, so
+	// the lobby can tell a room that is in use from one that merely exists.
+	Activity *RoomActivity `json:"activity,omitempty"`
+}
+
+// RoomActivity is a room's live state as the lobby sees it: who is in it and what
+// it is playing. It comes from the WebSocket hub, not the database, because
+// membership rows outlive the people in them.
+type RoomActivity struct {
+	// Viewers counts distinct users with an open connection to the room; one
+	// person in two tabs is one viewer.
+	Viewers int `json:"viewers"`
+	// IsPlaying is true while the room's media is running: a VOD that someone
+	// pressed play on, or a live stream with a sync leader reporting positions.
+	IsPlaying bool      `json:"is_playing"`
+	MediaURL  string    `json:"media_url,omitempty"`
+	Kind      MediaKind `json:"kind,omitempty"`
 }
 
 // RoomMember represents a user's membership and permission set inside a specific room.
