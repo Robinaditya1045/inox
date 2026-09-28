@@ -85,6 +85,8 @@ func NewRouter(
 		if liveHandler != nil {
 			// The master playlist is the one live route that needs a real session.
 			mux.Handle("GET /api/v1/live/{slug}/master.m3u8", requireAuth(http.HandlerFunc(liveHandler.ServeMaster)))
+			// Viewer-safe channel summaries for the room media library.
+			mux.Handle("GET /api/v1/live/channels", requireAuth(http.HandlerFunc(liveHandler.ListSummaries)))
 		}
 		if authHandler != nil {
 			mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(authHandler.Me)))
