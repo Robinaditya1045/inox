@@ -7,6 +7,7 @@ import (
 
 	"github.com/inox/inox/backend/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -208,6 +209,12 @@ func (r *postgresRoomRepository) AddMember(ctx context.Context, m *domain.RoomMe
 		m.Permissions.CanKickUsers, m.Permissions.CanManageRoles,
 	).Scan(&m.JoinedAt)
 	if err != nil {
+		// (room_id, user_id) is the primary key: a second insert for the same pair
+		// means someone else's request made them a member first.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrAlreadyMember
+		}
 		return fmt.Errorf("failed to add member to room: %w", err)
 	}
 	return nil

@@ -199,3 +199,29 @@ type LivePosition struct {
 	Discontinuity int64   `json:"cc"`
 	OffsetSeconds float64 `json:"offset"`
 }
+
+// LiveChannelSummary is the viewer-facing view of a channel: enough to pick one in
+// the room's media library and to see whether it is up. It deliberately leaves out
+// source_url, resolver config, fallbacks and diagnostics -- where a feed comes from
+// is an operator concern, and the admin list is the place for it. The resolver is
+// kept only as a label ("browser", "api", ...) of how the stream is obtained.
+type LiveChannelSummary struct {
+	MediaAssetID string            `json:"media_asset_id"`
+	Slug         string            `json:"slug"`
+	Title        string            `json:"title"`
+	Resolver     string            `json:"resolver"`
+	Status       LiveChannelStatus `json:"status"`
+	IsDVR        bool              `json:"is_dvr"`
+}
+
+// Summary projects a channel onto what a viewer may see.
+func (c *LiveChannel) Summary() LiveChannelSummary {
+	return LiveChannelSummary{
+		MediaAssetID: c.MediaAssetID,
+		Slug:         c.Slug,
+		Title:        c.Title,
+		Resolver:     c.Resolver,
+		Status:       c.Status,
+		IsDVR:        c.IsDVR,
+	}
+}

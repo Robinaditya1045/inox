@@ -40,7 +40,7 @@ export function App() {
       )}
 
       {activeTab === "debug" && (
-        <Card className="border-zinc-800">
+        <Card className="border-zinc-800 animate-enter">
           <CardHeader>
             <CardTitle>Live Tracing & Debug Log Streamer</CardTitle>
             <CardDescription>

@@ -105,3 +105,85 @@ func TestCreateRoomHTTPHandler(t *testing.T) {
 		t.Errorf("expected both room and member objects in response, got %+v", resp)
 	}
 }
+
+// listingRoomService returns a fixed room list; everything else is the shared mock.
+type listingRoomService struct {
+	mockRoomService
+	rooms []*domain.Room
+}
+
+func (s *listingRoomService) ListRooms(ctx context.Context, userID string) ([]*domain.Room, error) {
+	return s.rooms, nil
+}
+
+type fakeActivitySource struct {
+	snapshot map[string]domain.RoomActivity
+	err      error
+}
+
+func (f *fakeActivitySource) RoomActivity(ctx context.Context) (map[string]domain.RoomActivity, error) {
+	return f.snapshot, f.err
+}
+
+func listRoomsAs(t *testing.T, h *handler.RoomHandler) []map[string]any {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/v1/rooms", nil)
+	session := &domain.Session{ID: "sess_mock", UserID: "user-abc-1", Username: "robin", ExpiresAt: time.Now().Add(time.Hour)}
+	req = req.WithContext(middleware.WithSessionContext(req.Context(), session))
+	rec := httptest.NewRecorder()
+
+	h.ListRooms(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d", rec.Code)
+	}
+	var rooms []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&rooms); err != nil {
+		t.Fatalf("failed to parse response json: %v", err)
+	}
+	return rooms
+}
+
+// Activity is attached only to rooms the caller can already see: a busy private
+// room elsewhere in the snapshot must not leak into someone else's lobby.
+func TestListRoomsAttachesActivityOnlyToListedRooms(t *testing.T) {
+	svc := &listingRoomService{rooms: []*domain.Room{
+		{ID: "busy", Name: "Busy"},
+		{ID: "quiet", Name: "Quiet"},
+	}}
+	h := handler.NewRoomHandler(svc)
+	h.SetActivitySource(&fakeActivitySource{snapshot: map[string]domain.RoomActivity{
+		"busy":          {Viewers: 3, IsPlaying: true, MediaURL: "https://cdn.example/movie.m3u8", Kind: domain.MediaKindVOD},
+		"someone-elses": {Viewers: 9, IsPlaying: true},
+	}})
+
+	rooms := listRoomsAs(t, h)
+	if len(rooms) != 2 {
+		t.Fatalf("expected the 2 listed rooms, got %d", len(rooms))
+	}
+	busy, ok := rooms[0]["activity"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected activity on the busy room, got %+v", rooms[0])
+	}
+	if busy["viewers"] != float64(3) || busy["is_playing"] != true {
+		t.Errorf("unexpected activity %+v", busy)
+	}
+	if _, present := rooms[1]["activity"]; present {
+		t.Errorf("an idle room must carry no activity, got %+v", rooms[1]["activity"])
+	}
+}
+
+// The hub being slow or down must not take the room list with it.
+func TestListRoomsStillServesWhenActivityFails(t *testing.T) {
+	svc := &listingRoomService{rooms: []*domain.Room{{ID: "r1", Name: "Room"}}}
+	h := handler.NewRoomHandler(svc)
+	h.SetActivitySource(&fakeActivitySource{err: context.DeadlineExceeded})
+
+	rooms := listRoomsAs(t, h)
+	if len(rooms) != 1 {
+		t.Fatalf("expected the room to still be listed, got %d", len(rooms))
+	}
+	if _, present := rooms[0]["activity"]; present {
+		t.Errorf("expected no activity when the source fails, got %+v", rooms[0]["activity"])
+	}
+}

@@ -1,21 +1,62 @@
 @import "./styles/reset.css";
 @import "./styles/theme.css";
 
+html {
+  background-color: var(--color-canvas-deep);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--color-canvas);
   color: var(--color-text-primary);
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   font-size: var(--text-body);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Custom Scrollbar */
+h1,
+h2,
+h3,
+h4 {
+  text-wrap: balance;
+  line-height: var(--leading-tight);
+}
+
+p {
+  text-wrap: pretty;
+}
+
+button,
+a,
+[role="button"],
+[role="tab"],
+input,
+textarea,
+select,
+label {
+  touch-action: manipulation;
+}
+
+::selection {
+  background: var(--color-accent-subtle-hover);
+  color: var(--color-text-primary);
+}
+
+/* Scrollbars: thin, and only as loud as the surface they sit on */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -23,28 +64,19 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
+  background: var(--color-border-default);
   border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: var(--color-border-strong);
+  background-clip: padding-box;
 }
 
 /* Screen reader only utility */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
-/* Live announcer region (aria-live) */
+.sr-only,
 #room-announcer {
   position: absolute;
   width: 1px;
@@ -57,21 +89,91 @@ body {
   border-width: 0;
 }
 
-/* Legacy compat — glass-panel kept during transition, will be removed phase by phase */
-.glass-panel {
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border-default);
+/* Skip link: invisible until a keyboard user tabs onto it */
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: var(--z-toast);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-size: var(--text-compact);
+  font-weight: 600;
+  transform: translateY(-160%);
+  transition: transform var(--transition-fast);
 }
 
-.glass-panel-heavy {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border-default);
-  box-shadow: var(--shadow-menu);
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
-/* Spin animation (used by Spinner) */
-@keyframes spin {
+/* ── Shared keyframes ──────────────────────────────────────────
+   Consumed through the --animate-* tokens in theme.css. Entrances define
+   only their start frame and animate to the element's own styles, so
+   nothing lingers to fight :hover / :active afterwards. */
+@keyframes inx-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes inx-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes inx-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes inx-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes inx-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes inx-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes inx-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes inx-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes inx-pulse-ring {
+  0% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
   }
 }

@@ -1,0 +1,106 @@
+/* Top-centre, just under the 48px header bar: clear of the header's own
+   controls, and of the player controls and chat composer at the bottom. */
+.viewport {
+  position: fixed;
+  top: calc(var(--header-height) + var(--space-3));
+  left: 50%;
+  z-index: var(--z-toast);
+  width: min(calc(100% - var(--space-8)), 380px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-border-default);
+  box-shadow: var(--shadow-menu), var(--shadow-inset-highlight);
+  pointer-events: auto;
+  animation: toastIn var(--duration-slow) var(--ease-spring);
+}
+
+.toast[data-state="closed"] {
+  animation: toastOut var(--duration-exit) var(--ease-in) forwards;
+}
+
+.icon {
+  display: flex;
+  margin-top: 1px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.toast[data-tone="success"] .icon {
+  color: var(--color-success);
+}
+
+.toast[data-tone="danger"] {
+  border-color: var(--color-danger-border);
+}
+
+.toast[data-tone="danger"] .icon {
+  color: var(--color-danger-text);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  font-size: var(--text-compact);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.description {
+  font-size: var(--text-meta);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.close {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.close:hover {
+  color: var(--color-text-primary);
+  background: var(--color-fill-hover);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+}
+
+@keyframes toastOut {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}

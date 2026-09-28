@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useRTC } from "../../hooks/useRTC";
 import { Avatar } from "../common/Avatar";
+import { IconButton } from "../common/IconButton";
 import { SettingsShell } from "../profile/SettingsShell";
 import { Mic, MicOff, Headphones, HeadphoneOff, Settings } from "lucide-react";
 import styles from "./UserTray.module.css";
@@ -36,6 +37,7 @@ export const UserTray: React.FC<UserTrayProps> = ({ roomId }) => {
     <>
       <div className={styles.tray}>
         <button
+          type="button"
           className={styles.identity}
           onClick={() => setIsSettingsOpen(true)}
           aria-label="Profile and settings"
@@ -49,52 +51,58 @@ export const UserTray: React.FC<UserTrayProps> = ({ roomId }) => {
           />
           <span className={styles.names}>
             <span className={styles.username}>{user?.username || "You"}</span>
-            <span className={styles.status}>{status}</span>
+            <span
+              className={`${styles.status} ${inVoice && !muted && !deafened ? styles.statusLive : ""}`}
+            >
+              <span key={status} className={styles.statusText}>
+                {status}
+              </span>
+            </span>
           </span>
         </button>
 
-        <button
-          className={`${styles.btn} ${muted ? styles.btnActive : ""}`}
-          onClick={toggleMute}
-          disabled={!inVoice}
-          aria-label={muted ? "Unmute microphone" : "Mute microphone"}
-          aria-pressed={muted}
-          title={
+        <IconButton
+          label={muted ? "Unmute microphone" : "Mute microphone"}
+          tooltip={
             inVoice
               ? muted
                 ? "Unmute"
                 : "Mute"
               : "Join voice to use your microphone"
           }
-        >
-          {muted ? <MicOff size={17} /> : <Mic size={17} />}
-        </button>
-
-        <button
-          className={`${styles.btn} ${deafened ? styles.btnActive : ""}`}
-          onClick={toggleDeafen}
+          isActive={muted}
+          activeTone="danger"
+          onClick={toggleMute}
           disabled={!inVoice}
-          aria-label={deafened ? "Undeafen" : "Deafen"}
-          aria-pressed={deafened}
-          title={
+          aria-pressed={muted}
+        >
+          {muted ? <MicOff size={18} /> : <Mic size={18} />}
+        </IconButton>
+
+        <IconButton
+          label={deafened ? "Undeafen" : "Deafen"}
+          tooltip={
             inVoice
               ? deafened
                 ? "Undeafen"
                 : "Deafen"
               : "Join voice to deafen"
           }
+          isActive={deafened}
+          activeTone="danger"
+          onClick={toggleDeafen}
+          disabled={!inVoice}
+          aria-pressed={deafened}
         >
-          {deafened ? <HeadphoneOff size={17} /> : <Headphones size={17} />}
-        </button>
+          {deafened ? <HeadphoneOff size={18} /> : <Headphones size={18} />}
+        </IconButton>
 
-        <button
-          className={styles.btn}
+        <IconButton
+          label="User settings"
           onClick={() => setIsSettingsOpen(true)}
-          aria-label="User settings"
-          title="User settings"
         >
-          <Settings size={17} />
-        </button>
+          <Settings size={18} />
+        </IconButton>
       </div>
 
       <SettingsShell

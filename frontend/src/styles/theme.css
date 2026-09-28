@@ -1,25 +1,39 @@
 /* ============================================================
    INOX Design System — CSS Custom Properties
+   The single source of truth for colour, type, space, radius,
+   elevation and motion. Components reference these tokens; they
+   should not introduce raw values of their own.
+   Figtree is loaded once, from index.html (with preconnect).
    ============================================================ */
 
-/* Typography */
-@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap");
-
 :root {
+  color-scheme: dark;
+
   /* ── Fonts ──────────────────────────────────────────────── */
   --font-sans:
-    "Figtree", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    system-ui, sans-serif;
+    "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --font-display: var(--font-sans);
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
-  /* ── Surfaces ───────────────────────────────────────────── */
+  /* ── Surfaces (darkest → lightest) ──────────────────────────
+     canvas-deep: the rail and trays · canvas: sidebars and pages
+     surface-1: the workspace · surface-2/3: raised and hovered */
   --color-canvas-deep: #0a0d14;
   --color-canvas: #0f1117;
   --color-surface-1: #161b27;
-  --color-surface-2: #1a2035;
-  --color-surface-3: #1f2640;
-  --color-surface-overlay: rgba(10, 13, 20, 0.82);
+  --color-surface-2: #1b2133;
+  --color-surface-3: #222a40;
+  --color-surface-4: #2a3350;
+  --color-surface-overlay: rgba(9, 12, 19, 0.82);
+  --color-backdrop: rgba(5, 7, 12, 0.72);
+  --color-tooltip-bg: #05070c;
+
+  /* Row-level interaction fills, layered over any surface */
+  --color-fill-hover: rgba(148, 163, 204, 0.08);
+  --color-fill-active: rgba(148, 163, 204, 0.14);
+  --color-fill-selected: rgba(148, 163, 204, 0.18);
 
   /* ── Borders ────────────────────────────────────────────── */
   --color-border-subtle: rgba(255, 255, 255, 0.06);
@@ -28,51 +42,96 @@
 
   /* ── Text ───────────────────────────────────────────────── */
   --color-text-primary: #e8eaf0;
-  --color-text-secondary: #9aa3b5;
-  --color-text-muted: #6b7585;
+  --color-text-secondary: #a3acbd;
+  /* ≥4.5:1 on canvas and surface-1, so it is safe for meta text */
+  --color-text-muted: #7c8699;
+  --color-text-disabled: #555e70;
   --color-text-on-accent: #ffffff;
 
-  /* ── Single Accent ──────────────────────────────────────── */
-  --color-accent: #4f73e0;
-  --color-accent-hover: #6285e8;
-  --color-accent-subtle: rgba(79, 115, 224, 0.12);
-  --color-accent-border: rgba(79, 115, 224, 0.35);
+  /* ── Single Accent ──────────────────────────────────────────
+     --color-accent is for fills (white text on it clears 4.5:1).
+     --color-accent-text is for accent-coloured text and icons on
+     dark surfaces, where the fill colour would read too dim. */
+  --color-accent: #4a6bd9;
+  --color-accent-hover: #3f5fcc;
+  --color-accent-active: #3654bb;
+  --color-accent-text: #8ea6f2;
+  --color-accent-subtle: rgba(74, 107, 217, 0.14);
+  --color-accent-subtle-hover: rgba(74, 107, 217, 0.22);
+  --color-accent-border: rgba(110, 138, 230, 0.4);
 
   /* ── Semantic states ────────────────────────────────────── */
   --color-success: #2ecc71;
+  --color-success-hover: #27b463;
   --color-success-subtle: rgba(46, 204, 113, 0.12);
   --color-success-border: rgba(46, 204, 113, 0.3);
   --color-warning: #e6a817;
   --color-warning-subtle: rgba(230, 168, 23, 0.12);
   --color-warning-border: rgba(230, 168, 23, 0.3);
   --color-danger: #e05656;
+  --color-danger-hover: #c94848;
+  --color-danger-text: #f07a7a;
   --color-danger-subtle: rgba(224, 86, 86, 0.12);
   --color-danger-border: rgba(224, 86, 86, 0.3);
-  --color-danger-hover: #e86868;
 
   /* ── Presence / live ────────────────────────────────────── */
   --color-live: #2ecc71;
-  --color-speaking: #4f73e0;
+  --color-speaking: #5b8def;
   --color-offline: #6b7585;
   --color-recording: #e05656;
   --color-role-owner: #e6a817;
-  --color-role-mod: #4f73e0;
-  --color-mention: rgba(79, 115, 224, 0.22);
-  --color-mention-text: #93aaf0;
+  --color-role-mod: #8ea6f2;
+  --color-mention: rgba(74, 107, 217, 0.22);
+  --color-mention-text: #a3b7f5;
+
+  /* Initials avatars: muted hues picked per user from their name */
+  --avatar-hue-0: #4a6bd9;
+  --avatar-hue-1: #2f9e8f;
+  --avatar-hue-2: #b0643a;
+  --avatar-hue-3: #8a5bc4;
+  --avatar-hue-4: #c2476b;
+  --avatar-hue-5: #3d8fb8;
+  --avatar-hue-6: #6f8a3c;
+  --avatar-hue-7: #b8862e;
+
+  /* ── Over video & artwork ──────────────────────────────────
+     Chrome laid on top of a picture has to stay legible whatever the
+     picture is, so it uses its own dark scrims and white, not surfaces. */
+  --color-media-bg: #000000;
+  --color-on-media: #ffffff;
+  --color-media-glyph: rgba(255, 255, 255, 0.55);
+  --color-media-scrim: rgba(3, 5, 10, 0.55);
+  --color-media-scrim-strong: rgba(3, 5, 10, 0.72);
+  --color-media-edge: rgba(255, 255, 255, 0.12);
+  --color-media-track: rgba(255, 255, 255, 0.2);
 
   /* ── Focus / a11y ───────────────────────────────────────── */
+  --focus-ring-color: #7d98ee;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  /* Box-shadow variant, for elements that clip their outline */
   --color-focus-ring:
-    0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-accent);
+    0 0 0 2px var(--color-canvas), 0 0 0 4px var(--focus-ring-color);
 
-  /* ── Shadows (elevation only) ────────────────────────────── */
-  --shadow-menu: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  /* ── Elevation ──────────────────────────────────────────────
+     Shadows are tinted with the canvas hue rather than pure black,
+     and all imply the same light source from above. */
+  --shadow-card: 0 1px 2px rgba(2, 4, 12, 0.4);
+  --shadow-raised:
+    0 1px 2px rgba(2, 4, 12, 0.35), 0 8px 24px -6px rgba(2, 4, 12, 0.55);
+  --shadow-menu:
+    0 12px 32px -4px rgba(2, 4, 12, 0.6), 0 2px 8px rgba(2, 4, 12, 0.4);
   --shadow-modal:
-    0 24px 64px rgba(0, 0, 0, 0.7), 0 8px 24px rgba(0, 0, 0, 0.45);
-  --shadow-tooltip: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+    0 24px 64px -8px rgba(2, 4, 12, 0.75), 0 8px 24px rgba(2, 4, 12, 0.45);
+  --shadow-tooltip: 0 6px 16px -2px rgba(2, 4, 12, 0.6);
+  --shadow-dropdown: var(--shadow-menu);
+  --shadow-floating: var(--shadow-raised);
+  --shadow-inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-  /* ── Spacing ────────────────────────────────────────────── */
+  /* ── Spacing (4px grid) ─────────────────────────────────── */
+  --space-0-5: 2px;
   --space-1: 4px;
+  --space-1-5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -81,82 +140,169 @@
   --space-8: 32px;
   --space-10: 40px;
   --space-12: 48px;
+  --space-16: 64px;
 
-  /* ── Border Radius ──────────────────────────────────────── */
+  /* ── Border Radius ──────────────────────────────────────────
+     Tighter on inner elements, softer on containers. */
+  --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+  --radius-2xl: 16px;
   --radius-full: 9999px;
   --radius-avatar: 50%;
   --radius-tile: 6px;
-  --radius-modal: 12px;
+  --radius-modal: 14px;
 
-  /* ── Typography Scale ───────────────────────────────────── */
+  /* ── Typography ─────────────────────────────────────────── */
   --text-display: 1.75rem;
+  --text-title: 1.375rem;
   --text-heading: 1.25rem;
   --text-subhead: 1rem;
   --text-body: 0.9375rem;
   --text-compact: 0.875rem;
   --text-meta: 0.8125rem;
   --text-label: 0.75rem;
+  --text-micro: 0.6875rem;
   --text-button: 0.875rem;
 
-  /* ── Transitions ────────────────────────────────────────── */
-  --transition-instant: 80ms ease;
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-panel: 220ms cubic-bezier(0.4, 0, 1, 1);
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.5;
+
+  --tracking-tight: -0.015em;
+  --tracking-display: -0.025em;
+  --tracking-caps: 0.06em;
+
+  /* ── Motion ─────────────────────────────────────────────────
+     One vocabulary for the whole app:
+       ease-standard  hover/press/state changes
+       ease-out       things arriving (entrances, drawers opening)
+       ease-in        things leaving (exits are shorter than entrances)
+       ease-spring    small, playful settles: pills, badges, toggles */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-normal: 200ms;
+  --duration-slow: 280ms;
+  --duration-enter: 240ms;
+  --duration-exit: 150ms;
+  --stagger-step: 28ms;
+
+  --transition-instant: var(--duration-instant) var(--ease-standard);
+  --transition-fast: var(--duration-fast) var(--ease-standard);
+  --transition-normal: var(--duration-normal) var(--ease-standard);
+  --transition-slow: var(--duration-slow) var(--ease-standard);
+  --transition-panel: var(--duration-slow) var(--ease-out);
+  --transition-spring: var(--duration-normal) var(--ease-spring);
+
+  /* Ready-made entrance animations (keyframes live in index.css).
+     Referenced through a variable so CSS Modules leave the global
+     keyframe names alone.
+     Fill is `backwards`, never `both`, and the keyframes define only a
+     start frame: a forwards fill would keep the end transform applied and
+     override every :hover / :active transform on the element. */
+  --animate-fade-in: inx-fade-in var(--duration-enter) var(--ease-out) backwards;
+  --animate-rise-in: inx-rise-in var(--duration-enter) var(--ease-out) backwards;
+  --animate-scale-in: inx-scale-in var(--duration-enter) var(--ease-out)
+    backwards;
+  --animate-pop-in: inx-pop-in var(--duration-slow) var(--ease-spring) backwards;
+  --animate-slide-in-left: inx-slide-in-left var(--duration-slow)
+    var(--ease-out) backwards;
+  --animate-slide-in-right: inx-slide-in-right var(--duration-slow)
+    var(--ease-out) backwards;
+  --animate-shimmer: inx-shimmer 1.6s var(--ease-in-out) infinite;
+  --animate-spin: inx-spin 0.75s linear infinite;
+  --animate-pulse-ring: inx-pulse-ring 1.6s var(--ease-out) infinite;
 
   /* ── Layout ─────────────────────────────────────────────── */
   --sidebar-left-width: 240px;
   --room-sidebar-width: 240px;
-  --rail-width: 60px;
+  --rail-width: 72px;
+  --rail-item-size: 44px;
   --header-height: 48px;
-  --call-bar-height: 56px;
+  --call-bar-height: 64px;
   --user-tray-height: 54px;
-  --panel-right-width: 240px;
+  /* One width for both side-panel tabs, so switching members ↔ chat never
+     resizes the player. Wide enough for chat, roomy for the member list. */
+  --panel-right-width: 320px;
+  --mobile-nav-height: 60px;
+  --content-max-width: 1120px;
+  --drawer-width: min(86vw, 300px);
 
   /* ── Z-Index ────────────────────────────────────────────── */
   --z-base: 0;
+  --z-raised: 1;
   --z-sticky: 10;
+  --z-nav: 100;
   --z-drawer: 200;
   --z-overlay: 400;
   --z-modal: 500;
   --z-popover: 600;
   --z-tooltip: 700;
+  --z-toast: 800;
 
-  /* ── Legacy compat (used by older components, remove phase by phase) */
+  /* ── Legacy aliases ─────────────────────────────────────────
+     Kept so nothing unmigrated renders unstyled. New code should
+     use the semantic tokens above. */
+  --color-bg-base: var(--color-canvas);
   --color-bg-obsidian: var(--color-canvas);
   --color-bg-surface: var(--color-surface-1);
   --color-bg-surface-hover: var(--color-surface-2);
   --color-bg-glass: var(--color-surface-2);
   --color-border-glass: var(--color-border-default);
   --color-border-hover: var(--color-border-strong);
-  --color-text-on-accent: #ffffff;
   --color-accent-purple: var(--color-accent);
   --color-accent-purple-glow: var(--color-accent-subtle);
-  --color-accent-cyan: var(--color-accent);
+  --color-accent-cyan: var(--color-accent-text);
   --color-accent-emerald: var(--color-success);
   --color-accent-rose: var(--color-danger);
   --shadow-lg: var(--shadow-modal);
 }
 
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
+/* Laptop widths: give the player back some room. Still one width for both
+   side-panel tabs, so switching tabs never resizes the layout. */
+@media (max-width: 1279px) {
   :root {
-    --transition-instant: 0ms;
-    --transition-fast: 0ms;
-    --transition-normal: 0ms;
-    --transition-slow: 0ms;
-    --transition-panel: 0ms;
+    --panel-right-width: 280px;
   }
 }
 
-/* Global focus-visible */
-*:focus-visible {
-  outline: none;
-  box-shadow: var(--color-focus-ring);
-  border-radius: var(--radius-md);
+/* Reduced motion: collapse every duration. Entrances still land on their
+   final state (they animate to the element's own styles), they just do
+   not travel there. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 1ms;
+    --duration-fast: 1ms;
+    --duration-normal: 1ms;
+    --duration-slow: 1ms;
+    --duration-enter: 1ms;
+    --duration-exit: 1ms;
+    --stagger-step: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Global focus ring. An outline follows each element's own border-radius, so
+   round buttons keep a round ring (the previous box-shadow version forced a
+   6px radius onto everything it focused). */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }

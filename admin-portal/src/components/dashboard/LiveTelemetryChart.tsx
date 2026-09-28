@@ -105,7 +105,7 @@ export const LiveTelemetryChart = React.memo(function LiveTelemetryChart({
   const gradientId = `grad-${title.replace(/[^a-zA-Z0-9]/g, "")}`
 
   return (
-    <Card className="border-zinc-800 bg-[#111111] hover:border-zinc-700/80 transition-all duration-200">
+    <Card className="border-zinc-800 bg-[#111111] hover:border-zinc-700/80 transition-[border-color,box-shadow,transform] duration-200 ease-snappy">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div>
           <CardTitle className="text-base font-semibold text-white">{title}</CardTitle>

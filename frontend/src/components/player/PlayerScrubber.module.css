@@ -1,0 +1,107 @@
+.scrubber {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.time {
+  min-width: 40px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeCurrent {
+  text-align: right;
+}
+
+.timeTotal {
+  color: var(--color-text-muted);
+}
+
+/* The track thickens and the thumb appears on hover — the timeline stays quiet
+   until you reach for it. */
+.range {
+  --fill: 0%;
+  flex: 1;
+  height: 18px;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.range:disabled {
+  cursor: not-allowed;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--fill),
+    var(--color-media-track) var(--fill)
+  );
+}
+
+.range::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-media-track);
+}
+
+.range::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-media);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  transform: scale(0);
+  transition: transform var(--duration-normal) var(--ease-spring);
+}
+
+.range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-on-media);
+  transform: scale(0);
+  transition: transform var(--duration-normal) var(--ease-spring);
+}
+
+.range:hover:not(:disabled)::-webkit-slider-thumb,
+.range:focus-visible::-webkit-slider-thumb,
+.range:active::-webkit-slider-thumb {
+  transform: scale(1);
+}
+
+.range:hover:not(:disabled)::-moz-range-thumb,
+.range:focus-visible::-moz-range-thumb,
+.range:active::-moz-range-thumb {
+  transform: scale(1);
+}
+
+.range:focus-visible {
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (hover: none) {
+  .range::-webkit-slider-thumb {
+    transform: scale(1);
+  }
+
+  .range::-moz-range-thumb {
+    transform: scale(1);
+  }
+}

@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
@@ -11,12 +14,29 @@ import (
 	"github.com/inox/inox/backend/internal/room"
 )
 
+// ActivitySource reports which rooms are in use right now. The WebSocket hub
+// satisfies it.
+type ActivitySource interface {
+	RoomActivity(ctx context.Context) (map[string]domain.RoomActivity, error)
+}
+
+// activityTimeout bounds how long the room list waits on the hub. Activity is a
+// decoration: a list without it is better than a slow list.
+const activityTimeout = 300 * time.Millisecond
+
 type RoomHandler struct {
 	roomService room.RoomService
+	activity    ActivitySource
 }
 
 func NewRoomHandler(roomService room.RoomService) *RoomHandler {
 	return &RoomHandler{roomService: roomService}
+}
+
+// SetActivitySource lets ListRooms mark rooms that people are in and what they
+// are watching. Optional: without it rooms are listed with no activity.
+func (h *RoomHandler) SetActivitySource(src ActivitySource) {
+	h.activity = src
 }
 
 type createRoomRequest struct {
@@ -73,7 +93,31 @@ func (h *RoomHandler) ListRooms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.attachActivity(r.Context(), rooms)
 	respond.WriteJSON(w, http.StatusOK, rooms)
+}
+
+// attachActivity marks each listed room that someone is connected to. Only rooms
+// already in the caller's list are touched, so a private room's activity is never
+// shown to anyone who could not see the room itself.
+func (h *RoomHandler) attachActivity(ctx context.Context, rooms []*domain.Room) {
+	if h.activity == nil || len(rooms) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, activityTimeout)
+	defer cancel()
+
+	snapshot, err := h.activity.RoomActivity(ctx)
+	if err != nil {
+		slog.Warn("room list served without activity", "error", err)
+		return
+	}
+	for _, rm := range rooms {
+		if a, ok := snapshot[rm.ID]; ok {
+			activity := a
+			rm.Activity = &activity
+		}
+	}
 }
 
 // JoinRoom allows an authenticated user to join a room via ID.

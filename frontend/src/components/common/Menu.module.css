@@ -1,0 +1,103 @@
+/* Shared look for Radix dropdown menus (room menu, member actions, quality). */
+.content {
+  z-index: var(--z-popover);
+  min-width: 188px;
+  padding: var(--space-1-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-tooltip-bg);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-menu);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+
+.content[data-state="open"] {
+  animation: menuIn var(--duration-normal) var(--ease-out);
+}
+
+.content[data-state="closed"] {
+  animation: menuOut var(--duration-exit) var(--ease-in) forwards;
+}
+
+.label {
+  padding: var(--space-1-5) var(--space-2) var(--space-1);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-compact);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition:
+    background-color var(--transition-instant),
+    color var(--transition-instant);
+}
+
+.item[data-highlighted] {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.item[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.itemIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.itemLabel {
+  flex: 1;
+}
+
+.itemCheck {
+  display: inline-flex;
+  color: var(--color-accent-text);
+}
+
+.item[data-highlighted] .itemCheck {
+  color: inherit;
+}
+
+.danger {
+  color: var(--color-danger-text);
+}
+
+.danger[data-highlighted] {
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
+}
+
+.separator {
+  height: 1px;
+  margin: var(--space-1) var(--space-1);
+  background: var(--color-border-subtle);
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-2px);
+  }
+}
+
+@keyframes menuOut {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}

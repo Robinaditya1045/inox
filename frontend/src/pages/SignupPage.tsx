@@ -1,22 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { TextField as Input } from "../components/common/TextField";
+import { TextField } from "../components/common/TextField";
 import { Button } from "../components/common/Button";
-import {
-  Mail,
-  Lock,
-  User as UserIcon,
-  AlertCircle,
-  Sparkles,
-} from "lucide-react";
+import { Alert } from "../components/common/Alert";
+import { AuthLayout } from "../components/auth/AuthLayout";
+import { Mail, Lock, User as UserIcon } from "lucide-react";
+import styles from "../components/auth/AuthLayout.module.css";
+
+type Field = "username" | "email" | "password" | "confirmPassword";
+type FieldErrors = Partial<Record<Field, string>>;
+
+const MIN_PASSWORD = 8;
 
 export const SignupPage: React.FC = () => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const { signup, error, clearError, user, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -27,23 +29,31 @@ export const SignupPage: React.FC = () => {
     }
   }, [user, isLoading, navigate]);
 
+  const clearField = (field: Field) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((f) => ({ ...f, [field]: undefined }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
-    setValidationError(null);
 
-    if (!username || !email || !password) {
-      setValidationError("All fields are required.");
-      return;
-    }
+    const errors: FieldErrors = {};
+    if (!username.trim()) errors.username = "Choose a username.";
+    if (!email.trim()) errors.email = "Enter your email address.";
+    if (!password) errors.password = "Choose a password.";
+    else if (password.length < MIN_PASSWORD)
+      errors.password = `Use at least ${MIN_PASSWORD} characters.`;
+    if (password && password !== confirmPassword)
+      errors.confirmPassword = "Passwords do not match.";
 
-    if (password.length < 8) {
-      setValidationError("Password must be at least 8 characters long.");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setValidationError("Passwords do not match.");
+    setFieldErrors(errors);
+    const firstInvalid = (
+      ["username", "email", "password", "confirmPassword"] as Field[]
+    ).find((f) => errors[f]);
+    if (firstInvalid) {
+      document.getElementById(`signup-${firstInvalid}`)?.focus();
       return;
     }
 
@@ -56,186 +66,106 @@ export const SignupPage: React.FC = () => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background:
-          "radial-gradient(circle at 50% 90%, rgba(0, 240, 255, 0.1) 0%, var(--color-bg-obsidian) 70%)",
-        padding: "24px",
-      }}
-    >
-      <div
-        className="glass-panel-heavy"
-        style={{
-          width: "100%",
-          maxWidth: "440px",
-          padding: "40px",
-          borderRadius: "20px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "24px",
-          boxShadow:
-            "0 0 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 240, 255, 0.1)",
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        {/* Subtle Top Cyan Accent Glow */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: "10%",
-            right: "10%",
-            height: "2px",
-            background:
-              "linear-gradient(90deg, transparent, var(--color-accent-cyan), transparent)",
-          }}
-        />
-
-        {/* Header */}
-        <div
-          style={{
-            textAlign: "center",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-          }}
-        >
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifySelf: "center",
-              margin: "0 auto",
-              gap: "8px",
-              color: "var(--color-accent-cyan)",
-            }}
-          >
-            <Sparkles size={28} />
-            <span
-              style={{
-                fontFamily: "var(--font-display)",
-                fontSize: "1.75rem",
-                fontWeight: 700,
-                color: "var(--color-text-primary)",
-              }}
-            >
-              Inox
-            </span>
-          </div>
-          <p
-            style={{
-              color: "var(--color-text-secondary)",
-              fontSize: "0.95rem",
-            }}
-          >
-            Create your account to host watch parties & voice rooms.
-          </p>
-        </div>
-
-        {/* Error Banner */}
-        {(error || validationError) && (
-          <div
-            style={{
-              padding: "12px 16px",
-              background: "rgba(244, 63, 94, 0.1)",
-              border: "1px solid rgba(244, 63, 94, 0.3)",
-              borderRadius: "8px",
-              color: "var(--color-accent-rose)",
-              fontSize: "0.875rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-            }}
-          >
-            <AlertCircle size={18} style={{ flexShrink: 0 }} />
-            <span>{validationError || error}</span>
-          </div>
-        )}
-
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          style={{ display: "flex", flexDirection: "column", gap: "16px" }}
-        >
-          <Input
-            label="Username"
-            type="text"
-            placeholder="CoolWatcher99"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            icon={<UserIcon size={18} />}
-            required
-          />
-
-          <Input
-            label="Email Address"
-            type="email"
-            placeholder="name@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            icon={<Mail size={18} />}
-            required
-          />
-
-          <Input
-            label="Password"
-            type="password"
-            placeholder="At least 8 characters"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            icon={<Lock size={18} />}
-            required
-          />
-
-          <Input
-            label="Confirm Password"
-            type="password"
-            placeholder="Repeat your password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            icon={<Lock size={18} />}
-            required
-          />
-
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            fullWidth
-            isLoading={isLoading}
-            style={{ marginTop: "8px" }}
-          >
-            Create Account
-          </Button>
-        </form>
-
-        {/* Footer Link */}
-        <div
-          style={{
-            textAlign: "center",
-            fontSize: "0.9rem",
-            color: "var(--color-text-secondary)",
-          }}
-        >
+    <AuthLayout
+      title="Create your account"
+      subtitle="Host watch parties, talk over voice and share your screen."
+      footer={
+        <>
           Already have an account?{" "}
-          <Link
-            to="/login"
-            style={{
-              color: "var(--color-accent-cyan)",
-              fontWeight: 600,
-              textDecoration: "none",
-              marginLeft: "4px",
-            }}
-          >
+          <Link to="/login" className={styles.link}>
             Sign in
           </Link>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {error && <Alert>{error}</Alert>}
+
+      <form onSubmit={handleSubmit} className={styles.form} noValidate>
+        <TextField
+          id="signup-username"
+          label="Username"
+          type="text"
+          name="username"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="nightowl_42"
+          value={username}
+          onChange={(e) => {
+            setUsername(e.target.value);
+            clearField("username");
+          }}
+          icon={<UserIcon size={16} />}
+          error={fieldErrors.username}
+          helperText="This is how friends will find you."
+          required
+        />
+
+        <TextField
+          id="signup-email"
+          label="Email"
+          type="email"
+          name="email"
+          autoComplete="email"
+          inputMode="email"
+          spellCheck={false}
+          placeholder="name@example.com"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            clearField("email");
+          }}
+          icon={<Mail size={16} />}
+          error={fieldErrors.email}
+          required
+        />
+
+        <TextField
+          id="signup-password"
+          label="Password"
+          type="password"
+          name="new-password"
+          autoComplete="new-password"
+          placeholder={`At least ${MIN_PASSWORD} characters`}
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            clearField("password");
+          }}
+          icon={<Lock size={16} />}
+          error={fieldErrors.password}
+          revealable
+          required
+        />
+
+        <TextField
+          id="signup-confirmPassword"
+          label="Confirm password"
+          type="password"
+          name="confirm-password"
+          autoComplete="new-password"
+          placeholder="Type it again"
+          value={confirmPassword}
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            clearField("confirmPassword");
+          }}
+          icon={<Lock size={16} />}
+          error={fieldErrors.confirmPassword}
+          revealable
+          required
+        />
+
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          isLoading={isLoading}
+        >
+          Create Account
+        </Button>
+      </form>
+    </AuthLayout>
   );
 };

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -46,7 +44,11 @@ services:
       - inox-net
 
   minio:
-    image: quay.io/minio/minio:latest
+    # MinIO stopped publishing images (minio/minio and quay.io/minio/minio both
+    # refuse pulls now). pgsty/minio is a maintained community build of the same
+    # server binary -- same entrypoint, same `server` command, curl included for
+    # the healthcheck. Pinned so a rebuild can't silently change the server.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: inox-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -68,23 +70,25 @@ services:
     networks:
       - inox-net
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: inox-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@inox.stream
-      PGADMIN_DEFAULT_PASSWORD: admin123
-    ports:
-      # Map host port 5050 to container port 80
-      - "5050:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    networks:
-      - inox-net
-    depends_on:
-      postgres:
-        condition: service_healthy
+  # pgAdmin is disabled for now. Uncomment this block and `pgadmin_data`
+  # under volumes to bring it back (UI on http://localhost:5050).
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: inox-pgadmin
+  #   restart: unless-stopped
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@inox.stream
+  #     PGADMIN_DEFAULT_PASSWORD: admin123
+  #   ports:
+  #     # Map host port 5050 to container port 80
+  #     - "5050:80"
+  #   volumes:
+  #     - pgadmin_data:/var/lib/pgadmin
+  #   networks:
+  #     - inox-net
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
 
 volumes:
   postgres_data:
@@ -93,8 +97,8 @@ volumes:
     driver: local
   minio_data:
     driver: local
-  pgadmin_data:
-    driver: local
+  # pgadmin_data:
+  #   driver: local
 
 networks:
   inox-net:

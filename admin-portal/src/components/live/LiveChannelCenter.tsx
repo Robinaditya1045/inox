@@ -65,7 +65,7 @@ export function LiveChannelCenter() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-enter">
       <div className="flex flex-col justify-between gap-4 rounded-xl border border-zinc-800 bg-gradient-to-r from-zinc-900/80 to-zinc-950/80 p-4 backdrop-blur-md md:flex-row md:items-center">
         <div className="flex items-center space-x-3">
           <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2.5 text-rose-400">

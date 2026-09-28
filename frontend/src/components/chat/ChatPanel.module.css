@@ -13,37 +13,28 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  padding-bottom: var(--space-2);
-}
-
-.feed::-webkit-scrollbar {
-  width: 10px;
-}
-.feed::-webkit-scrollbar-track {
-  background: transparent;
-}
-.feed::-webkit-scrollbar-thumb {
-  background: var(--color-canvas-deep);
-  border-radius: var(--radius-full);
-  border: 2px solid var(--color-surface-1);
+  padding-bottom: var(--space-4);
 }
 
 /* Channel intro, shown once above the oldest message */
 .intro {
-  padding: var(--space-8) var(--space-4) var(--space-4);
+  margin-top: auto;
+  padding: var(--space-8) var(--space-4) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  animation: var(--animate-rise-in);
 }
 
 .introIcon {
-  width: 60px;
-  height: 60px;
+  width: 64px;
+  height: 64px;
   border-radius: var(--radius-full);
-  background: var(--color-surface-2);
-  color: var(--color-accent);
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -52,113 +43,142 @@
 
 .introTitle {
   margin: 0;
-  font-size: 26px;
+  font-size: var(--text-display);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--tracking-display);
   color: var(--color-text-primary);
 }
 
 .introBody {
   margin: 0;
-  font-size: var(--text-compact);
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 /* Date divider */
 .divider {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) var(--space-2);
+  gap: var(--space-2);
+  margin: var(--space-6) var(--space-4) var(--space-1);
 }
 
 .dividerRule {
   flex: 1;
   height: 1px;
-  background: var(--color-border-subtle);
+  background: var(--color-border-default);
 }
 
 .dividerLabel {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-label);
+  font-weight: 600;
   color: var(--color-text-muted);
-  letter-spacing: 0.03em;
   user-select: none;
 }
 
-.centered {
+/* History skeleton: a few message-shaped rows */
+.skeletonFeed {
+  margin-top: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: var(--space-3);
-  padding: var(--space-6);
-  text-align: center;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-4) var(--space-2);
 }
 
-.centeredText {
-  font-size: var(--text-compact);
-  color: var(--color-text-secondary);
+.skeletonMessage {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.skeletonLines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: 4px;
 }
 
 .jumpBtn {
   position: absolute;
-  bottom: 84px;
+  bottom: 88px;
   left: 50%;
-  transform: translateX(-50%);
-  padding: 5px var(--space-3);
-  border: none;
+  translate: -50% 0;
+  height: 32px;
+  padding: 0 var(--space-4);
   border-radius: var(--radius-full);
   background: var(--color-accent);
   color: var(--color-text-on-accent);
-  font-family: inherit;
   font-size: var(--text-meta);
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-1-5);
   box-shadow: var(--shadow-menu);
   cursor: pointer;
   z-index: var(--z-sticky);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-instant);
+  animation: jumpIn var(--duration-normal) var(--ease-spring);
+}
+
+.jumpBtn:hover {
+  background: var(--color-accent-hover);
+}
+
+.jumpBtn:active {
+  transform: scale(0.96);
+}
+
+@keyframes jumpIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
 }
 
 /* ── Composer ─────────────────────────────────────────── */
 .composerWrap {
   flex-shrink: 0;
-  padding: var(--space-1) var(--space-4) var(--space-5);
+  padding: 0 var(--space-4) var(--space-5);
 }
 
 .composer {
   display: flex;
   align-items: flex-end;
   gap: var(--space-2);
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--color-surface-3);
-  border: 1px solid var(--color-border-subtle);
-  transition: border-color var(--transition-fast);
+  border: 1px solid transparent;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .composer:focus-within {
   border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
 .input {
   flex: 1;
-  min-height: 24px;
+  min-height: 30px;
   max-height: 180px;
-  padding: 2px 0;
-  border: none;
-  outline: none;
+  padding: 5px 0;
   resize: none;
   background: transparent;
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: var(--text-compact);
-  line-height: 1.5;
+  font-size: var(--text-body);
+  line-height: 1.375;
+}
+
+/* The composer shows its own focus treatment around the whole field */
+.input:focus-visible {
+  outline: none;
 }
 
 .input::placeholder {
@@ -166,12 +186,10 @@
 }
 
 .sendBtn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
-  border: none;
   border-radius: var(--radius-md);
-  background: transparent;
   color: var(--color-text-muted);
   display: flex;
   align-items: center;
@@ -179,7 +197,8 @@
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
-    color var(--transition-fast);
+    color var(--transition-fast),
+    transform var(--duration-normal) var(--ease-spring);
 }
 
 .sendBtnReady {
@@ -191,14 +210,12 @@
   background: var(--color-accent-hover);
 }
 
-.sendBtn:disabled {
-  cursor: default;
+.sendBtnReady:active {
+  transform: scale(0.9);
 }
 
-.hint {
-  padding: var(--space-1) var(--space-1) 0;
-  font-size: var(--text-label);
-  color: var(--color-text-muted);
+.sendBtn:disabled {
+  cursor: default;
 }
 
 .restricted {
@@ -206,12 +223,74 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 44px;
+  min-height: 48px;
   padding: var(--space-3);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border-default);
+  border: 1px dashed var(--color-border-default);
   color: var(--color-text-muted);
   font-size: var(--text-meta);
   font-weight: 600;
+}
+
+/* ── Compact (side panel) ─────────────────────────────── */
+.compact {
+  background: var(--color-canvas);
+}
+
+.compact .intro {
+  padding: var(--space-6) var(--space-3) var(--space-1);
+}
+
+.compact .introIcon {
+  width: 44px;
+  height: 44px;
+}
+
+.compact .introIcon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.compact .introTitle {
+  font-size: var(--text-heading);
+}
+
+.compact .introBody {
+  font-size: var(--text-compact);
+}
+
+.compact .divider {
+  margin: var(--space-4) var(--space-3) var(--space-1);
+}
+
+.compact .skeletonFeed {
+  padding: var(--space-4) var(--space-3) var(--space-2);
+}
+
+.compact .composerWrap {
+  padding: 0 var(--space-2) var(--space-3);
+}
+
+.compact .composer {
+  min-height: 42px;
+  padding-left: var(--space-3);
+}
+
+.compact .jumpBtn {
+  bottom: 72px;
+}
+
+@media (max-width: 767px) {
+  .composerWrap {
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .intro {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .introTitle {
+    font-size: var(--text-title);
+  }
 }

@@ -69,7 +69,7 @@ export function MediaCatalogTable({
             {asset.progress !== undefined && asset.progress > 0 && (
               <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden border border-zinc-700/50">
                 <div
-                  className="bg-amber-400 h-1.5 rounded-full transition-all duration-500 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
+                  className="bg-amber-400 h-1.5 rounded-full transition-[width] duration-500 ease-snappy shadow-[0_0_8px_rgba(251,191,36,0.6)]"
                   style={{ width: `${asset.progress}%` }}
                 />
               </div>
@@ -89,7 +89,7 @@ export function MediaCatalogTable({
             {asset.progress !== undefined && asset.progress > 0 && (
               <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden border border-zinc-700/50">
                 <div
-                  className="bg-cyan-400 h-1.5 rounded-full transition-all duration-500"
+                  className="bg-cyan-400 h-1.5 rounded-full transition-[width] duration-500 ease-snappy"
                   style={{ width: `${asset.progress}%` }}
                 />
               </div>
@@ -125,7 +125,7 @@ export function MediaCatalogTable({
             <button
               key={tab}
               onClick={() => setStatusFilter(tab)}
-              className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium transition-all duration-150 ${
+              className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium transition-colors duration-150 cursor-pointer active:scale-[0.97] ${
                 statusFilter === tab
                   ? "bg-zinc-800 text-white shadow-sm"
                   : "text-zinc-400 hover:text-white hover:bg-zinc-900"

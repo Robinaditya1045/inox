@@ -85,11 +85,27 @@ func (s *roomService) JoinRoom(ctx context.Context, roomID, userID string) (*dom
 		Permissions: domain.DefaultPermissionsForRole(domain.RoleMember),
 	}
 
-	if err := s.repo.AddMember(ctx, member); err != nil {
+	member, err = s.addMemberOrGetExisting(ctx, member)
+	if err != nil {
 		return nil, fmt.Errorf("service failed to join room: %w", err)
 	}
-
 	return member, nil
+}
+
+// addMemberOrGetExisting inserts a membership, and if a concurrent request got
+// there first returns that one instead of failing. The membership check before
+// the insert cannot rule this out on its own: two joins for the same user (a
+// double click, two tabs, React StrictMode running an effect twice) can both pass
+// the check before either inserts, and the loser used to surface as a 500.
+func (s *roomService) addMemberOrGetExisting(ctx context.Context, m *domain.RoomMember) (*domain.RoomMember, error) {
+	err := s.repo.AddMember(ctx, m)
+	if err == nil {
+		return m, nil
+	}
+	if errors.Is(err, ErrAlreadyMember) {
+		return s.repo.GetMember(ctx, m.RoomID, m.UserID)
+	}
+	return nil, err
 }
 
 // GetRoomAndMember retrieves the workspace details along with the requester's permission matrix.
@@ -278,7 +294,8 @@ func (s *roomService) RespondToInvitation(ctx context.Context, invID, userID str
 		Role:        domain.RoleMember,
 		Permissions: domain.DefaultPermissionsForRole(domain.RoleMember),
 	}
-	if err := s.repo.AddMember(ctx, newMember); err != nil {
+	newMember, err = s.addMemberOrGetExisting(ctx, newMember)
+	if err != nil {
 		return nil, nil, err
 	}
 

@@ -26,8 +26,9 @@
   justify-content: center;
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border-subtle);
-  background: #08090d;
+  background: var(--color-canvas-deep);
   overflow: hidden;
+  animation: var(--animate-scale-in);
 }
 
 .screenVideo {
@@ -36,7 +37,7 @@
   /* contain, never cover: a shared window cropped to fill the frame hides the
      part of it the presenter is usually pointing at. */
   object-fit: contain;
-  background: #08090d;
+  background: var(--color-canvas-deep);
 }
 
 .awaitingScreen {
@@ -91,7 +92,13 @@
   background: var(--color-surface-overlay);
   color: var(--color-text-primary);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-instant);
+}
+
+.stageBtn:active {
+  transform: scale(0.92);
 }
 
 .stageBtn:hover {
@@ -136,12 +143,17 @@
   aspect-ratio: 16 / 9;
   max-height: 100%;
   border-radius: var(--radius-xl);
-  background: var(--color-surface-2);
+  background: radial-gradient(
+    80% 90% at 50% 40%,
+    var(--color-surface-3),
+    var(--color-surface-2)
+  );
   border: 2px solid transparent;
   overflow: hidden;
   transition:
     border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
+    box-shadow var(--transition-normal);
+  animation: var(--animate-scale-in);
 }
 
 .tileCompact {
@@ -153,12 +165,35 @@
    idle tiles all outlined the same tells you nothing. */
 .tileSpeaking {
   border-color: var(--color-speaking);
-  box-shadow: 0 0 0 4px var(--color-accent-subtle);
+  box-shadow: 0 0 0 4px
+    color-mix(in srgb, var(--color-speaking) 22%, transparent);
+}
+
+/* The avatar breathes while its owner talks */
+.tileSpeaking .avatarWrap {
+  animation: speakPulse 1.2s var(--ease-in-out) infinite;
+}
+
+@keyframes speakPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
 }
 
 .avatarWrap {
   display: block;
-  transition: opacity var(--transition-fast);
+  border-radius: var(--radius-full);
+  transition:
+    opacity var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tileSpeaking .avatarWrap {
+  box-shadow: 0 0 0 3px var(--color-speaking);
 }
 
 /* The shared Avatar tops out at a size meant for lists. A call tile is mostly
@@ -185,8 +220,8 @@
   position: absolute;
   top: var(--space-2);
   right: var(--space-2);
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border: 1px solid var(--color-border-subtle);
@@ -247,23 +282,31 @@
 }
 
 .ctrl {
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-full);
-  background: var(--color-surface-2);
+  background: var(--color-surface-3);
   color: var(--color-text-primary);
   cursor: pointer;
   transition:
-    background var(--transition-fast),
+    background-color var(--transition-fast),
     border-color var(--transition-fast),
-    color var(--transition-fast);
+    color var(--transition-fast),
+    border-radius var(--duration-normal) var(--ease-out),
+    transform var(--transition-instant);
 }
 
+/* Same circle → squircle affordance as the rail */
 .ctrl:hover {
-  background: var(--color-surface-3);
+  background: var(--color-surface-4);
+  border-radius: var(--radius-xl);
+}
+
+.ctrl:active {
+  transform: scale(0.94);
 }
 
 .ctrlAccent {
@@ -279,7 +322,7 @@
 }
 
 .ctrlLeave {
-  width: 58px;
+  width: 64px;
   background: var(--color-danger);
   border-color: var(--color-danger);
   color: var(--color-text-on-accent);
@@ -287,26 +330,32 @@
 
 .ctrlLeave:hover {
   background: var(--color-danger-hover);
+  border-color: var(--color-danger-hover);
 }
 
 .joinBtn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  height: 38px;
-  padding: 0 var(--space-5);
-  border: none;
+  height: 42px;
+  padding: 0 var(--space-6);
   border-radius: var(--radius-full);
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
+  background: var(--color-success);
+  color: var(--color-canvas-deep);
   font-size: var(--text-button);
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-instant);
 }
 
 .joinBtn:hover {
-  background: var(--color-accent-hover);
+  background: var(--color-success-hover);
+}
+
+.joinBtn:active {
+  transform: scale(0.97);
 }
 
 /* ── Empty ─────────────────────────────────────────────────── */
@@ -318,9 +367,22 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  padding: var(--space-10);
+  padding: var(--space-10) var(--space-4);
   color: var(--color-text-muted);
   text-align: center;
+  animation: var(--animate-rise-in);
+}
+
+.emptyIcon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
 }
 
 .emptyTitle {
@@ -354,5 +416,32 @@
   .filmstrip .tile {
     height: 100%;
     width: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .body {
+    padding: var(--space-2);
+  }
+
+  .controls {
+    gap: var(--space-2);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .ctrl {
+    width: 44px;
+    height: 44px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+    gap: var(--space-2);
+  }
+
+  .tile .avatarWrap > * {
+    width: 64px;
+    height: 64px;
+    font-size: 1.5rem;
   }
 }

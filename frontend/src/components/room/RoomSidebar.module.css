@@ -6,25 +6,25 @@
   background: var(--color-canvas);
 }
 
-/* ── Room identity header ─────────────────────────────── */
+/* ── Room identity header (opens the room menu) ───────────── */
 .roomHeader {
   height: var(--header-height);
   flex-shrink: 0;
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3) 0 var(--space-4);
   display: flex;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  border: none;
   border-bottom: 1px solid var(--color-border-subtle);
-  background: transparent;
-  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(2, 4, 12, 0.35);
   text-align: left;
+  cursor: pointer;
   transition: background-color var(--transition-fast);
 }
 
-.roomHeader:hover {
-  background: var(--color-surface-1);
+.roomHeader:hover,
+.roomHeader[data-state="open"] {
+  background: var(--color-fill-hover);
 }
 
 .roomName {
@@ -32,14 +32,35 @@
   min-width: 0;
   font-size: var(--text-subhead);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-tight);
   color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ── Channel list ─────────────────────────────────────── */
+.privacy {
+  display: inline-flex;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.roomHeader[data-state="open"] .chevron {
+  transform: rotate(180deg);
+}
+
+.roomMenu {
+  width: calc(var(--room-sidebar-width) - var(--space-4));
+}
+
+/* ── Channel list ─────────────────────────────────────────── */
 .nav {
   flex: 1;
   min-height: 0;
@@ -48,17 +69,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.nav::-webkit-scrollbar {
-  width: 8px;
-}
-.nav::-webkit-scrollbar-track {
-  background: transparent;
-}
-.nav::-webkit-scrollbar-thumb {
-  background: var(--color-canvas-deep);
-  border-radius: var(--radius-sm);
 }
 
 .group {
@@ -72,57 +82,56 @@
   align-items: center;
   gap: var(--space-1);
   padding: 0 var(--space-2) var(--space-1) var(--space-1);
-  font-size: 11px;
+  font-size: var(--text-micro);
   font-weight: 700;
   color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caps);
   user-select: none;
 }
 
-.groupLabelText {
-  flex: 1;
-}
-
 .channel {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  height: 32px;
+  height: 34px;
   padding: 0 var(--space-2);
-  border: none;
   border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-family: inherit;
-  font-size: var(--text-compact);
+  color: var(--color-text-muted);
+  font-size: var(--text-body);
   font-weight: 500;
-  cursor: pointer;
   text-align: left;
+  cursor: pointer;
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast);
 }
 
 .channel:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
+  background: var(--color-fill-hover);
+  color: var(--color-text-secondary);
 }
 
-.channelActive {
-  background: var(--color-surface-3);
+.channel:active {
+  background: var(--color-fill-active);
+}
+
+.channelActive,
+.channelActive:hover {
+  background: var(--color-fill-selected);
   color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .channelIcon {
-  color: var(--color-text-muted);
   flex-shrink: 0;
+  opacity: 0.8;
 }
 
 .channelActive .channelIcon {
-  color: var(--color-text-primary);
+  opacity: 1;
 }
 
 .channelName {
@@ -133,31 +142,50 @@
 }
 
 .count {
-  font-size: var(--text-label);
-  font-weight: 600;
-  color: var(--color-text-muted);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  color: var(--color-text-secondary);
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .liveBadge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
-  background: var(--color-success-subtle);
-  color: var(--color-success);
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   flex-shrink: 0;
+  animation: var(--animate-pop-in);
 }
 
 .liveDot {
+  position: relative;
   width: 5px;
   height: 5px;
   border-radius: var(--radius-full);
-  background: var(--color-success);
+  background: currentColor;
+}
+
+.liveDot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: var(--animate-pulse-ring);
 }
 
 /* ── Voice participants nested under the voice channel ── */
@@ -165,7 +193,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding-left: var(--space-2);
+  padding-left: var(--space-6);
   margin-top: 2px;
 }
 
@@ -176,17 +204,24 @@
   height: 30px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-md);
+  animation: var(--animate-rise-in);
+  transition: background-color var(--transition-fast);
+}
+
+.participant:hover {
+  background: var(--color-fill-hover);
 }
 
 .participantName {
   flex: 1;
   min-width: 0;
-  font-size: var(--text-meta);
+  font-size: var(--text-compact);
   font-weight: 500;
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--transition-fast);
 }
 
 .participantSelf {
@@ -194,20 +229,35 @@
   color: var(--color-text-primary);
 }
 
+.speakingName {
+  color: var(--color-text-primary);
+}
+
 /* Green ring marks who is actually connected to the SFU */
 .participantAvatar {
-  box-shadow: 0 0 0 2px var(--color-live);
+  display: inline-flex;
   border-radius: var(--radius-full);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--color-live);
+  transition: box-shadow var(--transition-fast);
+}
+
+/* Brighter, thicker ring while they are talking */
+.speaking {
+  box-shadow:
+    0 0 0 2px var(--color-speaking),
+    0 0 0 4px color-mix(in srgb, var(--color-speaking) 30%, transparent);
+}
+
+.stateIcon {
+  display: inline-flex;
   flex-shrink: 0;
 }
 
-.emptyVoice {
-  padding: var(--space-2);
-  font-size: var(--text-label);
-  color: var(--color-text-muted);
+.muted {
+  color: var(--color-danger-text);
 }
 
-/* Blue ring on top of the green one: connected, and talking right now */
-.speaking {
-  box-shadow: 0 0 0 2px var(--color-speaking);
+.sharing {
+  color: var(--color-accent-text);
 }

@@ -4,13 +4,15 @@ import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePresence } from "../../hooks/usePresence";
 import { MessageItem } from "./ChatMessageItem";
-import { Spinner } from "../common/Spinner";
+import { Skeleton } from "../common/Skeleton";
 import { Send, Lock, Hash, ArrowDown } from "lucide-react";
 import type { ChatMessage } from "../../types/chat";
 import styles from "./ChatPanel.module.css";
 
 interface ChatPanelProps {
   roomId: string | undefined;
+  /** Narrow layout for the room's side panel */
+  compact?: boolean;
 }
 
 const GROUPING_THRESHOLD_MS = 5 * 60 * 1000;
@@ -67,7 +69,7 @@ function buildFeed(messages: ChatMessage[]): FeedRow[] {
   });
 }
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
+export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId, compact }) => {
   const [inputText, setInputText] = useState("");
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
@@ -130,19 +132,30 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
   const canSend = inputText.trim().length > 0;
 
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel} ${compact ? styles.compact : ""}`}>
       <div ref={feedRef} onScroll={handleScroll} className={styles.feed}>
         {isLoadingHistory ? (
-          <div className={styles.centered}>
-            <Spinner size={20} />
-            <span className={styles.centeredText}>Loading messages…</span>
+          <div
+            className={styles.skeletonFeed}
+            aria-busy="true"
+            aria-label="Loading messages"
+          >
+            {[62, 38, 74, 46].map((width, i) => (
+              <div key={i} className={styles.skeletonMessage}>
+                <Skeleton width={40} height={40} circle />
+                <div className={styles.skeletonLines}>
+                  <Skeleton width={i % 2 ? 96 : 128} height={11} />
+                  <Skeleton width={`${width}%`} height={10} />
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <>
             {/* Channel intro — the top of the channel, not an empty state */}
             <div className={styles.intro}>
-              <div className={styles.introIcon}>
-                <Hash size={32} />
+              <div className={styles.introIcon} aria-hidden="true">
+                <Hash size={34} />
               </div>
               <h2 className={styles.introTitle}>Welcome to #general</h2>
               <p className={styles.introBody}>
@@ -170,6 +183,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
                     members.find((m) => m.user_id === message.user_id)?.role
                   }
                   currentUsername={user?.username}
+                  compact={compact}
                 />
               </React.Fragment>
             ))}
@@ -180,11 +194,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
 
       {showScrollBottom && (
         <button
+          type="button"
           onClick={() => scrollToBottom("smooth")}
           aria-label="Scroll to newest messages"
           className={styles.jumpBtn}
         >
-          <ArrowDown size={13} />
+          <ArrowDown size={14} aria-hidden="true" />
           Jump to present
         </button>
       )}
@@ -208,6 +223,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
               rows={1}
               placeholder="Message #general"
               aria-label="Message #general"
+              name="message"
+              autoComplete="off"
               className={styles.input}
             />
             <button
@@ -217,7 +234,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
               title="Send"
               className={`${styles.sendBtn} ${canSend ? styles.sendBtnReady : ""}`}
             >
-              <Send size={16} />
+              <Send size={16} aria-hidden="true" />
             </button>
           </form>
         )}

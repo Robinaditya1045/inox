@@ -1,20 +1,37 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useMediaLibrary } from "../../hooks/useMediaLibrary";
+import { useLiveChannels } from "../../hooks/useLiveChannels";
 import { Modal } from "../common/Modal";
-import { TextField as Input } from "../common/TextField";
+import { TextField } from "../common/TextField";
 import { Button } from "../common/Button";
-import { Spinner } from "../common/Spinner";
-import type { MediaAsset } from "../../types/media";
+import { Skeleton } from "../common/Skeleton";
+import { EmptyState } from "../common/EmptyState";
+import { Tabs } from "../common/Tabs";
+import type {
+  LiveChannelStatus,
+  LiveChannelSummary,
+  MediaAsset,
+} from "../../types/media";
 import {
-  Film,
-  Link2,
-  Check,
-  RefreshCw,
-  Play,
-  Clock,
-  Layers,
   AlertCircle,
+  AppWindow,
+  Braces,
+  Check,
+  Clock,
+  CloudUpload,
+  FileCode,
+  Film,
+  History,
+  Link2,
+  Play,
+  Radio,
+  RefreshCw,
+  type LucideIcon,
 } from "lucide-react";
+import { stagger } from "../../utils/motion";
+import { tabIds } from "../../utils/tabs";
+import { isLiveMediaUrl } from "../../utils/liveSync";
+import styles from "./MediaLibraryPicker.module.css";
 
 interface MediaLibraryPickerProps {
   isOpen: boolean;
@@ -22,6 +39,49 @@ interface MediaLibraryPickerProps {
   currentUrl: string;
   onSelectUrl: (url: string) => void;
 }
+
+type PickerTab = "uploads" | "live" | "url";
+
+const TAB_PREFIX = "media-picker";
+
+/** How a live channel's stream is obtained, in viewer language. */
+const RESOLVERS: Record<
+  string,
+  { label: string; hint: string; Icon: LucideIcon }
+> = {
+  browser: {
+    label: "Browser",
+    hint: "Captured by playing the source page in a headless browser",
+    Icon: AppWindow,
+  },
+  api: {
+    label: "API",
+    hint: "Resolved through the provider's API",
+    Icon: Braces,
+  },
+  static: {
+    label: "Static",
+    hint: "Found in the source page's HTML",
+    Icon: FileCode,
+  },
+  direct: {
+    label: "Direct",
+    hint: "A stream URL used as-is",
+    Icon: Link2,
+  },
+};
+
+const STATUS: Record<
+  LiveChannelStatus,
+  { label: string; tone: "live" | "idle" | "warn" | "error" | "off" }
+> = {
+  live: { label: "Live", tone: "live" },
+  idle: { label: "Standby", tone: "idle" },
+  resolving: { label: "Connecting", tone: "warn" },
+  degraded: { label: "Unstable", tone: "warn" },
+  error: { label: "Offline", tone: "error" },
+  disabled: { label: "Disabled", tone: "off" },
+};
 
 function formatDuration(seconds: number): string {
   if (!seconds || seconds === 0) return "—";
@@ -40,6 +100,10 @@ function getPlayUrl(asset: MediaAsset): string {
   return asset.hls_master_url || asset.source_url;
 }
 
+function isLiveAsset(asset: MediaAsset): boolean {
+  return asset.kind === "live" || isLiveMediaUrl(getPlayUrl(asset));
+}
+
 function getRenditionBadge(asset: MediaAsset): string | null {
   if (!asset.renditions || asset.renditions.length === 0) return null;
   const maxRes = Math.max(
@@ -48,6 +112,86 @@ function getRenditionBadge(asset: MediaAsset): string | null {
   return maxRes > 0 ? `${maxRes}p` : null;
 }
 
+interface AssetOptionProps {
+  asset: MediaAsset;
+  index: number;
+  isSelected: boolean;
+  disabled?: boolean;
+  /** Placeholder glyph when the asset has no thumbnail */
+  FallbackIcon: LucideIcon;
+  tags?: React.ReactNode;
+  meta?: React.ReactNode;
+  onSelect: () => void;
+  onChoose: () => void;
+}
+
+/** One selectable row: a radio in the list's radiogroup. Double-click loads it. */
+const AssetOption: React.FC<AssetOptionProps> = ({
+  asset,
+  index,
+  isSelected,
+  disabled,
+  FallbackIcon,
+  tags,
+  meta,
+  onSelect,
+  onChoose,
+}) => (
+  <button
+    type="button"
+    role="radio"
+    aria-checked={isSelected}
+    aria-disabled={disabled || undefined}
+    className={styles.asset}
+    style={stagger(index)}
+    onClick={() => !disabled && onSelect()}
+    onDoubleClick={() => !disabled && onChoose()}
+  >
+    <span className={styles.thumb} aria-hidden="true">
+      {asset.thumbnail_url ? (
+        <img
+          src={asset.thumbnail_url}
+          alt=""
+          width={64}
+          height={36}
+          loading="lazy"
+        />
+      ) : (
+        <FallbackIcon size={18} />
+      )}
+    </span>
+
+    <span className={styles.info}>
+      <span className={styles.titleRow}>
+        <span className={styles.title}>{asset.title}</span>
+        {tags}
+      </span>
+      {meta && <span className={styles.meta}>{meta}</span>}
+    </span>
+
+    <span
+      className={`${styles.indicator} ${isSelected ? styles.indicatorOn : ""}`}
+      aria-hidden="true"
+    >
+      {isSelected ? <Check size={13} /> : <Play size={14} />}
+    </span>
+  </button>
+);
+
+const ListSkeleton: React.FC<{ label: string }> = ({ label }) => (
+  <div aria-busy="true" aria-label={label}>
+    {[0, 1, 2, 3].map((i) => (
+      <div key={i} className={styles.skeletonRow}>
+        <Skeleton width={64} height={36} radius="var(--radius-md)" />
+        <div className={styles.skeletonLines}>
+          <Skeleton width={`${58 - i * 8}%`} height={11} />
+          <Skeleton width="28%" height={9} />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
   isOpen,
   onClose,
@@ -55,490 +199,394 @@ export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
   onSelectUrl,
 }) => {
   const { assets, isLoading, error, refresh } = useMediaLibrary();
+  const { byAssetId: channels, refresh: refreshChannels } = useLiveChannels();
   const [customUrl, setCustomUrl] = useState("");
   const [selected, setSelected] = useState<string>(currentUrl);
-  const [tab, setTab] = useState<"library" | "url">("library");
+  // Open on whichever kind of media the room is playing now.
+  const [tab, setTab] = useState<PickerTab>(() =>
+    isLiveMediaUrl(currentUrl) ? "live" : "uploads",
+  );
+  const [resolverFilter, setResolverFilter] = useState<string>("all");
+
+  const { uploads, live } = useMemo(
+    () => ({
+      uploads: assets.filter((a) => !isLiveAsset(a)),
+      live: assets.filter(isLiveAsset),
+    }),
+    [assets],
+  );
+
+  // Only offer a resolver filter when there is more than one kind to choose from.
+  const resolversPresent = useMemo(() => {
+    const seen = new Set<string>();
+    for (const asset of live) {
+      const resolver = channels.get(asset.id)?.resolver;
+      if (resolver) seen.add(resolver);
+    }
+    return [...seen].sort();
+  }, [live, channels]);
+
+  const activeFilter =
+    resolverFilter !== "all" && resolversPresent.includes(resolverFilter)
+      ? resolverFilter
+      : "all";
+  const visibleLive =
+    activeFilter === "all"
+      ? live
+      : live.filter((a) => channels.get(a.id)?.resolver === activeFilter);
+
+  // "Load Stream" acts on what is selected in the tab you are looking at, not on
+  // something picked earlier on the other tab.
+  const selectedInTab =
+    tab === "uploads"
+      ? uploads.some((a) => getPlayUrl(a) === selected)
+      : tab === "live"
+        ? visibleLive.some(
+            (a) =>
+              getPlayUrl(a) === selected &&
+              channels.get(a.id)?.status !== "disabled",
+          )
+        : false;
+
+  const choose = (url: string) => {
+    onSelectUrl(url);
+    onClose();
+  };
 
   const handleConfirm = () => {
     const target = tab === "url" ? customUrl.trim() : selected;
-    if (target) {
-      onSelectUrl(target);
-      onClose();
-    }
+    if (target) choose(target);
   };
 
-  const handleSelectAsset = (asset: MediaAsset) => {
-    setSelected(getPlayUrl(asset));
-    setTab("library");
+  const handleRefresh = () => {
+    refresh();
+    refreshChannels();
   };
+
+  const panel = tabIds(TAB_PREFIX, tab);
+
+  const countBadge = (n: number) =>
+    n > 0 ? (
+      <span className={`${styles.tag} ${styles.tagRes}`}>{n}</span>
+    ) : null;
+
+  const refreshButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={styles.refreshBtn}
+      onClick={handleRefresh}
+      disabled={isLoading}
+      icon={
+        <span className={styles.refreshIcon}>
+          <RefreshCw size={13} />
+        </span>
+      }
+    >
+      Refresh
+    </Button>
+  );
+
+  const loadError = error && (
+    <EmptyState
+      compact
+      tone="danger"
+      icon={<AlertCircle size={20} />}
+      title="Couldn't load the library"
+      description={error}
+      action={
+        <Button variant="secondary" size="sm" onClick={handleRefresh}>
+          Try again
+        </Button>
+      }
+    />
+  );
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Media Library"
-      maxWidth="560px"
+      description="Choose what the whole room watches next."
+      maxWidth="600px"
     >
-      {/* Tab Bar */}
-      <div
-        style={{
-          display: "flex",
-          borderBottom: "1px solid var(--color-border-glass)",
-          marginBottom: "16px",
-          background: "rgba(5,7,10,0.4)",
-          borderRadius: "8px 8px 0 0",
-          overflow: "hidden",
-        }}
-      >
-        <button
-          onClick={() => setTab("library")}
-          style={{
-            flex: 1,
-            padding: "10px",
-            background:
-              tab === "library" ? "rgba(170,59,255,0.15)" : "transparent",
-            borderBottom: `2px solid ${tab === "library" ? "var(--color-accent-purple)" : "transparent"}`,
-            color:
-              tab === "library"
-                ? "var(--color-accent-purple)"
-                : "var(--color-text-secondary)",
-            fontSize: "0.82rem",
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            cursor: "pointer",
-            border: "none",
-          }}
+      <div className={styles.body}>
+        <Tabs<PickerTab>
+          className={styles.tabs}
+          ariaLabel="Media source"
+          idPrefix={TAB_PREFIX}
+          value={tab}
+          onChange={setTab}
+          items={[
+            {
+              id: "uploads",
+              label: "Uploads",
+              icon: <CloudUpload size={14} />,
+              badge: countBadge(uploads.length),
+            },
+            {
+              id: "live",
+              label: "Live",
+              icon: <Radio size={14} />,
+              badge: countBadge(live.length),
+            },
+            { id: "url", label: "Custom URL", icon: <Link2 size={14} /> },
+          ]}
+        />
+
+        <div
+          key={tab}
+          className={styles.panel}
+          role="tabpanel"
+          id={panel.panel}
+          aria-labelledby={panel.tab}
         >
-          <Layers size={14} />
-          Uploaded Library
-          {assets.length > 0 && (
-            <span
-              style={{
-                padding: "1px 6px",
-                borderRadius: "8px",
-                background: "rgba(170,59,255,0.2)",
-                color: "var(--color-accent-purple)",
-                fontSize: "0.7rem",
-                fontWeight: 700,
-              }}
-            >
-              {assets.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setTab("url")}
-          style={{
-            flex: 1,
-            padding: "10px",
-            background: tab === "url" ? "rgba(170,59,255,0.15)" : "transparent",
-            borderBottom: `2px solid ${tab === "url" ? "var(--color-accent-purple)" : "transparent"}`,
-            color:
-              tab === "url"
-                ? "var(--color-accent-purple)"
-                : "var(--color-text-secondary)",
-            fontSize: "0.82rem",
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            cursor: "pointer",
-            border: "none",
-          }}
-        >
-          <Link2 size={14} />
-          Custom URL
-        </button>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-          minHeight: "320px",
-        }}
-      >
-        {tab === "library" ? (
-          <>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  color: "var(--color-text-muted)",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.07em",
-                }}
-              >
-                Transcoded Assets (ABR Ready)
-              </span>
-              <button
-                onClick={refresh}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  color: "var(--color-text-secondary)",
-                  fontSize: "0.75rem",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: "4px 8px",
-                  borderRadius: "6px",
-                  transition: "all 0.15s",
-                }}
-              >
-                <RefreshCw size={13} />
-                Refresh
-              </button>
-            </div>
-
-            {isLoading ? (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flex: 1,
-                  gap: "12px",
-                  height: "200px",
-                }}
-              >
-                <Spinner size={24} color="var(--color-accent-purple)" />
-                <span
-                  style={{
-                    color: "var(--color-text-secondary)",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  Loading library...
+          {tab === "uploads" && (
+            <>
+              <div className={styles.toolbar}>
+                <span className={styles.caption}>
+                  Uploaded & transcoded (ABR ready)
                 </span>
+                {refreshButton}
               </div>
-            ) : error ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flex: 1,
-                  gap: "10px",
-                  height: "200px",
-                  textAlign: "center",
-                }}
-              >
-                <AlertCircle size={28} color="var(--color-accent-rose)" />
-                <span
-                  style={{
-                    color: "var(--color-text-secondary)",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  {error}
-                </span>
-                <Button variant="ghost" size="sm" onClick={refresh}>
-                  Retry
-                </Button>
-              </div>
-            ) : assets.length === 0 ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flex: 1,
-                  gap: "10px",
-                  height: "200px",
-                  textAlign: "center",
-                  opacity: 0.6,
-                }}
-              >
-                <Film size={32} color="var(--color-text-muted)" />
-                <span
-                  style={{
-                    color: "var(--color-text-secondary)",
-                    fontSize: "0.88rem",
-                  }}
-                >
-                  No ready media in library yet. Upload and transcode assets via
-                  the admin portal.
-                </span>
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "6px",
-                  maxHeight: "300px",
-                  overflowY: "auto",
-                  paddingRight: "2px",
-                }}
-              >
-                {assets.map((asset) => {
-                  const playUrl = getPlayUrl(asset);
-                  const isSelected = selected === playUrl;
-                  const qualityBadge = getRenditionBadge(asset);
-                  const hasHLS = !!asset.hls_master_url;
 
-                  return (
-                    <div
-                      key={asset.id}
-                      onClick={() => handleSelectAsset(asset)}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        background: isSelected
-                          ? "rgba(170,59,255,0.12)"
-                          : "var(--color-bg-surface)",
-                        border: `1px solid ${isSelected ? "var(--color-accent-purple)" : "var(--color-border-glass)"}`,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        cursor: "pointer",
-                        transition: "all 0.15s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor =
-                            "var(--color-border-hover)";
-                          e.currentTarget.style.background =
-                            "var(--color-bg-surface-hover)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor =
-                            "var(--color-border-glass)";
-                          e.currentTarget.style.background =
-                            "var(--color-bg-surface)";
-                        }
-                      }}
+              {isLoading ? (
+                <ListSkeleton label="Loading uploads" />
+              ) : error ? (
+                loadError
+              ) : uploads.length === 0 ? (
+                <EmptyState
+                  compact
+                  icon={<Film size={20} />}
+                  title="No uploads yet"
+                  description="Upload and transcode videos from the admin portal, or paste a link under Custom URL."
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<Link2 size={13} />}
+                      onClick={() => setTab("url")}
                     >
-                      {/* Thumbnail / Icon */}
-                      <div
-                        style={{
-                          width: "40px",
-                          height: "40px",
-                          borderRadius: "6px",
-                          background: isSelected
-                            ? "rgba(170,59,255,0.3)"
-                            : "var(--color-bg-surface-hover)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {asset.thumbnail_url ? (
-                          <img
-                            src={asset.thumbnail_url}
-                            alt={asset.title}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                            }}
-                          />
-                        ) : (
-                          <Film
-                            size={18}
-                            color={
-                              isSelected
-                                ? "var(--color-accent-purple)"
-                                : "var(--color-text-muted)"
-                            }
-                          />
-                        )}
-                      </div>
+                      Use a URL instead
+                    </Button>
+                  }
+                />
+              ) : (
+                <div
+                  className={styles.list}
+                  role="radiogroup"
+                  aria-label="Uploaded videos"
+                >
+                  {uploads.map((asset, i) => {
+                    const playUrl = getPlayUrl(asset);
+                    const qualityBadge = getRenditionBadge(asset);
+                    return (
+                      <AssetOption
+                        key={asset.id}
+                        asset={asset}
+                        index={i}
+                        isSelected={selected === playUrl}
+                        FallbackIcon={Film}
+                        onSelect={() => setSelected(playUrl)}
+                        onChoose={() => choose(playUrl)}
+                        tags={
+                          <>
+                            {asset.hls_master_url && (
+                              <span
+                                className={`${styles.tag} ${styles.tagHls}`}
+                              >
+                                HLS·ABR
+                              </span>
+                            )}
+                            {qualityBadge && (
+                              <span
+                                className={`${styles.tag} ${styles.tagRes}`}
+                              >
+                                {qualityBadge}
+                              </span>
+                            )}
+                          </>
+                        }
+                        meta={
+                          <>
+                            {asset.duration_seconds > 0 && (
+                              <span className={styles.metaItem}>
+                                <Clock size={10} aria-hidden="true" />
+                                {formatDuration(asset.duration_seconds)}
+                              </span>
+                            )}
+                            {asset.renditions &&
+                              asset.renditions.length > 0 && (
+                                <span>
+                                  {asset.renditions.length} renditions
+                                </span>
+                              )}
+                          </>
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
 
-                      {/* Info */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            flexWrap: "wrap",
-                          }}
+          {tab === "live" && (
+            <>
+              <div className={styles.toolbar}>
+                {resolversPresent.length > 1 ? (
+                  <div
+                    className={styles.filters}
+                    role="group"
+                    aria-label="Filter by how the stream is sourced"
+                  >
+                    {["all", ...resolversPresent].map((id) => {
+                      const meta = RESOLVERS[id];
+                      const count =
+                        id === "all"
+                          ? live.length
+                          : live.filter(
+                              (a) => channels.get(a.id)?.resolver === id,
+                            ).length;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          className={styles.filterChip}
+                          aria-pressed={activeFilter === id}
+                          onClick={() => setResolverFilter(id)}
                         >
-                          <span
-                            style={{
-                              fontWeight: 600,
-                              fontSize: "0.88rem",
-                              color: "var(--color-text-primary)",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              maxWidth: "200px",
-                            }}
-                          >
-                            {asset.title}
-                          </span>
-                          {hasHLS && (
-                            <span
-                              style={{
-                                padding: "1px 5px",
-                                borderRadius: "4px",
-                                background: "rgba(16,185,129,0.15)",
-                                color: "var(--color-accent-emerald)",
-                                fontSize: "0.66rem",
-                                fontWeight: 700,
-                                flexShrink: 0,
-                              }}
-                            >
-                              HLS·ABR
-                            </span>
-                          )}
-                          {qualityBadge && (
-                            <span
-                              style={{
-                                padding: "1px 5px",
-                                borderRadius: "4px",
-                                background: "rgba(170,59,255,0.15)",
-                                color: "var(--color-accent-purple)",
-                                fontSize: "0.66rem",
-                                fontWeight: 700,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {qualityBadge}
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            marginTop: "2px",
-                          }}
-                        >
-                          {asset.duration_seconds > 0 && (
-                            <span
-                              style={{
-                                fontSize: "0.72rem",
-                                color: "var(--color-text-muted)",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "3px",
-                              }}
-                            >
-                              <Clock size={10} />
-                              {formatDuration(asset.duration_seconds)}
-                            </span>
-                          )}
-                          {asset.renditions && asset.renditions.length > 0 && (
-                            <span
-                              style={{
-                                fontSize: "0.72rem",
-                                color: "var(--color-text-muted)",
-                              }}
-                            >
-                              {asset.renditions.length} renditions
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Selected Check or Play Icon */}
-                      <div style={{ flexShrink: 0 }}>
-                        {isSelected ? (
-                          <div
-                            style={{
-                              width: "22px",
-                              height: "22px",
-                              borderRadius: "50%",
-                              background: "var(--color-accent-purple)",
-                              color: "#FFF",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Check size={13} />
-                          </div>
-                        ) : (
-                          <Play size={16} color="var(--color-text-muted)" />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                          {meta && <meta.Icon size={12} aria-hidden="true" />}
+                          {id === "all" ? "All" : (meta?.label ?? id)}
+                          <span className={styles.filterCount}>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className={styles.caption}>Live channels</span>
+                )}
+                {refreshButton}
               </div>
-            )}
-          </>
-        ) : (
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-          >
-            <span
-              style={{
-                fontSize: "0.75rem",
-                color: "var(--color-text-muted)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.07em",
-              }}
-            >
-              Custom Video URL (MP4 / WebM / HLS .m3u8)
-            </span>
-            <Input
-              type="url"
-              placeholder="https://example.com/video.mp4 or playlist.m3u8"
-              value={customUrl}
-              onChange={(e) => setCustomUrl(e.target.value)}
-              icon={<Link2 size={16} />}
-            />
-            <p
-              style={{
-                fontSize: "0.8rem",
-                color: "var(--color-text-muted)",
-                lineHeight: 1.5,
-              }}
-            >
-              Paste any direct video URL. HLS manifests (.m3u8) will use Hls.js
-              for adaptive bitrate streaming.
-            </p>
-          </div>
-        )}
-      </div>
 
-      {/* Action Bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: "10px",
-          marginTop: "16px",
-          paddingTop: "14px",
-          borderTop: "1px solid var(--color-border-glass)",
-        }}
-      >
-        <Button type="button" variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          variant="primary"
-          disabled={tab === "library" ? !selected : !customUrl.trim()}
-          onClick={handleConfirm}
-        >
-          Load Stream
-        </Button>
+              {isLoading ? (
+                <ListSkeleton label="Loading live channels" />
+              ) : error ? (
+                loadError
+              ) : live.length === 0 ? (
+                <EmptyState
+                  compact
+                  icon={<Radio size={20} />}
+                  title="No live channels yet"
+                  description="Channels added in the admin portal (from a browser capture, a provider API, a page, or a direct stream) show up here."
+                />
+              ) : (
+                <div
+                  className={styles.list}
+                  role="radiogroup"
+                  aria-label="Live channels"
+                >
+                  {visibleLive.map((asset, i) => {
+                    const playUrl = getPlayUrl(asset);
+                    const channel: LiveChannelSummary | undefined =
+                      channels.get(asset.id);
+                    const status = channel ? STATUS[channel.status] : undefined;
+                    const resolver = channel
+                      ? RESOLVERS[channel.resolver]
+                      : undefined;
+                    const disabled = channel?.status === "disabled";
+                    return (
+                      <AssetOption
+                        key={asset.id}
+                        asset={asset}
+                        index={i}
+                        isSelected={selected === playUrl}
+                        disabled={disabled}
+                        FallbackIcon={Radio}
+                        onSelect={() => setSelected(playUrl)}
+                        onChoose={() => choose(playUrl)}
+                        tags={
+                          status && (
+                            <span
+                              className={styles.status}
+                              data-tone={status.tone}
+                            >
+                              <span
+                                className={styles.statusDot}
+                                aria-hidden="true"
+                              />
+                              {status.label}
+                            </span>
+                          )
+                        }
+                        meta={
+                          channel && (
+                            <>
+                              <span
+                                className={styles.metaItem}
+                                title={resolver?.hint}
+                              >
+                                {resolver ? (
+                                  <resolver.Icon size={11} aria-hidden="true" />
+                                ) : null}
+                                via {resolver?.label ?? channel.resolver}
+                              </span>
+                              {channel.is_dvr && (
+                                <span className={styles.metaItem}>
+                                  <History size={11} aria-hidden="true" />
+                                  DVR
+                                </span>
+                              )}
+                            </>
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === "url" && (
+            <>
+              <TextField
+                label="Video URL (MP4, WebM or HLS .m3u8)"
+                type="url"
+                name="media-url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="https://example.com/video.mp4"
+                value={customUrl}
+                onChange={(e) => setCustomUrl(e.target.value)}
+                icon={<Link2 size={16} />}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customUrl.trim()) handleConfirm();
+                }}
+              />
+              <p className={styles.hint}>
+                Paste any direct video link. HLS manifests (.m3u8) stream with
+                adaptive bitrate through hls.js.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className={styles.footer}>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            icon={<Play size={14} fill="currentColor" />}
+            disabled={tab === "url" ? !customUrl.trim() : !selectedInTab}
+            onClick={handleConfirm}
+          >
+            Load Stream
+          </Button>
+        </div>
       </div>
     </Modal>
   );

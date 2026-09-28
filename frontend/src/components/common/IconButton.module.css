@@ -2,24 +2,29 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   border: 1px solid transparent;
-  cursor: pointer;
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
   background: transparent;
+  cursor: pointer;
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast),
-    border-color var(--transition-fast);
-  flex-shrink: 0;
+    border-color var(--transition-fast),
+    transform var(--transition-instant);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 .btn:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.35;
 }
 
-/* Sizes — all 44px min touch target on mobile */
+/* ── Sizes ────────────────────────────────────────────────── */
 .sm {
   width: 28px;
   height: 28px;
@@ -35,32 +40,55 @@
   height: 40px;
 }
 
-/* Variants */
-.default:hover:not(:disabled) {
-  background-color: var(--color-surface-2);
+/* Comfortable touch targets without growing the visual footprint */
+@media (pointer: coarse) {
+  .sm,
+  .md {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* ── Variants ─────────────────────────────────────────────── */
+.default:hover:not(:disabled),
+.ghost:hover:not(:disabled) {
+  background-color: var(--color-fill-hover);
   color: var(--color-text-primary);
+}
+
+.default:active:not(:disabled),
+.ghost:active:not(:disabled) {
+  background-color: var(--color-fill-active);
 }
 
 .ghost:hover:not(:disabled) {
-  color: var(--color-text-primary);
+  background-color: transparent;
 }
 
 .danger {
-  color: var(--color-text-secondary);
+  color: var(--color-danger-text);
 }
 .danger:hover:not(:disabled) {
   background-color: var(--color-danger-subtle);
-  color: var(--color-danger);
-  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
 }
 
+/* Toggled on — accent tone (e.g. member list open, screen share on) */
 .active {
   background-color: var(--color-accent-subtle);
-  color: var(--color-accent);
-  border-color: var(--color-accent-border);
+  color: var(--color-accent-text);
 }
 .active:hover:not(:disabled) {
-  background-color: var(--color-accent);
+  background-color: var(--color-accent-subtle-hover);
+  color: var(--color-text-primary);
+}
+
+/* Toggled on — danger tone (muted, deafened) */
+.activeDanger {
+  background-color: var(--color-danger-subtle);
+  color: var(--color-danger-text);
+}
+.activeDanger:hover:not(:disabled) {
+  background-color: var(--color-danger);
   color: var(--color-text-on-accent);
-  border-color: transparent;
 }

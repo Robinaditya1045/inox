@@ -170,3 +170,31 @@ func TestRoomCreationAndRBACWorkflow(t *testing.T) {
 		t.Errorf("expected ErrPermissionDenied when viewer tries to alter owner, got %v", err)
 	}
 }
+
+// racingJoinRepository reproduces two joins for the same user landing together:
+// the membership check misses (the other request has not inserted yet), then the
+// insert collides with the row the other request just wrote.
+type racingJoinRepository struct {
+	*mockRoomRepository
+	winner *domain.RoomMember
+}
+
+func (r *racingJoinRepository) AddMember(ctx context.Context, mem *domain.RoomMember) error {
+	r.members[mem.RoomID+":"+mem.UserID] = r.winner
+	return room.ErrAlreadyMember
+}
+
+func TestJoinRoomReturnsExistingMembershipWhenAConcurrentJoinWins(t *testing.T) {
+	ctx := context.Background()
+	winner := &domain.RoomMember{RoomID: "room-1", UserID: "user-2", Role: domain.RoleMember, JoinedAt: time.Now()}
+	repo := &racingJoinRepository{mockRoomRepository: newMockRoomRepository(), winner: winner}
+	service := room.NewRoomService(repo, nil, nil)
+
+	got, err := service.JoinRoom(ctx, "room-1", "user-2")
+	if err != nil {
+		t.Fatalf("losing a join race must not be an error, got %v", err)
+	}
+	if got != winner {
+		t.Fatalf("expected the membership the concurrent join created, got %+v", got)
+	}
+}

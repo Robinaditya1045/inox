@@ -31,6 +31,9 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   const [invitations, setInvitations] = useState<RoomInvitation[]>([]);
   const [isLoadingRoom, setIsLoadingRoom] = useState<boolean>(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  // False until the first room list for this user has come back (or failed), so
+  // the lobby can show a skeleton instead of a premature "no rooms" state.
+  const [hasLoadedRooms, setHasLoadedRooms] = useState<boolean>(false);
 
   const { user } = useAuth();
 
@@ -45,6 +48,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   const refreshRooms = useCallback(async () => {
     if (!user) {
       setRooms([]);
+      setHasLoadedRooms(false);
       return;
     }
     try {
@@ -52,6 +56,8 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
       setRooms(fetchedRooms);
     } catch (err) {
       logger.warn("RoomProvider: Failed to refresh room list", { err });
+    } finally {
+      setHasLoadedRooms(true);
     }
   }, [user]);
 
@@ -183,6 +189,15 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     }
   }, [activeRoom, user, refreshRooms]);
 
+  // Drops this client's connection to the room without leaving it: membership is
+  // kept, but the socket closes and clearing activeRoom tears down the call. Used
+  // on logout, where leaving would wrongly give up the user's rooms.
+  const disconnectFromRoom = useCallback(() => {
+    joinSeqRef.current++;
+    wsService.disconnect();
+    setActiveRoom(null);
+  }, []);
+
   const updateMemberRole = useCallback(
     async (userId: string, role: RoomRole) => {
       if (!activeRoom) return;
@@ -287,10 +302,12 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     userRole,
     permissions,
     isLoadingRoom,
+    hasLoadedRooms,
     roomError,
     createRoom,
     joinRoom,
     leaveRoom,
+    disconnectFromRoom,
     refreshRooms,
     updateMemberRole,
     kickMember,

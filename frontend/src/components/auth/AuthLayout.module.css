@@ -1,0 +1,173 @@
+.page {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-4);
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--color-canvas-deep);
+}
+
+/* Ambient light: two soft pools of the accent, off-centre so the page does not
+   read as a flat template. Purely decorative. */
+.page::before,
+.page::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.page::before {
+  width: 560px;
+  height: 560px;
+  top: -220px;
+  left: calc(50% - 460px);
+  background: rgba(74, 107, 217, 0.18);
+}
+
+.page::after {
+  width: 420px;
+  height: 420px;
+  bottom: -200px;
+  right: calc(50% - 420px);
+  background: rgba(46, 158, 143, 0.09);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  animation: var(--animate-fade-in);
+}
+
+.card {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--color-surface-1) 92%, transparent);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-modal), var(--shadow-inset-highlight);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: var(--animate-scale-in);
+  animation-delay: 40ms;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.title {
+  font-size: var(--text-title);
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  color: var(--color-text-primary);
+}
+
+.subtitle {
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.footer {
+  text-align: center;
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+}
+
+.link {
+  color: var(--color-accent-text);
+  font-weight: 600;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-fast);
+}
+
+.link:hover {
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mutedLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--color-text-secondary);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-fast);
+}
+
+.mutedLink:hover {
+  color: var(--color-text-primary);
+}
+
+.fieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.fieldAside {
+  align-self: flex-end;
+}
+
+.token {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-canvas-deep);
+  border: 1px dashed var(--color-border-default);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
+.tokenLabel {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-size: var(--text-micro);
+}
+
+/* Phones: the card dissolves into the page instead of floating in a margin */
+@media (max-width: 520px) {
+  .page {
+    justify-content: flex-start;
+    padding: var(--space-10) var(--space-5) var(--space-8);
+  }
+
+  .card {
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

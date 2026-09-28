@@ -1,31 +1,35 @@
 /* ── VideoRoomShell ─────────────────────────────────────
-   No full-width call bar row any more: voice state lives at the foot of the
-   channel sidebar, and per-channel controls live in the channel header. */
+   Channel sidebar | workspace | member list. Below desktop widths the two side
+   panels become drawers that slide over the workspace. */
 
 .shell {
+  position: relative;
   display: grid;
-  grid-template-columns: var(--room-sidebar-width) 1fr;
-  grid-template-rows: 100%;
+  grid-template-columns: var(--room-sidebar-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "roomsidebar workspace";
-  height: 100vh;
+  height: 100%;
   width: 100%;
   overflow: hidden;
   background: var(--color-canvas);
+  animation: var(--animate-fade-in);
 }
 
 /* When the member list is open */
 .shellPanelOpen {
-  grid-template-columns: var(--room-sidebar-width) 1fr var(--panel-right-width);
+  grid-template-columns: var(--room-sidebar-width) minmax(0, 1fr) var(
+      --panel-right-width
+    );
   grid-template-areas: "roomsidebar workspace panel";
 }
 
 .roomSidebarArea {
   grid-area: roomsidebar;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--color-border-subtle);
-  background: var(--color-canvas);
   overflow: hidden;
+  background: var(--color-canvas);
 }
 
 .workspaceArea {
@@ -34,16 +38,23 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
   background: var(--color-surface-1);
 }
 
 .panelArea {
   grid-area: panel;
-  display: flex;
+  min-height: 0;
+  display: none;
   flex-direction: column;
   border-left: 1px solid var(--color-border-subtle);
   background: var(--color-canvas);
   overflow: hidden;
+}
+
+.shellPanelOpen .panelArea {
+  display: flex;
+  animation: var(--animate-fade-in);
 }
 
 /* The watch-party player fills the workspace below the header */
@@ -54,44 +65,156 @@
   padding: var(--space-3);
 }
 
-/* Tablet — member list becomes an overlay drawer */
-@media (min-width: 768px) and (max-width: 1023px) {
+/* Each channel's content eases in when you switch to it */
+.channelView {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: var(--animate-fade-in);
+}
+
+.backdrop {
+  display: none;
+}
+
+/* ── Drawers (tablet and phone) ─────────────────────────── */
+@media (max-width: 1023px) {
   .shell,
   .shellPanelOpen {
-    grid-template-columns: var(--room-sidebar-width) 1fr;
+    grid-template-columns: var(--room-sidebar-width) minmax(0, 1fr);
     grid-template-areas: "roomsidebar workspace";
   }
 
-  .panelArea {
+  /* Always rendered so it can slide both ways; visibility keeps the closed
+     drawer out of the tab order once the slide has finished. */
+  .panelArea,
+  .shellPanelOpen .panelArea {
+    display: flex;
     position: fixed;
     top: 0;
-    bottom: 0;
     right: 0;
-    left: auto;
-    width: var(--panel-right-width);
+    bottom: 0;
+    width: min(92vw, var(--panel-right-width));
     z-index: var(--z-drawer);
+    border-left: 1px solid var(--color-border-default);
     box-shadow: var(--shadow-modal);
+    transform: translateX(100%);
+    visibility: hidden;
+    animation: none;
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      visibility 0s linear var(--duration-slow);
+  }
+
+  .shellPanelOpen .panelArea {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      visibility 0s;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-drawer) - 1);
+    background: var(--color-backdrop);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-slow) var(--ease-out);
+  }
+
+  .backdropVisible {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
-/* Mobile — single column, sidebar hidden behind the rail */
+/* Phone: the channel list becomes a left drawer too */
 @media (max-width: 767px) {
   .shell,
   .shellPanelOpen {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "workspace";
-    height: 100dvh;
   }
 
   .roomSidebarArea {
-    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--drawer-width);
+    z-index: var(--z-drawer);
+    border-right: 1px solid var(--color-border-default);
+    box-shadow: var(--shadow-modal);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      visibility 0s linear var(--duration-slow);
   }
 
-  .panelArea {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-drawer);
-    width: 100%;
+  .roomSidebarOpen {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      visibility 0s;
+  }
+
+  .playerArea {
+    padding: 0;
+  }
+}
+
+/* ── Side panel: tab bar + body ─────────────────────────────
+   The bar sits at the same height as the room header so the two read as one
+   line across the top of the room. */
+.panelBar {
+  height: var(--header-height);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  box-shadow: 0 1px 0 rgba(2, 4, 12, 0.35);
+}
+
+.panelTitle {
+  flex: 1;
+  padding-left: var(--space-2);
+  font-size: var(--text-subhead);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.panelTabs {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Desktop closes the column from the header toggles; drawers need their own way out */
+.panelBar .panelClose {
+  display: none;
+}
+
+.panelBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: var(--animate-fade-in);
+}
+
+.panelBody[hidden] {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .panelBar .panelClose {
+    display: inline-flex;
   }
 }

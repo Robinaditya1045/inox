@@ -1,57 +1,77 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .errorBox {
-  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
   background: var(--color-danger-subtle);
   border: 1px solid var(--color-danger-border);
-  border-radius: var(--radius-md);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-size: var(--text-meta);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  font-weight: 500;
+  animation: var(--animate-rise-in);
 }
 
+.errorBox svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* The whole card is the switch, so the hit target is generous */
 .privacyBtn {
   width: 100%;
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border-default);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  cursor: pointer;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-canvas-deep);
+  border: 1px solid var(--color-border-default);
   text-align: left;
-  transition: all var(--transition-fast);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .privacyBtn:hover {
-  background: var(--color-surface-2);
+  border-color: var(--color-border-strong);
+  background: color-mix(
+    in srgb,
+    var(--color-canvas-deep) 70%,
+    var(--color-surface-2)
+  );
 }
 
 .privacyContent {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .privacyIcon {
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
   border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition:
+    background-color var(--transition-normal),
+    color var(--transition-normal);
 }
 
 .privacyIconPrivate {
-  background: var(--color-danger-subtle);
-  color: var(--color-danger);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
 }
 
 .privacyIconPublic {
@@ -59,10 +79,16 @@
   color: var(--color-success);
 }
 
+.privacyIconGlyph {
+  display: inline-flex;
+  animation: var(--animate-pop-in);
+}
+
 .privacyText {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .privacyTitle {
@@ -77,38 +103,52 @@
 }
 
 .switchTrack {
-  width: 44px;
-  height: 24px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-3);
   position: relative;
-  transition: all var(--transition-fast);
+  width: 40px;
+  height: 24px;
   flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-4);
+  transition: background-color var(--transition-normal);
 }
 
-.switchTrackPrivate {
+.switchTrackOn {
   background: var(--color-accent);
 }
 
 .switchThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   background: #fff;
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  transition: all var(--transition-fast);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(2, 4, 12, 0.4);
+  transition: transform var(--duration-normal) var(--ease-spring);
 }
 
-.switchThumbPrivate {
-  left: 23px;
+.switchTrackOn .switchThumb {
+  transform: translateX(16px);
 }
 
 .footer {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
+  gap: var(--space-2);
+  margin: var(--space-1) calc(var(--space-6) * -1) calc(var(--space-6) * -1);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-canvas);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+@media (max-width: 640px) {
+  .footer {
+    margin: var(--space-1) calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .footer > * {
+    flex: 1;
+  }
 }

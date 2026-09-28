@@ -9,6 +9,7 @@ import (
 
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/api/respond"
+	"github.com/inox/inox/backend/internal/domain"
 	"github.com/inox/inox/backend/internal/live"
 )
 
@@ -21,6 +22,23 @@ type LiveHandler struct {
 // NewLiveHandler constructs the live channel controller.
 func NewLiveHandler(service live.Service, proxy *live.Proxy) *LiveHandler {
 	return &LiveHandler{service: service, proxy: proxy}
+}
+
+// ListSummaries is the signed-in, non-admin view of the live channels, used by the
+// room's media library to show how each stream is sourced and whether it is up.
+// It returns domain.LiveChannelSummary only, never the admin fields.
+func (h *LiveHandler) ListSummaries(w http.ResponseWriter, r *http.Request) {
+	channels, err := h.service.List(r.Context())
+	if err != nil {
+		slog.Error("failed to list live channels", "error", err)
+		respond.WriteError(w, http.StatusInternalServerError, "failed to list live channels")
+		return
+	}
+	summaries := make([]domain.LiveChannelSummary, 0, len(channels))
+	for _, ch := range channels {
+		summaries = append(summaries, ch.Summary())
+	}
+	respond.WriteJSON(w, http.StatusOK, summaries)
 }
 
 // List returns every configured live channel. Upstream URLs and headers are omitted

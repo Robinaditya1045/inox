@@ -68,6 +68,11 @@ type Hub struct {
 	// into the same single-threaded loop, for the same reason: delivering one
 	// means walking h.rooms.
 	sfuSignals chan *Event
+
+	// activityRequests lets other goroutines (the room list handler) ask for a
+	// snapshot of which rooms are in use. The snapshot is taken on the loop,
+	// the only place h.rooms and h.playbackStates may be read.
+	activityRequests chan chan map[string]domain.RoomActivity
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
@@ -82,6 +87,7 @@ func NewHub() *Hub {
 		Stop:              make(chan struct{}),
 		liveStatusNotices: make(chan liveStatusNotice, 64),
 		sfuSignals:        make(chan *Event, 256),
+		activityRequests:  make(chan chan map[string]domain.RoomActivity),
 	}
 }
 
@@ -194,6 +200,9 @@ func (h *Hub) Run() {
 
 		case <-leadershipSweep.C:
 			h.sweepLiveLeadership()
+
+		case reply := <-h.activityRequests:
+			reply <- h.snapshotActivity()
 
 		case <-h.Stop:
 			h.shutdownAll()
@@ -768,6 +777,54 @@ func (h *Hub) sendToTarget(event *Event) {
 			break
 		}
 	}
+}
+
+// RoomActivity reports every room with someone connected to this process: how many
+// people are in it and what it is playing. Safe to call from any goroutine, since
+// the snapshot is taken on the hub's own loop. It gives up when ctx does, so a busy
+// or stopped hub costs the caller its deadline rather than hanging it.
+//
+// Only this process's connections are counted. With the Redis event bus a room's
+// clients can be spread over several processes; each reports its own share.
+func (h *Hub) RoomActivity(ctx context.Context) (map[string]domain.RoomActivity, error) {
+	// Buffered so the loop never blocks replying to a caller that has given up.
+	reply := make(chan map[string]domain.RoomActivity, 1)
+	select {
+	case h.activityRequests <- reply:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case snapshot := <-reply:
+		return snapshot, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// snapshotActivity must only run on the hub loop.
+func (h *Hub) snapshotActivity() map[string]domain.RoomActivity {
+	out := make(map[string]domain.RoomActivity, len(h.rooms))
+	for roomID, clients := range h.rooms {
+		if len(clients) == 0 {
+			continue
+		}
+		users := make(map[string]struct{}, len(clients))
+		for client := range clients {
+			users[client.UserID] = struct{}{}
+		}
+		activity := domain.RoomActivity{Viewers: len(users)}
+		// Read the map directly rather than through getOrCreatePlaybackState: that
+		// can reach Redis and Postgres, which must not happen inside the loop for
+		// a read-only lobby query.
+		if state, ok := h.playbackStates[roomID]; ok {
+			activity.IsPlaying = state.IsPlaying
+			activity.MediaURL = state.MediaURL
+			activity.Kind = state.Kind
+		}
+		out[roomID] = activity
+	}
+	return out
 }
 
 // InspectRooms satisfies the observability.RoomInspector interface to report active watch party metrics.

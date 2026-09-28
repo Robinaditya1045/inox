@@ -3,13 +3,50 @@
   height: 100%;
   border-radius: var(--radius-xl);
   overflow: hidden;
-  background: var(--color-canvas);
+  background: var(--color-media-bg);
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  border: 1px solid var(--color-border-default);
-  outline: none;
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-raised);
+  isolation: isolate;
+}
+
+.container:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+/* While playing with the controls tucked away, the cursor goes too */
+.container[data-controls="hidden"] {
+  cursor: none;
+}
+
+/* Everything overlaid on the picture fades and settles together */
+.chrome {
+  transition:
+    opacity var(--duration-slow) var(--ease-out),
+    transform var(--duration-slow) var(--ease-out);
+}
+
+.container[data-controls="hidden"] .chrome {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.container[data-controls="hidden"] .topBar {
+  transform: translateY(-6px);
+}
+
+.container[data-controls="hidden"] .bottomBar {
+  transform: translateY(6px);
+}
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .topBar {
@@ -17,69 +54,91 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-8);
   background: linear-gradient(
     180deg,
-    var(--color-surface-overlay) 0%,
+    var(--color-media-scrim-strong) 0%,
     transparent 100%
   );
   display: flex;
   align-items: center;
   justify-content: space-between;
   z-index: 10;
-  transition: opacity var(--transition-slow);
 }
 
-.statusIndicator {
-  padding: 3px var(--space-2);
-  border-radius: var(--radius-xl);
+.statusIndicator,
+.abrIndicator {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
   font-size: var(--text-label);
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .statusSynced {
-  background: var(--color-success-subtle);
+  background: color-mix(
+    in srgb,
+    var(--color-success) 18%,
+    var(--color-media-scrim)
+  );
   border: 1px solid var(--color-success-border);
   color: var(--color-success);
 }
 
 .statusOffline {
-  background: var(--color-danger-subtle);
+  background: color-mix(
+    in srgb,
+    var(--color-danger) 20%,
+    var(--color-media-scrim)
+  );
   border: 1px solid var(--color-danger-border);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .abrIndicator {
-  padding: 3px var(--space-2);
-  border-radius: var(--radius-xl);
-  background: var(--color-accent-subtle);
+  background: color-mix(
+    in srgb,
+    var(--color-accent) 20%,
+    var(--color-media-scrim)
+  );
   border: 1px solid var(--color-accent-border);
-  color: var(--color-accent);
-  font-size: var(--text-label);
-  font-weight: 700;
+  color: var(--color-accent-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .libraryBtn {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: 4px var(--space-2);
+  gap: var(--space-1-5);
+  height: 32px;
+  padding: 0 var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--color-surface-2);
+  background: color-mix(in srgb, var(--color-surface-2) 75%, transparent);
   border: 1px solid var(--color-border-default);
   color: var(--color-text-primary);
   font-size: var(--text-meta);
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-instant);
 }
 
 .libraryBtn:hover {
-  background: var(--color-surface-3);
-  border-color: var(--color-border-strong);
+  background: var(--color-accent);
+  border-color: transparent;
+}
+
+.libraryBtn:active {
+  transform: scale(0.96);
 }
 
 .video {
@@ -88,161 +147,388 @@
   object-fit: contain;
 }
 
-.bottomBar {
-  position: absolute;
-  bottom: var(--space-3);
-  left: var(--space-3);
-  right: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-overlay);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  z-index: 10;
-  transition: all var(--transition-slow);
-  border: 1px solid var(--color-border-subtle);
-}
-
-.playBtn {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  transition: all var(--transition-fast);
-  flex-shrink: 0;
-}
-
-.playBtnCanControl {
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
+.videoClickable {
   cursor: pointer;
 }
 
-.playBtnCanControl:hover {
+/* ── Centre overlays ──────────────────────────────────────── */
+.centerOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 5;
+  animation: var(--animate-fade-in);
+}
+
+.bufferRing {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-media-scrim);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.bigPlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-media-scrim);
+  border: 1px solid var(--color-media-edge);
+  color: var(--color-on-media);
+  cursor: pointer;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: var(--animate-pop-in);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--duration-normal) var(--ease-spring);
+}
+
+.bigPlay svg {
+  margin-left: 4px;
+}
+
+.bigPlay:hover {
+  background: var(--color-accent);
+  transform: scale(1.06);
+}
+
+.bigPlay:active {
+  transform: scale(0.96);
+}
+
+.pausedPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--color-media-scrim);
+  border: 1px solid var(--color-media-edge);
+  color: var(--color-text-primary);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.emptyState {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  text-align: center;
+  background:
+    radial-gradient(
+      60% 60% at 50% 45%,
+      var(--color-accent-subtle),
+      transparent 70%
+    ),
+    var(--color-canvas-deep);
+  animation: var(--animate-fade-in);
+}
+
+.emptyIcon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-2xl);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
+.emptyTitle {
+  font-size: var(--text-heading);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
+}
+
+.emptyBody {
+  max-width: 320px;
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+}
+
+.emptyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  margin-top: var(--space-3);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-size: var(--text-button);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-instant);
+}
+
+.emptyBtn:hover {
   background: var(--color-accent-hover);
 }
 
-.playBtnDisabled {
-  background: var(--color-surface-2);
-  color: var(--color-text-muted);
-  cursor: not-allowed;
+.emptyBtn:active {
+  transform: scale(0.97);
 }
-
-.iconBtn {
-  color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
-  padding: 4px;
-  border-radius: var(--radius-md);
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-.iconBtn:hover {
-  color: var(--color-text-primary);
-  background: var(--color-surface-2);
-}
-
-.iconBtnDanger {
-  color: var(--color-danger);
-}
-
-.qualityBtn {
-  padding: 4px var(--space-2);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border-default);
-  color: var(--color-text-secondary);
-  font-size: var(--text-label);
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.qualityBtn:hover {
-  background: var(--color-surface-3);
-  color: var(--color-text-primary);
-}
-
-.qualityMenu {
-  position: absolute;
-  bottom: calc(100% + var(--space-2));
-  right: 0;
-  background: var(--color-surface-overlay);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  min-width: 100px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  z-index: 20;
-}
-
-.qualityMenuItem {
-  width: 100%;
-  padding: 8px var(--space-3);
-  font-size: var(--text-label);
-  font-weight: 600;
-  text-align: left;
-  border: none;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  background: transparent;
-  color: var(--color-text-secondary);
-}
-
-.qualityMenuItem:hover {
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-}
-
-.qualityMenuItemActive {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
-}
-.qualityMenuItemActive:hover {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
-}
-
-.volumeSlider {
-  width: 64px;
-  height: 4px;
-  border-radius: var(--radius-full);
-  appearance: none;
-  cursor: pointer;
-  outline: none;
-}
-
-/* Range slider custom track styling via inline style is still best for dynamic progress */
 
 /* Surfaced when a source fails to load — previously these errors were silent */
 .loadError {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  translate: -50% -50%;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  max-width: calc(100% - var(--space-8));
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-overlay);
+  background: color-mix(
+    in srgb,
+    var(--color-danger) 16%,
+    var(--color-media-scrim-strong)
+  );
   border: 1px solid var(--color-danger-border);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-size: var(--text-meta);
   font-weight: 600;
-  z-index: var(--z-sticky);
   pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: var(--animate-scale-in);
+}
+
+/* ── Bottom controls ──────────────────────────────────────── */
+.bottomBar {
+  position: absolute;
+  bottom: var(--space-3);
+  left: var(--space-3);
+  right: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--color-media-scrim-strong);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-menu);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  z-index: 10;
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.playBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-instant);
+}
+
+.playBtnCanControl {
+  background: var(--color-text-primary);
+  color: var(--color-canvas-deep);
+  cursor: pointer;
+}
+
+.playBtnCanControl:hover {
+  background: var(--color-on-media);
+}
+
+.playBtnCanControl:active {
+  transform: scale(0.92);
+}
+
+.playGlyph {
+  margin-left: 2px;
+}
+
+.playBtnDisabled {
+  background: var(--color-surface-3);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-instant);
+}
+
+.iconBtn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-fill-active);
+}
+
+.iconBtn:active {
+  transform: scale(0.92);
+}
+
+.iconBtnDanger {
+  color: var(--color-danger-text);
+}
+
+/* ── Volume: slider widens on hover, like most players ── */
+.volume {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.volumeSlider {
+  --fill: 100%;
+  width: 72px;
+  height: 18px;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.volumeSlider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-text-primary) var(--fill),
+    var(--color-media-track) var(--fill)
+  );
+}
+
+.volumeSlider::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-text-primary) var(--fill),
+    var(--color-media-track) var(--fill)
+  );
+}
+
+.volumeSlider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-media);
+  box-shadow: 0 1px 4px var(--color-media-scrim);
+  transform: scale(0.85);
+  transition: transform var(--transition-fast);
+}
+
+.volumeSlider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-on-media);
+  transform: scale(0.85);
+  transition: transform var(--transition-fast);
+}
+
+.volumeSlider:hover::-webkit-slider-thumb,
+.volumeSlider:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+
+.volumeSlider:hover::-moz-range-thumb,
+.volumeSlider:focus-visible::-moz-range-thumb {
+  transform: scale(1.1);
+}
+
+.volumeSlider:focus-visible {
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Quality ─────────────────────────────────────────────── */
+.qualityBtn {
+  height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-fill-hover);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+  font-size: var(--text-label);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.qualityBtn:hover,
+.qualityBtn[data-state="open"] {
+  background: var(--color-fill-active);
+  color: var(--color-text-primary);
+}
+
+.qualityChevron {
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.qualityBtn[data-state="open"] .qualityChevron {
+  transform: rotate(180deg);
+}
+
+.qualityMenu {
+  min-width: 168px;
+}
+
+.bitrate {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Live channels ──────────────────────────────────────────
@@ -252,8 +538,9 @@
 .liveBar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  min-height: 26px;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  min-height: 28px;
   padding: 0 var(--space-1);
   font-size: var(--text-label);
   color: var(--color-text-secondary);
@@ -264,20 +551,21 @@
   align-items: center;
   gap: var(--space-1);
   padding: 3px var(--space-2);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-size: var(--text-label);
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.06em;
-  background: var(--color-danger-subtle);
-  border: 1px solid var(--color-danger-border);
-  color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
+  transition:
+    background-color var(--transition-normal),
+    color var(--transition-normal);
 }
 
 /* Dimmed once the viewer has drifted meaningfully behind the edge, so "LIVE"
    never claims more than it can deliver. */
 .livePillBehind {
-  background: transparent;
-  border-color: var(--color-border-default);
+  background: var(--color-surface-3);
   color: var(--color-text-muted);
 }
 
@@ -307,4 +595,33 @@
   border: 1px solid var(--color-warning-border);
   color: var(--color-warning);
   font-size: var(--text-label);
+}
+
+/* Phones: the player is edge to edge, so its frame and inset go */
+@media (max-width: 767px) {
+  .container {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .bottomBar {
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
+  }
+
+  .volumeSlider {
+    display: none;
+  }
+
+  .abrIndicator {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .container[data-controls="hidden"] {
+    cursor: auto;
+  }
 }

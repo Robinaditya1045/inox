@@ -17,8 +17,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     <div
       className={`${styles.shell} ${variant === "room" ? styles.shellRoom : ""}`}
     >
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
+
       <div className={styles.railArea}>
-        <AppRail />
+        <AppRail variant={variant} />
       </div>
 
       {variant === "home" && (
@@ -27,7 +31,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </div>
       )}
 
-      <main className={styles.workspaceArea}>{children}</main>
+      <main id="main-content" tabIndex={-1} className={styles.workspaceArea}>
+        {children}
+      </main>
     </div>
   );
 };

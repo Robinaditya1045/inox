@@ -1,4 +1,5 @@
-import React from "react";
+import React, { type CSSProperties, useState } from "react";
+import { hueFor } from "../../utils/avatarHue";
 import styles from "./Avatar.module.css";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
@@ -33,6 +34,10 @@ export const Avatar: React.FC<AvatarProps> = ({
   status = "none",
   className = "",
 }) => {
+  // A broken avatar URL falls back to initials instead of a broken image icon.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showImage = !!src && failedSrc !== src;
+
   const cls = [
     styles.avatar,
     styles[size],
@@ -43,9 +48,19 @@ export const Avatar: React.FC<AvatarProps> = ({
     .join(" ");
 
   return (
-    <div className={cls} aria-hidden="true">
-      {src ? (
-        <img src={src} alt={username} />
+    <div
+      className={cls}
+      style={{ "--avatar-bg": hueFor(username) } as CSSProperties}
+      aria-hidden="true"
+    >
+      {showImage ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedSrc(src)}
+        />
       ) : (
         <span>{getInitials(username)}</span>
       )}

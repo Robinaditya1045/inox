@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Hls, { type LoaderConfig } from "hls.js";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -17,6 +18,8 @@ import {
 } from "../../utils/liveSync";
 import { logger } from "../../utils/logger";
 import { PlayerScrubber } from "./PlayerScrubber";
+import { Spinner } from "../common/Spinner";
+import menuStyles from "../common/Menu.module.css";
 import {
   Play,
   Pause,
@@ -31,6 +34,8 @@ import {
   ChevronUp,
   AlertCircle,
   Radio,
+  Check,
+  Film,
 } from "lucide-react";
 import styles from "./WatchPartyPlayer.module.css";
 
@@ -91,7 +96,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   const [levels, setLevels] = useState<
     { index: number; height: number; bitrate: number }[]
   >([]);
-  const [showQuality, setShowQuality] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [behindEdge, setBehindEdge] = useState(0);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -333,10 +338,24 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
 
   const handleWaiting = () => {
     stalledRef.current = true;
+    setIsBuffering(true);
   };
 
   const handlePlaying = () => {
     stalledRef.current = false;
+    setIsBuffering(false);
+  };
+
+  // A film that plays to its end stops on its own, without anyone pressing pause,
+  // so nothing would tell the server; the room would stay "playing" (and listed
+  // under the lobby's Now Streaming) until everyone left. Anyone who could have
+  // paused says so; the PAUSE is idempotent if several of them do.
+  const handleEnded = () => {
+    setIsPlayingLocal(false);
+    const video = videoRef.current;
+    if (!isLive && permissions.can_control_playback && video) {
+      emitPause(video.currentTime);
+    }
   };
 
   const handleLoadedMetadata = () => {
@@ -586,13 +605,17 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       }
       setCurrentLevel(level);
     }
-    setShowQuality(false);
   };
 
   const currentQualityLabel =
     currentLevel === -1 || levels.length === 0
       ? "Auto"
       : `${levels.find((l) => l.index === currentLevel)?.height ?? "?"}p`;
+
+  const controlsVisible = showControls || !isPlayingLocal;
+  const canControl = permissions.can_control_playback;
+  const hasMedia = !!mediaUrl;
+  const volumePct = (isMuted ? 0 : volume) * 100;
 
   return (
     <div
@@ -602,27 +625,16 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       role="region"
       aria-label="Inox WatchParty Video Player"
       className={styles.container}
+      data-controls={controlsVisible ? "shown" : "hidden"}
     >
       {/* Top Status Bar */}
-      <div
-        className={styles.topBar}
-        style={{
-          opacity: showControls || !isPlayingLocal ? 1 : 0,
-          pointerEvents: showControls || !isPlayingLocal ? "auto" : "none",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-2)",
-          }}
-        >
+      <div className={`${styles.topBar} ${styles.chrome}`}>
+        <div className={styles.cluster}>
           <div
             className={`${styles.statusIndicator} ${isConnected ? styles.statusSynced : styles.statusOffline}`}
           >
             {isConnected ? <Wifi size={11} /> : <WifiOff size={11} />}
-            <span>{isConnected ? "SYNCED" : "OFFLINE"}</span>
+            <span>{isConnected ? "Synced" : "Offline"}</span>
           </div>
           {levels.length > 0 && (
             <div className={styles.abrIndicator}>
@@ -631,13 +643,14 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
           )}
         </div>
 
-        {permissions.can_control_playback && onOpenLibrary && (
+        {canControl && onOpenLibrary && (
           <button
+            type="button"
             onClick={onOpenLibrary}
             aria-label="Open Media Library"
             className={styles.libraryBtn}
           >
-            <Layers size={13} />
+            <Layers size={14} aria-hidden="true" />
             <span>Library</span>
           </button>
         )}
@@ -654,196 +667,258 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         onCanPlay={handlePlaying}
         onPlay={() => setIsPlayingLocal(true)}
         onPause={() => setIsPlayingLocal(false)}
-        className={styles.video}
-        style={{
-          cursor: permissions.can_control_playback ? "pointer" : "default",
-        }}
+        onEnded={handleEnded}
+        className={`${styles.video} ${canControl || isLive ? styles.videoClickable : ""}`}
         onClick={handlePlayClick}
         playsInline
       />
 
-      {loadError && (
+      {/* Centre overlay: one state at a time, error first */}
+      {!hasMedia ? (
+        <div className={styles.emptyState}>
+          <span className={styles.emptyIcon} aria-hidden="true">
+            <Film size={26} />
+          </span>
+          <p className={styles.emptyTitle}>Nothing is playing yet</p>
+          <p className={styles.emptyBody}>
+            {canControl && onOpenLibrary
+              ? "Pick something from the library to start the party."
+              : "The host will pick something to watch."}
+          </p>
+          {canControl && onOpenLibrary && (
+            <button
+              type="button"
+              className={styles.emptyBtn}
+              onClick={onOpenLibrary}
+            >
+              <Layers size={15} aria-hidden="true" /> Open Library
+            </button>
+          )}
+        </div>
+      ) : loadError ? (
         <div role="status" aria-live="polite" className={styles.loadError}>
-          <AlertCircle size={14} />
+          <AlertCircle size={14} aria-hidden="true" />
           <span>{loadError}</span>
         </div>
-      )}
+      ) : isBuffering && isPlayingLocal ? (
+        <div
+          className={styles.centerOverlay}
+          role="status"
+          aria-label="Buffering"
+        >
+          <span className={styles.bufferRing}>
+            <Spinner size={34} color="var(--color-on-media)" label={null} />
+          </span>
+        </div>
+      ) : !isPlayingLocal ? (
+        canControl || isLive ? (
+          <button
+            type="button"
+            className={styles.bigPlay}
+            onClick={handlePlayClick}
+            aria-label="Play Video"
+            tabIndex={-1}
+          >
+            <Play size={30} fill="currentColor" aria-hidden="true" />
+          </button>
+        ) : (
+          <div className={styles.centerOverlay}>
+            <span className={styles.pausedPill}>
+              <Pause size={13} fill="currentColor" aria-hidden="true" />
+              Paused by the host
+            </span>
+          </div>
+        )
+      ) : null}
 
       {/* Bottom Controls */}
-      <div
-        className={styles.bottomBar}
-        style={{
-          opacity: showControls || !isPlayingLocal ? 1 : 0,
-          transform:
-            showControls || !isPlayingLocal
-              ? "translateY(0)"
-              : "translateY(6px)",
-          pointerEvents: showControls || !isPlayingLocal ? "auto" : "none",
-        }}
-      >
-        {/* Transport row. A live stream has no fixed timeline to scrub, so it
-            reports where the room is instead of offering a seek target. */}
-        {isLive ? (
-          <div className={styles.liveBar}>
-            <span
-              className={`${styles.livePill} ${behindEdge > 8 ? styles.livePillBehind : ""}`}
-            >
-              <Radio size={10} />
-              LIVE
-            </span>
-            {behindEdge > 1 && (
-              <span className={styles.liveMeta}>
-                behind by {behindEdge.toFixed(1)}s
-              </span>
-            )}
-            {liveStatus && liveStatus.status !== "live" && (
+      {hasMedia && (
+        <div className={`${styles.bottomBar} ${styles.chrome}`}>
+          {/* Transport row. A live stream has no fixed timeline to scrub, so it
+              reports where the room is instead of offering a seek target. */}
+          {isLive ? (
+            <div className={styles.liveBar}>
               <span
-                className={styles.liveNotice}
-                role="status"
-                aria-live="polite"
+                className={`${styles.livePill} ${behindEdge > 8 ? styles.livePillBehind : ""}`}
               >
-                <AlertCircle size={11} />
-                {liveStatus.message || "The broadcast was interrupted."}
+                <Radio size={10} aria-hidden="true" />
+                LIVE
               </span>
-            )}
-            {leaderName && (
-              <span className={styles.liveLeader}>
-                {isLeader
-                  ? "You are setting the pace"
-                  : `Following ${leaderName}`}
-              </span>
-            )}
-          </div>
-        ) : (
-          <PlayerScrubber
-            duration={duration}
-            progress={progress}
-            canControl={permissions.can_control_playback}
-            onSeek={handleSeek}
-          />
-        )}
-
-        {/* Action Row */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-3)",
-            }}
-          >
-            {/* Play/Pause */}
-            <button
-              onClick={handlePlayClick}
-              disabled={!permissions.can_control_playback}
-              aria-label={isPlayingLocal ? "Pause Video" : "Play Video"}
-              className={`${styles.playBtn} ${permissions.can_control_playback ? styles.playBtnCanControl : styles.playBtnDisabled}`}
-            >
-              {!permissions.can_control_playback ? (
-                <Lock size={15} />
-              ) : isPlayingLocal ? (
-                <Pause size={16} fill="currentColor" />
-              ) : (
-                <Play size={16} fill="currentColor" style={{ marginLeft: 2 }} />
+              {behindEdge > 1 && (
+                <span className={styles.liveMeta}>
+                  behind by {behindEdge.toFixed(1)}s
+                </span>
               )}
-            </button>
+              {liveStatus && liveStatus.status !== "live" && (
+                <span
+                  className={styles.liveNotice}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <AlertCircle size={11} aria-hidden="true" />
+                  {liveStatus.message || "The broadcast was interrupted."}
+                </span>
+              )}
+              {leaderName && (
+                <span className={styles.liveLeader}>
+                  {isLeader
+                    ? "You are setting the pace"
+                    : `Following ${leaderName}`}
+                </span>
+              )}
+            </div>
+          ) : (
+            <PlayerScrubber
+              duration={duration}
+              progress={progress}
+              canControl={canControl}
+              onSeek={handleSeek}
+            />
+          )}
 
-            {/* Volume */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-              }}
-            >
+          {/* Action Row */}
+          <div className={styles.actionRow}>
+            <div className={styles.cluster}>
+              {/* Play/Pause */}
               <button
-                onClick={toggleMute}
-                aria-label={
-                  isMuted || volume === 0 ? "Unmute Audio" : "Mute Audio"
+                type="button"
+                onClick={handlePlayClick}
+                disabled={!canControl && !isLive}
+                aria-label={isPlayingLocal ? "Pause Video" : "Play Video"}
+                title={
+                  !canControl && !isLive
+                    ? "Only people who can control playback can do this"
+                    : undefined
                 }
-                className={`${styles.iconBtn} ${isMuted || volume === 0 ? styles.iconBtnDanger : ""}`}
+                className={`${styles.playBtn} ${canControl || isLive ? styles.playBtnCanControl : styles.playBtnDisabled}`}
               >
-                {isMuted || volume === 0 ? (
-                  <VolumeX size={16} />
+                {!canControl && !isLive ? (
+                  <Lock size={15} aria-hidden="true" />
+                ) : isPlayingLocal ? (
+                  <Pause size={16} fill="currentColor" aria-hidden="true" />
                 ) : (
-                  <Volume2 size={16} />
+                  <Play
+                    size={16}
+                    fill="currentColor"
+                    className={styles.playGlyph}
+                    aria-hidden="true"
+                  />
                 )}
               </button>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step="0.05"
-                value={isMuted ? 0 : volume}
-                onChange={handleVolumeChange}
-                aria-label="Volume Slider"
-                className={styles.volumeSlider}
-                style={{
-                  background: `linear-gradient(to right, var(--color-accent) 0%, var(--color-accent) ${(isMuted ? 0 : volume) * 100}%, var(--color-border-default) ${(isMuted ? 0 : volume) * 100}%, var(--color-border-default) 100%)`,
-                }}
-              />
+
+              {/* Volume */}
+              <div className={styles.volume}>
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  aria-label={
+                    isMuted || volume === 0 ? "Unmute Audio" : "Mute Audio"
+                  }
+                  className={`${styles.iconBtn} ${isMuted || volume === 0 ? styles.iconBtnDanger : ""}`}
+                >
+                  {isMuted || volume === 0 ? (
+                    <VolumeX size={18} aria-hidden="true" />
+                  ) : (
+                    <Volume2 size={18} aria-hidden="true" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step="0.05"
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  aria-label="Volume Slider"
+                  aria-valuetext={`${Math.round(volumePct)}%`}
+                  className={styles.volumeSlider}
+                  style={{ "--fill": `${volumePct}%` } as React.CSSProperties}
+                />
+              </div>
+            </div>
+
+            <div className={styles.cluster}>
+              {/* Quality Selector. Not portalled: in fullscreen only the player's
+                  own subtree is visible, so the menu has to live inside it. */}
+              {levels.length > 0 && (
+                <DropdownMenu.Root modal={false}>
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Video Quality Settings"
+                      className={styles.qualityBtn}
+                    >
+                      <ChevronUp
+                        size={12}
+                        aria-hidden="true"
+                        className={styles.qualityChevron}
+                      />
+                      {currentQualityLabel}
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content
+                    className={`${menuStyles.content} ${styles.qualityMenu}`}
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                  >
+                    <DropdownMenu.Label className={menuStyles.label}>
+                      Quality
+                    </DropdownMenu.Label>
+                    <DropdownMenu.Item
+                      className={menuStyles.item}
+                      onSelect={() => setQualityLevel(-1)}
+                    >
+                      <span className={menuStyles.itemLabel}>Auto ABR</span>
+                      {currentLevel === -1 && (
+                        <span className={menuStyles.itemCheck}>
+                          <Check size={14} />
+                        </span>
+                      )}
+                    </DropdownMenu.Item>
+                    {levels.map((l) => (
+                      <DropdownMenu.Item
+                        key={l.index}
+                        className={menuStyles.item}
+                        onSelect={() => setQualityLevel(l.index)}
+                      >
+                        <span className={menuStyles.itemLabel}>
+                          {l.height ? `${l.height}p` : `Level ${l.index}`}
+                          <span className={styles.bitrate}>
+                            {" "}
+                            · {Math.round(l.bitrate / 1000)}k
+                          </span>
+                        </span>
+                        {currentLevel === l.index && (
+                          <span className={menuStyles.itemCheck}>
+                            <Check size={14} />
+                          </span>
+                        )}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              )}
+
+              {/* Fullscreen */}
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                aria-label={
+                  isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"
+                }
+                className={styles.iconBtn}
+              >
+                {isFullscreen ? (
+                  <Minimize2 size={18} aria-hidden="true" />
+                ) : (
+                  <Maximize2 size={18} aria-hidden="true" />
+                )}
+              </button>
             </div>
           </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-            }}
-          >
-            {/* Quality Selector */}
-            {levels.length > 0 && (
-              <div style={{ position: "relative" }}>
-                <button
-                  onClick={() => setShowQuality((p) => !p)}
-                  aria-label="Video Quality Settings"
-                  className={styles.qualityBtn}
-                >
-                  <ChevronUp size={12} />
-                  {currentQualityLabel}
-                </button>
-
-                {showQuality && (
-                  <div className={styles.qualityMenu}>
-                    <button
-                      onClick={() => setQualityLevel(-1)}
-                      className={`${styles.qualityMenuItem} ${currentLevel === -1 ? styles.qualityMenuItemActive : ""}`}
-                    >
-                      Auto ABR
-                    </button>
-                    {levels.map((l) => (
-                      <button
-                        key={l.index}
-                        onClick={() => setQualityLevel(l.index)}
-                        className={`${styles.qualityMenuItem} ${currentLevel === l.index ? styles.qualityMenuItemActive : ""}`}
-                      >
-                        {l.height ? `${l.height}p` : `Level ${l.index}`} ·{" "}
-                        {Math.round(l.bitrate / 1000)}k
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Fullscreen */}
-            <button
-              onClick={toggleFullscreen}
-              aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              className={styles.iconBtn}
-            >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

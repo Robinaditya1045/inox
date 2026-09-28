@@ -27,6 +27,18 @@ export interface Room {
   current_media_url?: string;
   created_at: string;
   members?: RoomMember[];
+  /** Present only while someone is connected to the room (from the live hub). */
+  activity?: RoomActivity;
+}
+
+/** A room's live state: who is in it right now and what it is playing. */
+export interface RoomActivity {
+  /** Distinct people connected now — not the membership count. */
+  viewers: number;
+  /** A VOD someone pressed play on, or a live stream with a sync leader. */
+  is_playing: boolean;
+  media_url?: string;
+  kind?: "vod" | "live";
 }
 
 export interface CreateRoomRequest {

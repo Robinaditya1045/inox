@@ -1,6 +1,8 @@
 import React from "react";
 import { useRTC } from "../../hooks/useRTC";
 import { usePermissions } from "../../hooks/usePermissions";
+import { IconButton } from "../common/IconButton";
+import { Spinner } from "../common/Spinner";
 import {
   Signal,
   AlertTriangle,
@@ -53,9 +55,14 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
   if (connectionState === "connecting") {
     return (
       <div className={styles.panel}>
-        <div className={styles.pending} role="status" aria-live="polite">
-          <span className={styles.spinner} aria-hidden="true" />
-          <span>Negotiating…</span>
+        <div
+          key="connecting"
+          className={`${styles.stateView} ${styles.pending}`}
+          role="status"
+          aria-live="polite"
+        >
+          <Spinner size={12} color="currentColor" label={null} />
+          <span>Connecting to voice…</span>
         </div>
       </div>
     );
@@ -65,7 +72,9 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
     return (
       <div className={styles.panel}>
         <button
-          className={`${styles.wideBtn} ${styles.wideBtnAccent}`}
+          key="disconnected"
+          type="button"
+          className={`${styles.stateView} ${styles.wideBtn} ${styles.wideBtnAccent}`}
           onClick={connectAudio}
           aria-label="Join voice channel"
         >
@@ -80,82 +89,76 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
 
   return (
     <div className={styles.panel}>
-      <div className={styles.statusRow}>
-        {hasFailed ? (
-          <AlertTriangle
-            size={18}
-            aria-hidden="true"
-            style={{ color: "var(--color-danger)", flexShrink: 0 }}
-          />
-        ) : (
-          <Signal
-            size={18}
-            aria-hidden="true"
-            style={{ color: "var(--color-live)", flexShrink: 0 }}
-          />
-        )}
-
-        <div className={styles.statusText}>
+      <div key={connectionState} className={styles.stateView}>
+        <div className={styles.statusRow}>
           <span
-            className={`${styles.statusTitle} ${hasFailed ? styles.statusTitleDanger : ""}`}
+            className={`${styles.signal} ${hasFailed ? styles.signalDanger : ""}`}
+            aria-hidden="true"
           >
-            {hasFailed ? "Voice Disconnected" : "Voice Connected"}
+            {hasFailed ? <AlertTriangle size={18} /> : <Signal size={18} />}
           </span>
-          <span className={styles.statusSub}>
-            {hasFailed
-              ? "Connection failed"
-              : `${channelName}${roomName ? ` / ${roomName}` : ""}`}
-          </span>
+
+          <div className={styles.statusText} role="status">
+            <span
+              className={`${styles.statusTitle} ${hasFailed ? styles.statusTitleDanger : ""}`}
+            >
+              {hasFailed ? "Voice Disconnected" : "Voice Connected"}
+            </span>
+            <span className={styles.statusSub}>
+              {hasFailed
+                ? "Connection failed"
+                : `${channelName}${roomName ? ` / ${roomName}` : ""}`}
+            </span>
+          </div>
+
+          {permissions.can_share_screen && !hasFailed && (
+            <IconButton
+              label={isScreenSharing ? "Stop screen sharing" : "Share screen"}
+              isActive={isScreenSharing}
+              onClick={toggleScreenShare}
+              aria-pressed={isScreenSharing}
+            >
+              {isScreenSharing ? (
+                <ScreenShareOff size={17} />
+              ) : (
+                <ScreenShare size={17} />
+              )}
+            </IconButton>
+          )}
+
+          <IconButton
+            label="Disconnect from voice"
+            tooltip="Disconnect"
+            variant="danger"
+            onClick={disconnectAudio}
+          >
+            <PhoneOff size={17} />
+          </IconButton>
         </div>
 
-        {permissions.can_share_screen && !hasFailed && (
+        {hasFailed && (
           <button
-            className={`${styles.iconBtn} ${isScreenSharing ? styles.iconBtnAccent : ""}`}
-            onClick={toggleScreenShare}
-            aria-label={
-              isScreenSharing ? "Stop screen sharing" : "Share screen"
-            }
-            aria-pressed={isScreenSharing}
-            title={isScreenSharing ? "Stop screen sharing" : "Share screen"}
+            type="button"
+            className={`${styles.wideBtn} ${styles.wideBtnAccent}`}
+            onClick={connectAudio}
           >
-            {isScreenSharing ? (
-              <ScreenShareOff size={16} />
-            ) : (
-              <ScreenShare size={16} />
-            )}
+            <Radio size={13} aria-hidden="true" />
+            Reconnect
           </button>
         )}
 
-        <button
-          className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-          onClick={disconnectAudio}
-          aria-label="Disconnect from voice"
-          title="Disconnect"
-        >
-          <PhoneOff size={16} />
-        </button>
+        {isScreenSharing && !hasFailed && (
+          <button
+            type="button"
+            className={`${styles.wideBtn} ${styles.wideBtnDanger}`}
+            onClick={toggleScreenShare}
+            aria-label="Stop sharing screen"
+          >
+            <Square size={13} aria-hidden="true" />
+            Stop Sharing Screen
+          </button>
+        )}
       </div>
-
-      {hasFailed && (
-        <button
-          className={`${styles.wideBtn} ${styles.wideBtnAccent}`}
-          onClick={connectAudio}
-        >
-          <Radio size={13} aria-hidden="true" />
-          Reconnect
-        </button>
-      )}
-
-      {isScreenSharing && !hasFailed && (
-        <button
-          className={`${styles.wideBtn} ${styles.wideBtnDanger}`}
-          onClick={toggleScreenShare}
-          aria-label="Stop sharing screen"
-        >
-          <Square size={13} aria-hidden="true" />
-          Stop Sharing Screen
-        </button>
-      )}
     </div>
   );
 };

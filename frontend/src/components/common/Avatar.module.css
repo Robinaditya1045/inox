@@ -3,13 +3,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-avatar);
-  background-color: var(--color-surface-3);
-  color: var(--color-text-primary);
-  font-weight: 600;
-  font-family: var(--font-sans);
   flex-shrink: 0;
-  overflow: hidden;
+  border-radius: var(--radius-avatar);
+  background-color: var(--avatar-bg, var(--color-surface-3));
+  color: #fff;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  letter-spacing: 0.01em;
   user-select: none;
 }
 
@@ -17,24 +17,24 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: var(--radius-avatar);
+  border-radius: inherit;
 }
 
 /* Sizes */
 .xs {
   width: 20px;
   height: 20px;
-  font-size: 0.6rem;
+  font-size: 0.5625rem;
 }
 .sm {
-  width: 28px;
-  height: 28px;
-  font-size: 0.7rem;
+  width: 32px;
+  height: 32px;
+  font-size: 0.75rem;
 }
 .md {
   width: 36px;
   height: 36px;
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
 }
 .lg {
   width: 44px;
@@ -52,15 +52,19 @@
   border-radius: var(--radius-lg);
 }
 
-/* Presence dot */
+/* Presence dot. The ring takes the colour of whatever the avatar sits on, via
+   --avatar-ring from the parent, so it reads as a cut-out on any surface. */
 .statusDot {
   position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 10px;
-  height: 10px;
+  right: -2px;
+  bottom: -2px;
+  width: 38%;
+  height: 38%;
+  min-width: 10px;
+  min-height: 10px;
   border-radius: var(--radius-full);
-  border: 2px solid var(--color-canvas);
+  border: 2.5px solid var(--avatar-ring, var(--color-canvas));
+  transition: background-color var(--transition-normal);
 }
 
 .online {

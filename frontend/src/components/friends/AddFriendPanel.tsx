@@ -4,9 +4,12 @@ import { Button } from "../common/Button";
 import { TextField } from "../common/TextField";
 import { Badge } from "../common/Badge";
 import { Spinner } from "../common/Spinner";
+import { Alert } from "../common/Alert";
+import { EmptyState } from "../common/EmptyState";
 import { FriendRow } from "./FriendRow";
 import type { UserSearchResult } from "../../types";
-import { Search, UserPlus, Check, Clock } from "lucide-react";
+import { Search, UserPlus, Check, Clock, SearchX } from "lucide-react";
+import { stagger } from "../../utils/motion";
 import styles from "../../pages/FriendsPage.module.css";
 
 /** Matches the server's minimum query length, so the UI doesn't promise results
@@ -97,7 +100,14 @@ export const AddFriendPanel: React.FC = () => {
   );
 
   return (
-    <div>
+    <>
+      <div className={styles.intro}>
+        <h2 className={styles.introTitle}>Add a friend</h2>
+        <p className={styles.introText}>
+          Send a request by exact username, or search and pick from the results.
+        </p>
+      </div>
+
       <form
         className={styles.searchForm}
         onSubmit={(e) => {
@@ -107,10 +117,14 @@ export const AddFriendPanel: React.FC = () => {
       >
         <TextField
           className={styles.searchField}
-          label="Add a friend by username"
-          placeholder="Enter an exact username, or search"
+          label="Username"
+          name="friend-username"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="Enter a username…"
           value={query}
-          icon={<Search size={14} />}
+          icon={<Search size={16} />}
           onChange={(e) => {
             setQuery(e.target.value);
             setNotice(null);
@@ -121,6 +135,7 @@ export const AddFriendPanel: React.FC = () => {
         <Button
           type="submit"
           variant="primary"
+          className={styles.searchSubmit}
           icon={<UserPlus size={14} />}
           isLoading={isSubmitting}
           disabled={!query.trim()}
@@ -129,37 +144,38 @@ export const AddFriendPanel: React.FC = () => {
         </Button>
       </form>
 
-      {friendsError && <div className={styles.error}>{friendsError}</div>}
-      {notice && <div className={styles.notice}>{notice}</div>}
+      {friendsError && <Alert>{friendsError}</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
 
-      <div style={{ marginTop: "var(--space-5)" }}>
+      <div className={styles.results} aria-live="polite">
         {isSearching && (
-          <div className={styles.loading}>
-            <Spinner size={16} />
+          <div className={styles.searching} role="status">
+            <Spinner size={14} label={null} />
             Searching…
           </div>
         )}
 
         {!isSearching && results.length > 0 && (
-          <>
+          <section aria-label="Search results">
             <div className={styles.sectionLabel}>
-              <Search size={12} /> Results
+              <Search size={12} aria-hidden="true" /> Results — {results.length}
             </div>
             <div className={styles.list}>
-              {results.map((result) => (
+              {results.map((result, i) => (
                 <FriendRow
                   key={result.user_id}
                   username={result.username}
                   avatarUrl={result.avatar_url}
+                  style={stagger(i)}
                 >
                   {result.relationship === "friends" && (
                     <Badge variant="success">
-                      <Check size={10} /> Friends
+                      <Check size={10} aria-hidden="true" /> Friends
                     </Badge>
                   )}
                   {result.relationship === "request_sent" && (
                     <Badge variant="warning">
-                      <Clock size={10} /> Requested
+                      <Clock size={10} aria-hidden="true" /> Requested
                     </Badge>
                   )}
                   {result.relationship === "request_received" && (
@@ -185,22 +201,20 @@ export const AddFriendPanel: React.FC = () => {
                 </FriendRow>
               ))}
             </div>
-          </>
+          </section>
         )}
 
         {!isSearching &&
           query.trim().length >= MIN_QUERY &&
           results.length === 0 && (
-            <div className={styles.empty}>
-              <span className={styles.emptyTitle}>
-                No one matches “{query.trim()}”
-              </span>
-              <span className={styles.emptyHint}>
-                Check the spelling — usernames are case sensitive.
-              </span>
-            </div>
+            <EmptyState
+              compact
+              icon={<SearchX size={20} />}
+              title={<>No one matches “{query.trim()}”</>}
+              description="Check the spelling — usernames are case sensitive."
+            />
           )}
       </div>
-    </div>
+    </>
   );
 };
