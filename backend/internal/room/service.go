@@ -13,7 +13,10 @@ import (
 var (
 	ErrInvalidRoomName  = errors.New("room name must be between 3 and 100 characters")
 	ErrPermissionDenied = errors.New("you do not have permission to perform this action")
-	ErrCannotAlterOwner = errors.New("cannot demote, modify permissions, or kick the room owner")
+	ErrCannotAlterOwner = errors.New("cannot demote, modify permissions, or kick the room creator")
+	ErrInvalidRole      = errors.New("unknown room role")
+	ErrOwnerOnly        = errors.New("only a room owner can make someone an owner")
+	ErrCreatorOnly      = errors.New("only the room creator can demote or remove an owner")
 )
 
 // RoomService defines the business logic contract for room management and RBAC governance.
@@ -124,7 +127,15 @@ func (s *roomService) GetRoomAndMember(ctx context.Context, roomID, userID strin
 }
 
 // AssignRole allows room owners or authorized role managers to update a participant's role and explicit capability flags.
+//
+// A room can have several owners. Any owner may make someone else an owner, but the
+// creator (rooms.owner_id) can never be altered and only the creator may demote a
+// co-owner, so co-owners cannot lock each other, or the creator, out.
 func (s *roomService) AssignRole(ctx context.Context, roomID, requesterID, targetUserID string, newRole domain.Role, customPerms *domain.Permissions) (*domain.RoomMember, error) {
+	if !newRole.Valid() {
+		return nil, ErrInvalidRole
+	}
+
 	// 1. Verify requester has CanManageRoles permission
 	requester, err := s.repo.GetMember(ctx, roomID, requesterID)
 	if err != nil {
@@ -133,6 +144,10 @@ func (s *roomService) AssignRole(ctx context.Context, roomID, requesterID, targe
 	if !requester.Permissions.CanManageRoles {
 		return nil, ErrPermissionDenied
 	}
+	// CanManageRoles can be granted to non-owners, so it is not enough to hand out ownership.
+	if newRole == domain.RoleOwner && requester.Role != domain.RoleOwner {
+		return nil, ErrOwnerOnly
+	}
 
 	// 2. Fetch target participant
 	target, err := s.repo.GetMember(ctx, roomID, targetUserID)
@@ -140,14 +155,15 @@ func (s *roomService) AssignRole(ctx context.Context, roomID, requesterID, targe
 		return nil, fmt.Errorf("failed verifying target member: %w", err)
 	}
 
-	// 3. Prevent modifying the Room Owner!
-	if target.Role == domain.RoleOwner {
-		return nil, ErrCannotAlterOwner
+	// 3. Owners are only changed by the creator, and the creator not at all
+	if err := s.authorizeMemberChange(ctx, roomID, requesterID, target); err != nil {
+		return nil, err
 	}
 
-	// 4. Calculate new permissions
+	// 4. Calculate new permissions. An owner always gets the full owner set, so the
+	// role keeps meaning the same thing for every owner of the room.
 	var perms domain.Permissions
-	if customPerms != nil {
+	if customPerms != nil && newRole != domain.RoleOwner {
 		perms = *customPerms
 	} else {
 		perms = domain.DefaultPermissionsForRole(newRole)
@@ -175,8 +191,8 @@ func (s *roomService) KickMember(ctx context.Context, roomID, requesterID, targe
 	if err != nil {
 		return err
 	}
-	if target.Role == domain.RoleOwner {
-		return ErrCannotAlterOwner
+	if err := s.authorizeMemberChange(ctx, roomID, requesterID, target); err != nil {
+		return err
 	}
 
 	if err := s.repo.RemoveMember(ctx, roomID, targetUserID); err != nil {
@@ -185,6 +201,24 @@ func (s *roomService) KickMember(ctx context.Context, roomID, requesterID, targe
 
 	if s.stateRepo != nil {
 		_ = s.stateRepo.InvalidateMemberVerification(ctx, roomID, targetUserID)
+	}
+	return nil
+}
+
+// authorizeMemberChange applies the ownership rules on top of the requester's
+// permission flags before target is demoted or removed: nobody may touch the room's
+// creator, and only the creator may touch another owner. The creator is identified by
+// rooms.owner_id rather than by role, so the guard holds whatever their member row says.
+func (s *roomService) authorizeMemberChange(ctx context.Context, roomID, requesterID string, target *domain.RoomMember) error {
+	creatorID, err := s.repo.GetRoomOwnerID(ctx, roomID)
+	if err != nil {
+		return err
+	}
+	if target.UserID == creatorID {
+		return ErrCannotAlterOwner
+	}
+	if target.Role == domain.RoleOwner && requesterID != creatorID {
+		return ErrCreatorOnly
 	}
 	return nil
 }
@@ -326,11 +360,12 @@ func (s *roomService) DeleteRoom(ctx context.Context, roomID, requesterID string
 }
 
 func (s *roomService) LeaveRoom(ctx context.Context, roomID, userID string) error {
-	member, err := s.repo.GetMember(ctx, roomID, userID)
+	// Co-owners may step away; the creator holds the room and has to delete it instead.
+	creatorID, err := s.repo.GetRoomOwnerID(ctx, roomID)
 	if err != nil {
 		return err
 	}
-	if member.Role == domain.RoleOwner {
+	if userID == creatorID {
 		return ErrCannotAlterOwner
 	}
 	if err := s.repo.RemoveMember(ctx, roomID, userID); err != nil {

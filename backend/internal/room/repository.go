@@ -21,6 +21,7 @@ var (
 type RoomRepository interface {
 	CreateRoomWithOwner(ctx context.Context, room *domain.Room, ownerPerms domain.Permissions) (*domain.RoomMember, error)
 	GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error)
+	GetRoomOwnerID(ctx context.Context, roomID string) (string, error)
 	GetMember(ctx context.Context, roomID, userID string) (*domain.RoomMember, error)
 	AddMember(ctx context.Context, member *domain.RoomMember) error
 	UpdateMemberPermissions(ctx context.Context, roomID, userID string, role domain.Role, perms domain.Permissions) (*domain.RoomMember, error)
@@ -125,6 +126,20 @@ func (r *postgresRoomRepository) GetRoomByID(ctx context.Context, roomID string)
 		room.Members = members
 	}
 	return &room, nil
+}
+
+// GetRoomOwnerID returns the room's creator without loading the room's member list,
+// for permission checks that need nothing else from the room.
+func (r *postgresRoomRepository) GetRoomOwnerID(ctx context.Context, roomID string) (string, error) {
+	var ownerID string
+	err := r.db.QueryRow(ctx, `SELECT owner_id FROM rooms WHERE id = $1`, roomID).Scan(&ownerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrRoomNotFound
+		}
+		return "", fmt.Errorf("failed to query room owner: %w", err)
+	}
+	return ownerID, nil
 }
 
 // GetMember fetches a participant's role and explicit boolean capabilities in a specific room.

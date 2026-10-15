@@ -80,15 +80,16 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   }, [refreshRooms, refreshInvitations]);
 
   // Compute current user's role and permission matrix whenever activeRoom or user changes
-  const { userRole, permissions } = React.useMemo(() => {
+  const { userRole, permissions, isCreator } = React.useMemo(() => {
     if (!activeRoom || !user) {
-      return { userRole: null, permissions: null };
+      return { userRole: null, permissions: null, isCreator: false };
     }
 
     if (activeRoom.owner_id === user.id) {
       return {
         userRole: "owner" as RoomRole,
         permissions: DEFAULT_PERMISSIONS.owner,
+        isCreator: true,
       };
     }
 
@@ -97,6 +98,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
       return {
         userRole: member.role,
         permissions: member.permissions || DEFAULT_PERMISSIONS[member.role],
+        isCreator: false,
       };
     }
 
@@ -105,6 +107,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     return {
       userRole: "guest" as RoomRole,
       permissions: DEFAULT_PERMISSIONS.guest,
+      isCreator: false,
     };
   }, [activeRoom, user]);
 
@@ -300,6 +303,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     rooms,
     invitations,
     userRole,
+    isCreator,
     permissions,
     isLoadingRoom,
     hasLoadedRooms,

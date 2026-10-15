@@ -13,6 +13,15 @@ const (
 	RoleGuest     Role = "guest"
 )
 
+// Valid reports whether r is one of the room roles above.
+func (r Role) Valid() bool {
+	switch r {
+	case RoleOwner, RoleModerator, RoleMember, RoleGuest:
+		return true
+	}
+	return false
+}
+
 // Permissions defines granular boolean flags controlling user capabilities inside a Watch Party room.
 type Permissions struct {
 	CanControlPlayback bool `json:"can_control_playback"` // Play, pause, seek synchronized video

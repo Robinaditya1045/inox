@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { usePresence } from "../../hooks/usePresence";
 import { useAuth } from "../../hooks/useAuth";
-import type { RoomRole } from "../../types/room";
+import { usePermissions } from "../../hooks/usePermissions";
+import { useToast } from "../../hooks/useToast";
+import type { RoomMember, RoomRole } from "../../types/room";
 import {
   Shield,
   UserMinus,
@@ -22,6 +24,7 @@ import { useRTC } from "../../hooks/useRTC";
 import { Avatar } from "../common/Avatar";
 import { Button } from "../common/Button";
 import { IconButton } from "../common/IconButton";
+import { Modal } from "../common/Modal";
 import { Spinner } from "../common/Spinner";
 import { stagger } from "../../utils/motion";
 import menuStyles from "../common/Menu.module.css";
@@ -39,6 +42,8 @@ export const MemberList: React.FC = () => {
     usePresence();
   const { user } = useAuth();
   const { permissions, inviteUser, activeRoom } = useRoom();
+  const { isOwner, isCreator } = usePermissions();
+  const { toast } = useToast();
   const { peers: voicePeers, speakingIds } = useRTC(activeRoom?.id);
 
   const [inviteUsername, setInviteUsername] = useState("");
@@ -46,6 +51,11 @@ export const MemberList: React.FC = () => {
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  // Kept apart from the open flag so the dialog's text doesn't blank out while it
+  // animates closed.
+  const [ownerCandidate, setOwnerCandidate] = useState<RoomMember | null>(null);
+  const [isOwnerDialogOpen, setIsOwnerDialogOpen] = useState(false);
+  const [isPromoting, setIsPromoting] = useState(false);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,19 +79,57 @@ export const MemberList: React.FC = () => {
     }
   };
 
-  const handleRoleChange = async (targetId: string, newRole: RoomRole) => {
+  const handleRoleChange = async (member: RoomMember, newRole: RoomRole) => {
     try {
-      await updateRole(targetId, newRole);
-    } catch {
-      // Error handled in hook
+      await updateRole(member.user_id, newRole);
+    } catch (err) {
+      toast({
+        tone: "danger",
+        title: `Couldn't change ${member.username}'s role`,
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 
-  const handleKick = async (targetId: string) => {
+  const askMakeOwner = (member: RoomMember) => {
+    setOwnerCandidate(member);
+    setIsOwnerDialogOpen(true);
+  };
+
+  const closeOwnerDialog = () => {
+    if (!isPromoting) setIsOwnerDialogOpen(false);
+  };
+
+  const confirmMakeOwner = async () => {
+    if (!ownerCandidate) return;
+    setIsPromoting(true);
     try {
-      await kickMember(targetId);
-    } catch {
-      // Error handled in hook
+      await updateRole(ownerCandidate.user_id, "owner");
+      setIsOwnerDialogOpen(false);
+      toast({
+        tone: "success",
+        title: `${ownerCandidate.username} is now an owner`,
+      });
+    } catch (err) {
+      toast({
+        tone: "danger",
+        title: `Couldn't make ${ownerCandidate.username} an owner`,
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsPromoting(false);
+    }
+  };
+
+  const handleKick = async (member: RoomMember) => {
+    try {
+      await kickMember(member.user_id);
+    } catch (err) {
+      toast({
+        tone: "danger",
+        title: `Couldn't remove ${member.username}`,
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 
@@ -255,7 +303,9 @@ export const MemberList: React.FC = () => {
                         </span>
                       </span>
                       <span className={styles.roleText}>
-                        {ROLE_LABEL[member.role]}
+                        {member.user_id === activeRoom?.owner_id
+                          ? "Creator"
+                          : ROLE_LABEL[member.role]}
                       </span>
                     </div>
 
@@ -293,17 +343,39 @@ export const MemberList: React.FC = () => {
                               Change role
                             </DropdownMenu.Label>
 
+                            {isOwner && (
+                              <DropdownMenu.Item
+                                className={menuStyles.item}
+                                disabled={member.role === "owner"}
+                                onSelect={() => askMakeOwner(member)}
+                              >
+                                <span className={menuStyles.itemIcon}>
+                                  <Crown size={15} />
+                                </span>
+                                <span className={menuStyles.itemLabel}>
+                                  Make Owner
+                                </span>
+                                {member.role === "owner" && (
+                                  <span className={menuStyles.itemCheck}>
+                                    <Check size={14} />
+                                  </span>
+                                )}
+                              </DropdownMenu.Item>
+                            )}
+
                             <DropdownMenu.Item
                               className={menuStyles.item}
                               onSelect={() =>
-                                handleRoleChange(member.user_id, "moderator")
+                                handleRoleChange(member, "moderator")
                               }
                             >
                               <span className={menuStyles.itemIcon}>
                                 <ShieldAlert size={15} />
                               </span>
                               <span className={menuStyles.itemLabel}>
-                                Promote to Mod
+                                {member.role === "owner"
+                                  ? "Demote to Mod"
+                                  : "Promote to Mod"}
                               </span>
                               {member.role === "moderator" && (
                                 <span className={menuStyles.itemCheck}>
@@ -315,7 +387,7 @@ export const MemberList: React.FC = () => {
                             <DropdownMenu.Item
                               className={menuStyles.item}
                               onSelect={() =>
-                                handleRoleChange(member.user_id, "member")
+                                handleRoleChange(member, "member")
                               }
                             >
                               <span className={menuStyles.itemIcon}>
@@ -333,9 +405,7 @@ export const MemberList: React.FC = () => {
 
                             <DropdownMenu.Item
                               className={menuStyles.item}
-                              onSelect={() =>
-                                handleRoleChange(member.user_id, "guest")
-                              }
+                              onSelect={() => handleRoleChange(member, "guest")}
                             >
                               <span className={menuStyles.itemIcon}>
                                 <Shield size={15} />
@@ -356,7 +426,7 @@ export const MemberList: React.FC = () => {
 
                             <DropdownMenu.Item
                               className={`${menuStyles.item} ${menuStyles.danger}`}
-                              onSelect={() => handleKick(member.user_id)}
+                              onSelect={() => handleKick(member)}
                             >
                               <span className={menuStyles.itemIcon}>
                                 <UserMinus size={15} />
@@ -376,6 +446,36 @@ export const MemberList: React.FC = () => {
           ),
         )}
       </div>
+
+      <Modal
+        isOpen={isOwnerDialogOpen}
+        onClose={closeOwnerDialog}
+        title={`Make ${ownerCandidate?.username ?? ""} an owner?`}
+        description="They'll get full control of the room, including changing roles, kicking people and adding more owners."
+      >
+        <p className={styles.confirmText}>
+          {isCreator
+            ? "As the room's creator, you can demote them again later."
+            : "Only the room's creator can undo this."}
+        </p>
+        <div className={styles.confirmFooter}>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={closeOwnerDialog}
+            disabled={isPromoting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={confirmMakeOwner}
+            isLoading={isPromoting}
+          >
+            Make owner
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -12,6 +12,11 @@ export interface RoomContextValue {
   rooms: Room[];
   invitations: RoomInvitation[];
   userRole: RoomRole | null;
+  /**
+   * Created the active room. A room can have several owners, but only its creator
+   * can demote or kick another owner, and nobody can demote or kick the creator.
+   */
+  isCreator: boolean;
   permissions: RoomPermissions | null;
   /** Join/create/accept in flight. Not the room list: see hasLoadedRooms. */
   isLoadingRoom: boolean;

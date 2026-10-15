@@ -71,11 +71,12 @@ export const usePresence = (): UsePresenceReturn => {
 
   const kickMember = useCallback(
     async (userId: string) => {
+      // Thrown rather than returned, so callers never report a kick that never happened.
       if (!activeRoom?.id || !permissions.can_kick_users) {
         logger.warn(
           "usePresence: Permission denied or no active room to kick member",
         );
-        return;
+        throw new Error("You don't have permission to remove members.");
       }
 
       try {
@@ -97,7 +98,7 @@ export const usePresence = (): UsePresenceReturn => {
     async (userId: string, newRole: RoomRole) => {
       if (!activeRoom?.id || !permissions.can_manage_roles) {
         logger.warn("usePresence: Permission denied to update role");
-        return;
+        throw new Error("You don't have permission to change roles.");
       }
 
       try {
@@ -133,12 +134,19 @@ export const usePresence = (): UsePresenceReturn => {
     (targetMember: RoomMember): boolean => {
       if (!permissions.can_manage_roles && !permissions.can_kick_users)
         return false;
-      if (permissions.isOwner) return targetMember.role !== "owner";
+      // Mirrors the server: nobody can demote or kick the creator, and only the
+      // creator can demote or kick another owner. The creator is matched by ID
+      // before any role check, since someone who reconnects is re-added locally as
+      // a guest until the room is refetched.
+      if (targetMember.user_id === activeRoom?.owner_id) return false;
+      if (permissions.isOwner) {
+        return targetMember.role !== "owner" || permissions.isCreator;
+      }
       if (permissions.isModerator)
         return targetMember.role === "member" || targetMember.role === "guest";
       return false;
     },
-    [permissions],
+    [permissions, activeRoom?.owner_id],
   );
 
   return {

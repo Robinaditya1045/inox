@@ -181,7 +181,12 @@ func (h *RoomHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.roomService.AssignRole(r.Context(), roomID, session.UserID, targetUserID, req.Role, req.Permissions)
 	if err != nil {
-		if errors.Is(err, room.ErrPermissionDenied) || errors.Is(err, room.ErrCannotAlterOwner) {
+		if errors.Is(err, room.ErrInvalidRole) {
+			respond.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, room.ErrPermissionDenied) || errors.Is(err, room.ErrCannotAlterOwner) ||
+			errors.Is(err, room.ErrOwnerOnly) || errors.Is(err, room.ErrCreatorOnly) {
 			respond.WriteError(w, http.StatusForbidden, err.Error())
 			return
 		}
@@ -205,7 +210,8 @@ func (h *RoomHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 
 	err := h.roomService.KickMember(r.Context(), roomID, session.UserID, targetUserID)
 	if err != nil {
-		if errors.Is(err, room.ErrPermissionDenied) || errors.Is(err, room.ErrCannotAlterOwner) {
+		if errors.Is(err, room.ErrPermissionDenied) || errors.Is(err, room.ErrCannotAlterOwner) ||
+			errors.Is(err, room.ErrCreatorOnly) {
 			respond.WriteError(w, http.StatusForbidden, err.Error())
 			return
 		}
@@ -304,7 +310,7 @@ func (h *RoomHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"status": "declined"})
 }
 
-// LeaveRoom allows a non-owner member to permanently leave a room.
+// LeaveRoom allows any member but the room's creator to permanently leave a room.
 func (h *RoomHandler) LeaveRoom(w http.ResponseWriter, r *http.Request) {
 	session, ok := middleware.GetSessionFromContext(r.Context())
 	if !ok {
@@ -320,7 +326,7 @@ func (h *RoomHandler) LeaveRoom(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.roomService.LeaveRoom(r.Context(), roomID, session.UserID); err != nil {
 		if errors.Is(err, room.ErrCannotAlterOwner) {
-			respond.WriteError(w, http.StatusBadRequest, "owners cannot leave the room, they must delete it")
+			respond.WriteError(w, http.StatusBadRequest, "the room creator cannot leave the room, they must delete it")
 			return
 		}
 		respond.WriteError(w, http.StatusInternalServerError, "failed to leave room")

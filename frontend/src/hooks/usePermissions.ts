@@ -4,13 +4,15 @@ import type { RoomRole, RoomPermissions } from "../types";
 export interface PermissionsState extends RoomPermissions {
   role: RoomRole | null;
   isOwner: boolean;
+  /** Created the room; see RoomContextValue.isCreator. */
+  isCreator: boolean;
   isModerator: boolean;
   isMember: boolean;
   isGuest: boolean;
 }
 
 export const usePermissions = (): PermissionsState => {
-  const { userRole, permissions } = useRoom();
+  const { userRole, permissions, isCreator } = useRoom();
 
   const base: RoomPermissions = permissions || {
     can_control_playback: false,
@@ -27,6 +29,7 @@ export const usePermissions = (): PermissionsState => {
     ...base,
     role: userRole,
     isOwner: userRole === "owner",
+    isCreator,
     isModerator: userRole === "moderator",
     isMember: userRole === "member",
     isGuest: userRole === "guest",

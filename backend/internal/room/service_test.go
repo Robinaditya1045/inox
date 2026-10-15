@@ -46,6 +46,14 @@ func (m *mockRoomRepository) GetRoomByID(ctx context.Context, roomID string) (*d
 	return r, nil
 }
 
+func (m *mockRoomRepository) GetRoomOwnerID(ctx context.Context, roomID string) (string, error) {
+	r, ok := m.rooms[roomID]
+	if !ok {
+		return "", room.ErrRoomNotFound
+	}
+	return r.OwnerID, nil
+}
+
 func (m *mockRoomRepository) GetMember(ctx context.Context, roomID, userID string) (*domain.RoomMember, error) {
 	mem, ok := m.members[roomID+":"+userID]
 	if !ok {
@@ -196,5 +204,144 @@ func TestJoinRoomReturnsExistingMembershipWhenAConcurrentJoinWins(t *testing.T) 
 	}
 	if got != winner {
 		t.Fatalf("expected the membership the concurrent join created, got %+v", got)
+	}
+}
+
+// newCoOwnedRoom creates a room owned by "creator" and joins each of the other IDs as members.
+func newCoOwnedRoom(t *testing.T, others ...string) (room.RoomService, string) {
+	t.Helper()
+	ctx := context.Background()
+	service := room.NewRoomService(newMockRoomRepository(), nil, nil)
+	rm, _, err := service.CreateRoom(ctx, "creator", "Shared Movie Night", false)
+	if err != nil {
+		t.Fatalf("create room: %v", err)
+	}
+	for _, id := range others {
+		if _, err := service.JoinRoom(ctx, rm.ID, id); err != nil {
+			t.Fatalf("join %s: %v", id, err)
+		}
+	}
+	return service, rm.ID
+}
+
+func TestOwnerCanAddCoOwnerWithFullOwnerPermissions(t *testing.T) {
+	ctx := context.Background()
+	service, roomID := newCoOwnedRoom(t, "co-owner", "viewer")
+
+	// Custom permissions are ignored for owners, so ownership cannot be handed out hollow.
+	stripped := domain.Permissions{}
+	got, err := service.AssignRole(ctx, roomID, "creator", "co-owner", domain.RoleOwner, &stripped)
+	if err != nil {
+		t.Fatalf("creator promoting a member to owner: %v", err)
+	}
+	if got.Role != domain.RoleOwner || got.Permissions != domain.DefaultPermissionsForRole(domain.RoleOwner) {
+		t.Fatalf("expected full owner role and permissions, got %+v", got)
+	}
+
+	// A co-owner is an owner, so they can add owners too.
+	if _, err := service.AssignRole(ctx, roomID, "co-owner", "viewer", domain.RoleOwner, nil); err != nil {
+		t.Fatalf("co-owner promoting a member to owner: %v", err)
+	}
+}
+
+func TestOnlyOwnersCanGrantOwnership(t *testing.T) {
+	ctx := context.Background()
+	service, roomID := newCoOwnedRoom(t, "mod", "viewer")
+
+	// A moderator explicitly granted CanManageRoles still cannot mint owners.
+	modPerms := domain.DefaultPermissionsForRole(domain.RoleModerator)
+	modPerms.CanManageRoles = true
+	if _, err := service.AssignRole(ctx, roomID, "creator", "mod", domain.RoleModerator, &modPerms); err != nil {
+		t.Fatalf("setup moderator: %v", err)
+	}
+
+	for _, target := range []string{"viewer", "mod"} {
+		if _, err := service.AssignRole(ctx, roomID, "mod", target, domain.RoleOwner, nil); !errors.Is(err, room.ErrOwnerOnly) {
+			t.Errorf("moderator making %s an owner: expected ErrOwnerOnly, got %v", target, err)
+		}
+	}
+}
+
+func TestAssignRoleRejectsUnknownRoles(t *testing.T) {
+	service, roomID := newCoOwnedRoom(t, "viewer")
+	if _, err := service.AssignRole(context.Background(), roomID, "creator", "viewer", domain.Role("superadmin"), nil); !errors.Is(err, room.ErrInvalidRole) {
+		t.Fatalf("expected ErrInvalidRole, got %v", err)
+	}
+}
+
+func TestOnlyCreatorCanDemoteOrKickCoOwners(t *testing.T) {
+	ctx := context.Background()
+	service, roomID := newCoOwnedRoom(t, "owner-a", "owner-b")
+	for _, id := range []string{"owner-a", "owner-b"} {
+		if _, err := service.AssignRole(ctx, roomID, "creator", id, domain.RoleOwner, nil); err != nil {
+			t.Fatalf("setup co-owner %s: %v", id, err)
+		}
+	}
+
+	// Co-owners cannot touch each other or the creator.
+	if _, err := service.AssignRole(ctx, roomID, "owner-a", "owner-b", domain.RoleMember, nil); !errors.Is(err, room.ErrCreatorOnly) {
+		t.Errorf("co-owner demoting co-owner: expected ErrCreatorOnly, got %v", err)
+	}
+	if err := service.KickMember(ctx, roomID, "owner-a", "owner-b"); !errors.Is(err, room.ErrCreatorOnly) {
+		t.Errorf("co-owner kicking co-owner: expected ErrCreatorOnly, got %v", err)
+	}
+	if _, err := service.AssignRole(ctx, roomID, "owner-a", "creator", domain.RoleMember, nil); !errors.Is(err, room.ErrCannotAlterOwner) {
+		t.Errorf("co-owner demoting creator: expected ErrCannotAlterOwner, got %v", err)
+	}
+	if err := service.KickMember(ctx, roomID, "owner-a", "creator"); !errors.Is(err, room.ErrCannotAlterOwner) {
+		t.Errorf("co-owner kicking creator: expected ErrCannotAlterOwner, got %v", err)
+	}
+
+	// The creator can.
+	demoted, err := service.AssignRole(ctx, roomID, "creator", "owner-a", domain.RoleModerator, nil)
+	if err != nil {
+		t.Fatalf("creator demoting co-owner: %v", err)
+	}
+	if demoted.Role != domain.RoleModerator || demoted.Permissions.CanManageRoles {
+		t.Errorf("expected plain moderator after demotion, got %+v", demoted)
+	}
+	if err := service.KickMember(ctx, roomID, "creator", "owner-b"); err != nil {
+		t.Fatalf("creator kicking co-owner: %v", err)
+	}
+}
+
+func TestCoOwnerCanLeaveButCreatorCannot(t *testing.T) {
+	ctx := context.Background()
+	service, roomID := newCoOwnedRoom(t, "co-owner")
+	if _, err := service.AssignRole(ctx, roomID, "creator", "co-owner", domain.RoleOwner, nil); err != nil {
+		t.Fatalf("setup co-owner: %v", err)
+	}
+
+	if err := service.LeaveRoom(ctx, roomID, "co-owner"); err != nil {
+		t.Errorf("co-owner leaving: %v", err)
+	}
+	if err := service.LeaveRoom(ctx, roomID, "creator"); !errors.Is(err, room.ErrCannotAlterOwner) {
+		t.Errorf("creator leaving: expected ErrCannotAlterOwner, got %v", err)
+	}
+}
+
+// The creator is recognised by rooms.owner_id, not by their member row, so a row that
+// has drifted from "owner" (legacy data, a manual fix) does not expose them.
+func TestCreatorIsProtectedEvenIfTheirRoleRowDrifts(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRoomRepository()
+	service := room.NewRoomService(repo, nil, nil)
+	rm, _, err := service.CreateRoom(ctx, "creator", "Drifted Room", false)
+	if err != nil {
+		t.Fatalf("create room: %v", err)
+	}
+	if _, err := service.JoinRoom(ctx, rm.ID, "mod"); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if _, err := service.AssignRole(ctx, rm.ID, "creator", "mod", domain.RoleModerator, nil); err != nil {
+		t.Fatalf("setup moderator: %v", err)
+	}
+	repo.members[rm.ID+":creator"].Role = domain.RoleMember
+
+	if err := service.KickMember(ctx, rm.ID, "mod", "creator"); !errors.Is(err, room.ErrCannotAlterOwner) {
+		t.Errorf("moderator kicking creator: expected ErrCannotAlterOwner, got %v", err)
+	}
+	if err := service.LeaveRoom(ctx, rm.ID, "creator"); !errors.Is(err, room.ErrCannotAlterOwner) {
+		t.Errorf("creator leaving: expected ErrCannotAlterOwner, got %v", err)
 	}
 }

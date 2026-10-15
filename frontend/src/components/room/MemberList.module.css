@@ -254,3 +254,32 @@
     opacity: 1;
   }
 }
+
+.confirmText {
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-compact);
+  color: var(--color-text-secondary);
+}
+
+/* Same footer band as CreateRoomModal and MediaLibraryPicker, bleeding to the
+   modal's edges through its body padding. */
+.confirmFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin: 0 calc(var(--space-6) * -1) calc(var(--space-6) * -1);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-canvas);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+@media (max-width: 640px) {
+  .confirmFooter {
+    margin: 0 calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .confirmFooter > * {
+    flex: 1;
+  }
+}

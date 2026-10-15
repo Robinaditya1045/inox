@@ -198,7 +198,8 @@ export function RoomSessionInspector({
                               silently reparents (React logs a nesting warning). */}
                           <div className="font-semibold text-xs text-white flex items-center">
                             {p.username}
-                            {p.role === "owner" && (
+                            {/* Rooms can have several owners; the host is the one who created it. */}
+                            {p.user_id === room.owner_id && (
                               <Badge variant="cyan" className="ml-2 px-1.5 py-0 text-[9px]">HOST</Badge>
                             )}
                           </div>
@@ -244,7 +245,7 @@ export function RoomSessionInspector({
                       </TableCell>
 
                       <TableCell className="text-right">
-                        {p.role !== "owner" && (
+                        {p.user_id !== room.owner_id && (
                           <Button
                             variant="destructive-outline"
                             size="sm"
