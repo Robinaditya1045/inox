@@ -11,6 +11,7 @@ import { useRoomSocket } from "../hooks/useRoomSocket";
 import { usePermissions } from "../hooks/usePermissions";
 import { useRoom } from "../hooks/useRoom";
 import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../hooks/useToast";
 import {
   useSpeakingPeers,
   type SpeakingSource,
@@ -35,15 +36,34 @@ interface RTCProviderProps {
   children: ReactNode;
 }
 
-/** Remote media held per publisher, so a screen share and a microphone from the
- *  same person land on the same tile. */
+/** Remote media held per publisher, so a microphone, camera and screen share
+ *  from the same person land on the same tile. */
 type PeerMedia = Partial<Record<RemoteTrackKind, MediaStream>>;
+
+/** Why getUserMedia refused the camera, in words a person can act on. */
+function describeCameraError(err: unknown): string {
+  const name = err instanceof DOMException ? err.name : "";
+  switch (name) {
+    case "NotAllowedError":
+      return "Camera access is blocked. Allow it in your browser's site settings and try again.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "No camera was found on this device.";
+    case "NotReadableError":
+      return "Your camera is in use by another app.";
+    default:
+      return "Something went wrong starting your camera.";
+  }
+}
 
 export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
   const [connectionState, setConnectionState] =
     useState<RTCConnectionState>("disconnected");
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
+  const [isCameraOn, setIsCameraOn] = useState<boolean>(false);
+  const [localCameraStream, setLocalCameraStream] =
+    useState<MediaStream | null>(null);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [localScreenStream, setLocalScreenStream] =
     useState<MediaStream | null>(null);
@@ -59,8 +79,12 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
   const permissions = usePermissions();
   const { activeRoom } = useRoom();
   const { user } = useAuth();
+  const { toast } = useToast();
   const roomId = activeRoom?.id;
   const isConnectedRef = useRef(false);
+  // Set while the browser is asking for the camera, so a second click does not
+  // publish a second one.
+  const isCameraStartingRef = useRef(false);
 
   // The socket is shared, so a stale send() closure would post signaling into the
   // wrong room after a switch. Keeping it in a ref lets the peer-connection
@@ -82,8 +106,10 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     isConnectedRef.current = false;
     setConnectionState("disconnected");
     setIsAudioMuted(false);
+    setIsCameraOn(false);
     setIsScreenSharing(false);
     setRemoteMedia(new Map());
+    setLocalCameraStream(null);
     setLocalScreenStream(null);
     setLocalAudioStream(null);
   }, []);
@@ -176,10 +202,11 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
       isConnectedRef.current = true;
 
       await rtcService.initialize({
-        onSignal: (type, sdp) => {
+        onSignal: (type, sdp, streams) => {
           sendRef.current(type === "offer" ? "SFU_OFFER" : "SFU_ANSWER", {
             sdp,
             type,
+            streams,
           });
         },
         onIceCandidate: (candidate) => {
@@ -250,6 +277,12 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
       rtcService.close();
       isConnectedRef.current = false;
       setConnectionState("failed");
+      // A camera or share started while the microphone prompt was still open
+      // went down with the connection.
+      setIsCameraOn(false);
+      setLocalCameraStream(null);
+      setIsScreenSharing(false);
+      setLocalScreenStream(null);
       logger.error("RTCProvider: Failed to connect audio", { err });
     }
   }, [roomId, permissions.can_stream_audio, teardown]);
@@ -274,6 +307,46 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     if (!isConnectedRef.current) return;
     setIsDeafened((prev) => !prev);
   }, []);
+
+  const toggleCamera = useCallback(async () => {
+    if (!permissions.can_stream_video) {
+      logger.warn("RTCProvider: Permission denied for camera");
+      return;
+    }
+    if (!isConnectedRef.current || isCameraStartingRef.current) return;
+
+    if (isCameraOn) {
+      rtcService.stopCamera();
+      setIsCameraOn(false);
+      setLocalCameraStream(null);
+      return;
+    }
+
+    isCameraStartingRef.current = true;
+    try {
+      const stream = await rtcService.startCamera();
+      if (!stream) return;
+      setLocalCameraStream(stream);
+      setIsCameraOn(true);
+
+      // A camera can go without the button being pressed: unplugged, or its
+      // permission revoked mid-call. Either has to unwind the same state.
+      stream.getVideoTracks()[0].addEventListener("ended", () => {
+        rtcService.stopCamera();
+        setIsCameraOn(false);
+        setLocalCameraStream(null);
+      });
+    } catch (err) {
+      logger.error("RTCProvider: Failed to start camera", { err });
+      toast({
+        title: "Couldn't turn on your camera",
+        description: describeCameraError(err),
+        tone: "danger",
+      });
+    } finally {
+      isCameraStartingRef.current = false;
+    }
+  }, [permissions.can_stream_video, isCameraOn, toast]);
 
   const toggleScreenShare = useCallback(async () => {
     if (!permissions.can_share_screen) {
@@ -321,8 +394,12 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
         // round trip behind, and a mic button that lags is a mic button nobody
         // trusts.
         isMuted: isLocal ? isAudioMuted : entry.is_muted,
+        isCameraOn: isLocal ? isCameraOn : entry.is_camera_on,
         isScreenSharing: isLocal ? isScreenSharing : entry.is_screen_sharing,
         audioStream: isLocal ? (localAudioStream ?? undefined) : media?.mic,
+        cameraStream: isLocal
+          ? (localCameraStream ?? undefined)
+          : media?.camera,
         screenStream: isLocal
           ? (localScreenStream ?? undefined)
           : media?.screen,
@@ -336,8 +413,10 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
         username: user.username,
         isLocal: true,
         isMuted: isAudioMuted,
+        isCameraOn,
         isScreenSharing,
         audioStream: localAudioStream ?? undefined,
+        cameraStream: localCameraStream ?? undefined,
         screenStream: localScreenStream ?? undefined,
       });
     }
@@ -348,8 +427,10 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     remoteMedia,
     user,
     isAudioMuted,
+    isCameraOn,
     isScreenSharing,
     localAudioStream,
+    localCameraStream,
     localScreenStream,
     inCall,
   ]);
@@ -367,6 +448,7 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     connectionState,
     isAudioMuted,
     isDeafened,
+    isCameraOn,
     isScreenSharing,
     peers,
     speakingIds,
@@ -375,6 +457,7 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     disconnectAudio,
     toggleMute,
     toggleDeafen,
+    toggleCamera,
     toggleScreenShare,
   };
 

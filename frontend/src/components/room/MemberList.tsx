@@ -15,6 +15,7 @@ import {
   AlertCircle,
   MicOff,
   ScreenShare,
+  Video,
   Volume2,
 } from "lucide-react";
 import { useRoom } from "../../hooks/useRoom";
@@ -243,6 +244,13 @@ export const MemberList: React.FC = () => {
                               size={12}
                               className={styles.speaking}
                               aria-label="Speaking"
+                            />
+                          )}
+                          {voice?.isCameraOn && (
+                            <Video
+                              size={12}
+                              className={styles.sharing}
+                              aria-label="Camera on"
                             />
                           )}
                           {voice?.isScreenSharing && (

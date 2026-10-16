@@ -216,6 +216,21 @@
   opacity: 0.55;
 }
 
+/* cover, where a screen gets contain: a face trimmed at the edges loses
+   nothing, and letterboxing would shrink it inside an already small tile. */
+.cameraVideo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--color-canvas-deep);
+}
+
+.cameraMirrored {
+  transform: scaleX(-1);
+}
+
 .tilePin {
   position: absolute;
   top: var(--space-2);

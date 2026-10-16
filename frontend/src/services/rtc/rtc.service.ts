@@ -1,5 +1,13 @@
 import type { RemoteTrackKind } from "../../types/rtc";
+import type { WSSfuStreamKinds } from "../../types/ws";
 import { logger } from "../../utils/logger";
+
+/**
+ * Ceiling for the camera's encoder. The SFU forwards a single encoding rather
+ * than transcoding, so every camera reaches every person in the call at this
+ * rate.
+ */
+const CAMERA_MAX_BITRATE = 1_000_000;
 
 export interface RemoteTrackEvent {
   userId: string;
@@ -9,8 +17,13 @@ export interface RemoteTrackEvent {
 }
 
 export interface RTCServiceCallbacks {
-  /** An SDP this client produced and must send to the SFU. */
-  onSignal: (type: "offer" | "answer", sdp: string) => void;
+  /** An SDP this client produced and must send to the SFU, with what each of
+   *  the streams it publishes is. */
+  onSignal: (
+    type: "offer" | "answer",
+    sdp: string,
+    streams: WSSfuStreamKinds,
+  ) => void;
   onIceCandidate: (candidate: RTCIceCandidate) => void;
   onRemoteTrack: (event: RemoteTrackEvent) => void;
   onRemoteTrackEnded: (userId: string, kind: RemoteTrackKind) => void;
@@ -33,7 +46,7 @@ function parseTrackName(
   const kind = name.slice(0, separator);
   const userId = name.slice(separator + 1);
   if (!userId) return null;
-  if (kind !== "mic" && kind !== "screen") return null;
+  if (kind !== "mic" && kind !== "camera" && kind !== "screen") return null;
 
   return { kind, userId };
 }
@@ -41,9 +54,20 @@ function parseTrackName(
 class RTCService {
   private pc: RTCPeerConnection | null = null;
   private localAudioStream: MediaStream | null = null;
+  private localCameraStream: MediaStream | null = null;
+  private cameraSender: RTCRtpSender | null = null;
   private localScreenStream: MediaStream | null = null;
   private screenSender: RTCRtpSender | null = null;
   private callbacks: RTCServiceCallbacks | null = null;
+
+  /**
+   * What each stream this connection has published is, keyed by MediaStream ID
+   * — the one part of a track's identity that survives the trip through the SDP.
+   * Entries outlive their stream: a description can still be on its way out when
+   * a camera is switched off, and stream IDs are never reused, so a stale one
+   * costs nothing.
+   */
+  private publishedStreams = new Map<string, RemoteTrackKind>();
 
   /** Candidates that arrived before there was a remote description to attach them to. */
   private pendingCandidates: RTCIceCandidateInit[] = [];
@@ -91,7 +115,8 @@ class RTCService {
     };
 
     // Either side may need to renegotiate: this client when it adds or drops a
-    // screen share, the SFU whenever someone else joins, leaves or starts sharing.
+    // camera or screen share, the SFU whenever someone else joins, leaves or
+    // starts sharing.
     // This handler covers our half; handleOffer covers theirs.
     pc.onnegotiationneeded = () => this.negotiate();
 
@@ -132,9 +157,17 @@ class RTCService {
       await this.pc.setLocalDescription();
       if (this.pc.localDescription) {
         logger.debug("RTCService: Offering updated track set to SFU");
-        this.callbacks?.onSignal("offer", this.pc.localDescription.sdp);
+        this.callbacks?.onSignal(
+          "offer",
+          this.pc.localDescription.sdp,
+          this.describeStreams(),
+        );
       }
     });
+  }
+
+  private describeStreams(): WSSfuStreamKinds {
+    return Object.fromEntries(this.publishedStreams);
   }
 
   /** Runs a renegotiation that was deferred while an exchange was open. */
@@ -182,6 +215,7 @@ class RTCService {
       });
 
       if (this.pc && this.localAudioStream) {
+        this.publishedStreams.set(this.localAudioStream.id, "mic");
         this.localAudioStream.getAudioTracks().forEach((track) => {
           this.pc?.addTrack(track, this.localAudioStream!);
         });
@@ -197,6 +231,68 @@ class RTCService {
 
   public getLocalAudioStream(): MediaStream | null {
     return this.localAudioStream;
+  }
+
+  /**
+   * Publishes the camera. Resolves to null when the call ended while the browser
+   * was still asking for permission, which is not a failure to report.
+   */
+  public async startCamera(): Promise<MediaStream | null> {
+    const pc = this.pc;
+    if (!pc) throw new Error("RTC connection not initialized");
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 30 },
+      },
+      audio: false,
+    });
+
+    if (this.pc !== pc) {
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    }
+
+    const [videoTrack] = stream.getVideoTracks();
+    if (!videoTrack) {
+      stream.getTracks().forEach((t) => t.stop());
+      throw new Error("Camera produced no video track");
+    }
+
+    this.localCameraStream = stream;
+    this.publishedStreams.set(stream.id, "camera");
+    // A transceiver of its own so the bitrate ceiling applies from the first
+    // frame. sendrecv, as addTrack would make it: the SFU reuses an m-line it
+    // only receives on when it next forwards video here, and a sendonly one
+    // would refuse that video. Adding it fires negotiationneeded, which
+    // publishes it.
+    this.cameraSender = pc.addTransceiver(videoTrack, {
+      direction: "sendrecv",
+      streams: [stream],
+      sendEncodings: [{ maxBitrate: CAMERA_MAX_BITRATE }],
+    }).sender;
+    logger.info("RTCService: Started camera");
+    return stream;
+  }
+
+  public stopCamera(): void {
+    if (this.cameraSender && this.pc) {
+      // As with a screen share, removing the sender is what tells the SFU.
+      try {
+        this.pc.removeTrack(this.cameraSender);
+      } catch (err) {
+        logger.warn("RTCService: Failed to detach camera sender", { err });
+      }
+    }
+    this.cameraSender = null;
+
+    if (this.localCameraStream) {
+      this.localCameraStream.getTracks().forEach((track) => track.stop());
+      this.localCameraStream = null;
+      logger.info("RTCService: Stopped camera");
+    }
   }
 
   public async startScreenShare(): Promise<MediaStream> {
@@ -218,6 +314,7 @@ class RTCService {
     }
 
     this.localScreenStream = stream;
+    this.publishedStreams.set(stream.id, "screen");
     // Adding the track fires negotiationneeded, which publishes it to the SFU.
     this.screenSender = this.pc.addTrack(videoTrack, stream);
     logger.info("RTCService: Started screen sharing");
@@ -265,7 +362,11 @@ class RTCService {
       await this.flushCandidates();
       await this.pc.setLocalDescription();
       if (this.pc.localDescription) {
-        this.callbacks?.onSignal("answer", this.pc.localDescription.sdp);
+        this.callbacks?.onSignal(
+          "answer",
+          this.pc.localDescription.sdp,
+          this.describeStreams(),
+        );
       }
       // Answering rolls back any offer of ours that collided with this one.
       this.resumeQueuedNegotiation();
@@ -333,11 +434,17 @@ class RTCService {
       this.localAudioStream.getTracks().forEach((t) => t.stop());
       this.localAudioStream = null;
     }
+    if (this.localCameraStream) {
+      this.localCameraStream.getTracks().forEach((t) => t.stop());
+      this.localCameraStream = null;
+    }
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((t) => t.stop());
       this.localScreenStream = null;
     }
+    this.cameraSender = null;
     this.screenSender = null;
+    this.publishedStreams.clear();
     this.pendingCandidates = [];
     this.negotiationQueued = false;
     this.callbacks = null;

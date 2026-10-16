@@ -121,6 +121,10 @@ type ChatPayload struct {
 type SFUSDOPayload struct {
 	SDP  string `json:"sdp"`
 	Type string `json:"type"` // "offer" or "answer"
+	// Streams is set by the browser on every description it sends: what each
+	// stream it publishes is ("mic", "camera" or "screen"), keyed by MediaStream
+	// ID. A camera and a screen share are both just video to the SFU otherwise.
+	Streams map[string]string `json:"streams,omitempty"`
 }
 
 // SFUStatePayload carries a peer's self-reported media state to the server.

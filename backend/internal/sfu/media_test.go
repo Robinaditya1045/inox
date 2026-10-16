@@ -1,6 +1,7 @@
 package sfu_test
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,10 @@ type fakeBrowser struct {
 
 	receivedMu sync.Mutex
 	received   map[string]bool
+
+	// streams is what this browser declares its published streams to be. Nil
+	// plays a browser from before cameras, which declares nothing.
+	streams map[string]string
 }
 
 func joinCall(t *testing.T, room *sfu.Room, userID string) *fakeBrowser {
@@ -48,23 +53,34 @@ func joinCall(t *testing.T, room *sfu.Room, userID string) *fakeBrowser {
 
 	// Renegotiation from the SFU: somebody joined, left, or started sharing.
 	peer.SetSignaler(func(sdp webrtc.SessionDescription) {
-		browser.mu.Lock()
-		defer browser.mu.Unlock()
+		// The test can finish with an exchange still in flight; the call being
+		// over by the time it lands is not a failure.
+		hungUp := func(err error) bool {
+			return errors.Is(err, sfu.ErrPeerClosed) || pc.SignalingState() == webrtc.SignalingStateClosed
+		}
 
-		if err := pc.SetRemoteDescription(sdp); err != nil {
-			t.Errorf("[%s] failed to apply sfu offer: %v", userID, err)
-			return
+		browser.mu.Lock()
+		err := pc.SetRemoteDescription(sdp)
+		var answer webrtc.SessionDescription
+		if err == nil {
+			answer, err = pc.CreateAnswer(nil)
 		}
-		answer, err := pc.CreateAnswer(nil)
+		if err == nil {
+			err = pc.SetLocalDescription(answer)
+		}
+		local := pc.LocalDescription()
+		browser.declareStreams()
+		browser.mu.Unlock()
 		if err != nil {
-			t.Errorf("[%s] failed to answer sfu: %v", userID, err)
+			if !hungUp(err) {
+				t.Errorf("[%s] failed to answer sfu: %v", userID, err)
+			}
 			return
 		}
-		if err := pc.SetLocalDescription(answer); err != nil {
-			t.Errorf("[%s] failed to apply answer: %v", userID, err)
-			return
-		}
-		if err := peer.HandleAnswer(*pc.LocalDescription()); err != nil {
+
+		// Handed back without the lock held: applying the answer can flush a
+		// renegotiation the SFU deferred, which lands straight back in here.
+		if err := peer.HandleAnswer(*local); err != nil && !hungUp(err) {
 			t.Errorf("[%s] sfu rejected answer: %v", userID, err)
 		}
 	})
@@ -100,13 +116,44 @@ func joinCall(t *testing.T, room *sfu.Room, userID string) *fakeBrowser {
 	return browser
 }
 
+// declareStreams tells the SFU what this browser's streams are, as the hub does
+// with the declaration a browser sends alongside every description.
+func (b *fakeBrowser) declareStreams() {
+	if b.streams == nil {
+		return
+	}
+	declared := make(map[string]string, len(b.streams))
+	for id, kind := range b.streams {
+		declared[id] = kind
+	}
+	b.peer.DeclareStreams(declared)
+}
+
 // publish adds a track and drives the exchange the browser would drive for it.
-func (b *fakeBrowser) publish(t *testing.T, track webrtc.TrackLocal) {
+func (b *fakeBrowser) publish(t *testing.T, track webrtc.TrackLocal) *webrtc.RTPSender {
 	t.Helper()
 
-	if _, err := b.pc.AddTrack(track); err != nil {
+	sender, err := b.pc.AddTrack(track)
+	if err != nil {
 		t.Fatalf("[%s] failed to add track: %v", b.userID, err)
 	}
+	b.renegotiate(t)
+	return sender
+}
+
+// unpublish stops sending a track and drives the exchange that tells the SFU.
+func (b *fakeBrowser) unpublish(t *testing.T, sender *webrtc.RTPSender) {
+	t.Helper()
+
+	if err := b.pc.RemoveTrack(sender); err != nil {
+		t.Fatalf("[%s] failed to remove track: %v", b.userID, err)
+	}
+	b.renegotiate(t)
+}
+
+// renegotiate offers the browser's current track set and applies the answer.
+func (b *fakeBrowser) renegotiate(t *testing.T) {
+	t.Helper()
 
 	// A real browser rolls back an offer that collides with one from the SFU.
 	// Pion cannot roll back, so this harness waits for a quiet moment instead.
@@ -120,6 +167,7 @@ func (b *fakeBrowser) publish(t *testing.T, track webrtc.TrackLocal) {
 		err = b.pc.SetLocalDescription(offer)
 	}
 	local := b.pc.LocalDescription()
+	b.declareStreams()
 	b.mu.Unlock()
 	if err != nil {
 		t.Fatalf("[%s] failed to offer: %v", b.userID, err)
@@ -144,19 +192,37 @@ func (b *fakeBrowser) publish(t *testing.T, track webrtc.TrackLocal) {
 
 func (b *fakeBrowser) publishMicrophone(t *testing.T) {
 	t.Helper()
-	b.publish(t, streamSamples(t, webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "mic"))
+	b.publish(t, streamSamples(t, webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "mic", "browser-stream"))
 }
 
+// publishScreen publishes video without saying what it is, as a browser from
+// before cameras did.
 func (b *fakeBrowser) publishScreen(t *testing.T) {
 	t.Helper()
-	b.publish(t, streamSamples(t, webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "screen"))
+	b.publish(t, streamSamples(t, webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "screen", "browser-stream"))
+}
+
+// publishVideo publishes video in its own stream and declares that stream to be
+// kind, as a camera-aware browser does.
+func (b *fakeBrowser) publishVideo(t *testing.T, kind string) *webrtc.RTPSender {
+	t.Helper()
+
+	streamID := kind + "-stream"
+	b.mu.Lock()
+	if b.streams == nil {
+		b.streams = make(map[string]string)
+	}
+	b.streams[streamID] = kind
+	b.mu.Unlock()
+
+	return b.publish(t, streamSamples(t, webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, kind, streamID))
 }
 
 // streamSamples returns a track that writes filler media until the test ends.
-func streamSamples(t *testing.T, codec webrtc.RTPCodecCapability, id string) *webrtc.TrackLocalStaticSample {
+func streamSamples(t *testing.T, codec webrtc.RTPCodecCapability, id, streamID string) *webrtc.TrackLocalStaticSample {
 	t.Helper()
 
-	track, err := webrtc.NewTrackLocalStaticSample(codec, id, "browser-stream")
+	track, err := webrtc.NewTrackLocalStaticSample(codec, id, streamID)
 	if err != nil {
 		t.Fatalf("failed to create local track: %v", err)
 	}
@@ -192,6 +258,19 @@ func (b *fakeBrowser) awaitMedia(t *testing.T, trackName string) {
 		defer b.receivedMu.Unlock()
 		return b.received[trackName]
 	}, b.userID+" to receive "+trackName)
+}
+
+// awaitPeerState waits for the room's roster to report userID as want describes.
+func awaitPeerState(t *testing.T, room *sfu.Room, userID string, want func(sfu.PeerState) bool, what string) {
+	t.Helper()
+	waitUntil(t, func() bool {
+		for _, entry := range room.Roster() {
+			if entry.UserID == userID {
+				return want(entry)
+			}
+		}
+		return false
+	}, what)
 }
 
 func waitUntil(t *testing.T, condition func() bool, what string) {
@@ -243,4 +322,35 @@ func TestRoomForwardsMediaToEveryoneInTheCall(t *testing.T) {
 			t.Error("expected bob not to be reported as sharing")
 		}
 	}
+}
+
+// A camera and a screen share are both just video on the wire. The browser's
+// declaration is what tells them apart, so that each reaches the far side under
+// its own name, the roster reports both, and turning one off leaves the other.
+func TestRoomTellsCamerasFromScreenShares(t *testing.T) {
+	room := sfu.NewRoom("camera-room", nil, nil)
+	defer room.Close()
+
+	alice := joinCall(t, room, "user-alice")
+	alice.publishMicrophone(t)
+
+	bob := joinCall(t, room, "user-bob")
+	bob.publishMicrophone(t)
+
+	camera := alice.publishVideo(t, sfu.KindCamera)
+	alice.publishVideo(t, sfu.KindScreen)
+
+	bob.awaitMedia(t, sfu.TrackName(sfu.KindCamera, "user-alice"))
+	bob.awaitMedia(t, sfu.TrackName(sfu.KindScreen, "user-alice"))
+	awaitPeerState(t, room, "user-alice", func(s sfu.PeerState) bool {
+		return s.IsCameraOn && s.IsScreenSharing
+	}, "alice's camera and screen share in the roster")
+	awaitPeerState(t, room, "user-bob", func(s sfu.PeerState) bool {
+		return !s.IsCameraOn && !s.IsScreenSharing
+	}, "bob to have published neither camera nor screen")
+
+	alice.unpublish(t, camera)
+	awaitPeerState(t, room, "user-alice", func(s sfu.PeerState) bool {
+		return !s.IsCameraOn && s.IsScreenSharing
+	}, "alice's camera to go off while her screen share carries on")
 }

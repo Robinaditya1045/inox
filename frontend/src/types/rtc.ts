@@ -2,7 +2,7 @@ export type RTCConnectionState =
   "disconnected" | "connecting" | "connected" | "failed";
 
 /** What a peer can publish. Mirrors the SFU's track naming. */
-export type RemoteTrackKind = "mic" | "screen";
+export type RemoteTrackKind = "mic" | "camera" | "screen";
 
 /**
  * One participant in the call, as the UI needs them: identity from the server's
@@ -14,8 +14,10 @@ export interface VoicePeer {
   /** True for the person at this keyboard, whose media never round-trips the SFU. */
   isLocal: boolean;
   isMuted: boolean;
+  isCameraOn: boolean;
   isScreenSharing: boolean;
   audioStream?: MediaStream;
+  cameraStream?: MediaStream;
   screenStream?: MediaStream;
 }
 

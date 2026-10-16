@@ -12,6 +12,8 @@ import {
   ScreenShareOff,
   PhoneOff,
   Square,
+  Video,
+  VideoOff,
 } from "lucide-react";
 import styles from "./VoiceStatusPanel.module.css";
 
@@ -33,9 +35,11 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
 }) => {
   const {
     connectionState,
+    isCameraOn,
     isScreenSharing,
     connectAudio,
     disconnectAudio,
+    toggleCamera,
     toggleScreenShare,
   } = useRTC(roomId);
 
@@ -86,6 +90,9 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
   }
 
   const hasFailed = connectionState === "failed";
+  const showMediaActions =
+    !hasFailed &&
+    (permissions.can_stream_video || permissions.can_share_screen);
 
   return (
     <div className={styles.panel}>
@@ -111,21 +118,6 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
             </span>
           </div>
 
-          {permissions.can_share_screen && !hasFailed && (
-            <IconButton
-              label={isScreenSharing ? "Stop screen sharing" : "Share screen"}
-              isActive={isScreenSharing}
-              onClick={toggleScreenShare}
-              aria-pressed={isScreenSharing}
-            >
-              {isScreenSharing ? (
-                <ScreenShareOff size={17} />
-              ) : (
-                <ScreenShare size={17} />
-              )}
-            </IconButton>
-          )}
-
           <IconButton
             label="Disconnect from voice"
             tooltip="Disconnect"
@@ -135,6 +127,39 @@ export const VoiceStatusPanel: React.FC<VoiceStatusPanelProps> = ({
             <PhoneOff size={17} />
           </IconButton>
         </div>
+
+        {/* Camera and screen get a row of their own: beside the status text
+            they would leave it no room to say "Voice Connected". */}
+        {showMediaActions && (
+          <div className={styles.mediaActions}>
+            {permissions.can_stream_video && (
+              <IconButton
+                label={isCameraOn ? "Turn off camera" : "Turn on camera"}
+                isActive={isCameraOn}
+                onClick={toggleCamera}
+                aria-pressed={isCameraOn}
+                className={styles.mediaAction}
+              >
+                {isCameraOn ? <Video size={17} /> : <VideoOff size={17} />}
+              </IconButton>
+            )}
+            {permissions.can_share_screen && (
+              <IconButton
+                label={isScreenSharing ? "Stop screen sharing" : "Share screen"}
+                isActive={isScreenSharing}
+                onClick={toggleScreenShare}
+                aria-pressed={isScreenSharing}
+                className={styles.mediaAction}
+              >
+                {isScreenSharing ? (
+                  <ScreenShareOff size={17} />
+                ) : (
+                  <ScreenShare size={17} />
+                )}
+              </IconButton>
+            )}
+          </div>
+        )}
 
         {hasFailed && (
           <button

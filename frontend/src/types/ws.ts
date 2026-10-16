@@ -1,3 +1,5 @@
+import type { RemoteTrackKind } from "./rtc";
+
 export type WSEventType =
   | "JOIN_ROOM"
   | "LEAVE_ROOM"
@@ -109,14 +111,23 @@ export interface WSChatPayload {
   message_id?: string;
 }
 
+/**
+ * What each stream this client publishes is, keyed by MediaStream ID. Sent with
+ * every description, because a camera and a screen share are otherwise both just
+ * video to the SFU.
+ */
+export type WSSfuStreamKinds = Record<string, RemoteTrackKind>;
+
 export interface WSSfuOfferPayload {
   sdp: string;
   type?: string;
+  streams?: WSSfuStreamKinds;
 }
 
 export interface WSSfuAnswerPayload {
   sdp: string;
   type?: string;
+  streams?: WSSfuStreamKinds;
 }
 
 export interface WSSfuIcePayload {
@@ -135,6 +146,7 @@ export interface WSSfuPeer {
   user_id: string;
   username: string;
   is_muted: boolean;
+  is_camera_on: boolean;
   is_screen_sharing: boolean;
 }
 

@@ -26,12 +26,13 @@ const keyframeInterval = 2 * time.Second
 // PeerState is one row of a room's voice roster.
 //
 // Mute is reported by the browser rather than observed: a muted microphone keeps
-// sending silence, so the SFU cannot tell. Screen sharing is observed, because a
-// share is a real published track.
+// sending silence, so the SFU cannot tell. Cameras and screen shares are observed,
+// because each is a real published track.
 type PeerState struct {
 	UserID          string `json:"user_id"`
 	Username        string `json:"username"`
 	IsMuted         bool   `json:"is_muted"`
+	IsCameraOn      bool   `json:"is_camera_on"`
 	IsScreenSharing bool   `json:"is_screen_sharing"`
 }
 
@@ -147,10 +148,10 @@ func (r *Room) RemovePeer(userID string) {
 		return
 	}
 	delete(r.Peers, userID)
-	published := make([]string, 0, 2)
-	for name, pub := range r.tracks {
+	published := make([]*publication, 0, 3)
+	for _, pub := range r.tracks {
 		if pub.owner == userID {
-			published = append(published, name)
+			published = append(published, pub)
 		}
 	}
 	r.mu.Unlock()
@@ -158,8 +159,8 @@ func (r *Room) RemovePeer(userID string) {
 	// Detach this peer's tracks from everyone else explicitly. The RTP pump also
 	// cleans up when its source dies, but only once the read actually fails, and a
 	// subscriber left holding a dead sender shows a frozen tile until then.
-	for _, name := range published {
-		r.removePublication(name)
+	for _, pub := range published {
+		r.removePublication(pub)
 	}
 
 	slog.Info("sfu peer left room", "room_id", r.ID, "user_id", userID)
@@ -198,9 +199,13 @@ func (r *Room) Roster() []PeerState {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	camera := make(map[string]bool, len(r.tracks))
 	sharing := make(map[string]bool, len(r.tracks))
 	for _, pub := range r.tracks {
-		if pub.kind == KindScreen {
+		switch pub.kind {
+		case KindCamera:
+			camera[pub.owner] = true
+		case KindScreen:
 			sharing[pub.owner] = true
 		}
 	}
@@ -211,6 +216,7 @@ func (r *Room) Roster() []PeerState {
 			UserID:          peer.UserID,
 			Username:        peer.Username,
 			IsMuted:         peer.Muted(),
+			IsCameraOn:      camera[peer.UserID],
 			IsScreenSharing: sharing[peer.UserID],
 		})
 	}
@@ -271,14 +277,11 @@ func (r *Room) subscribe(sub *Peer, pub *publication) {
 // dispatchRemoteTrack creates a fan-out track for an incoming stream and pumps its
 // RTP packets to every other peer in the room.
 func (r *Room) dispatchRemoteTrack(publisher *Peer, remoteTrack *webrtc.TrackRemote) {
-	kind := KindMic
-	if remoteTrack.Kind() == webrtc.RTPCodecTypeVideo {
-		kind = KindScreen
-	}
+	kind := publisher.publishedKind(remoteTrack.StreamID(), remoteTrack.Kind())
 	// The publisher's browser names its tracks with random UUIDs, which tell a
 	// subscriber nothing. Re-naming the fan-out track after its owner is what lets
-	// the far side label the tile, group a screen with its sharer, and drop the
-	// right stream when someone leaves.
+	// the far side label the tile, group a camera or screen with its owner, and
+	// drop the right stream when someone leaves.
 	name := TrackName(kind, publisher.UserID)
 
 	localTrack, err := webrtc.NewTrackLocalStaticRTP(
@@ -291,9 +294,15 @@ func (r *Room) dispatchRemoteTrack(publisher *Peer, remoteTrack *webrtc.TrackRem
 		return
 	}
 
-	// Publishing the same kind twice means the previous one is finished (a screen
-	// share restarted, or a reconnect) -- retire it before its replacement lands.
-	r.removePublication(name)
+	// Publishing the same kind twice means the previous one is finished (a camera
+	// or screen share restarted, or a reconnect) -- retire it before its
+	// replacement lands.
+	r.mu.RLock()
+	previous := r.tracks[name]
+	r.mu.RUnlock()
+	if previous != nil {
+		r.removePublication(previous)
+	}
 
 	pub := &publication{
 		name:  name,
@@ -324,13 +333,16 @@ func (r *Room) dispatchRemoteTrack(publisher *Peer, remoteTrack *webrtc.TrackRem
 	}
 	r.notifyState()
 
+	// A camera is left to the viewers' own keyframe requests, which are relayed:
+	// every forced keyframe is paid for in the quality of the frames around it,
+	// and on a loop that shows as a picture that pulses every couple of seconds.
 	if kind == KindScreen {
 		go r.keyframeLoop(pub)
 	}
 
 	// Selective forwarding loop: read from the publisher, write to the fan-out track.
 	go func() {
-		defer r.removePublication(name)
+		defer r.removePublication(pub)
 
 		rtpBuf := make([]byte, 1400)
 		for {
@@ -351,10 +363,15 @@ func (r *Room) dispatchRemoteTrack(publisher *Peer, remoteTrack *webrtc.TrackRem
 }
 
 // removePublication retires a track and detaches it from every subscriber.
-func (r *Room) removePublication(name string) {
+//
+// It does nothing once pub has been retired or replaced. A forwarding loop can
+// outlive its replacement -- a camera turned off and straight back on can deliver
+// the new track before the old one's read fails -- and that late failure must not
+// take the new publication down with it.
+func (r *Room) removePublication(pub *publication) {
+	name := pub.name
 	r.mu.Lock()
-	pub, ok := r.tracks[name]
-	if !ok {
+	if r.tracks[name] != pub {
 		r.mu.Unlock()
 		return
 	}
@@ -404,7 +421,7 @@ func (r *Room) drainSenderFeedback(sender *webrtc.RTPSender, pub *publication) {
 		if err != nil {
 			return
 		}
-		if pub.kind != KindScreen {
+		if pub.kind == KindMic {
 			continue
 		}
 		packets, err := rtcp.Unmarshal(buf[:n])

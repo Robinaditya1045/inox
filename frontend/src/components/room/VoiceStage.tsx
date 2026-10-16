@@ -19,6 +19,8 @@ import {
   Radio,
   ScreenShare,
   ScreenShareOff,
+  Video,
+  VideoOff,
 } from "lucide-react";
 import styles from "./VoiceStage.module.css";
 
@@ -26,12 +28,8 @@ interface VoiceStageProps {
   roomId: string | undefined;
 }
 
-/** A live screen share. Muted for the person sharing it, who would otherwise
- *  hear their own machine back. */
-const ScreenView: React.FC<{ stream: MediaStream; isLocal: boolean }> = ({
-  stream,
-  isLocal,
-}) => {
+/** Attaches a stream to a <video>; srcObject has no attribute to render. */
+function useVideoStream(stream: MediaStream) {
   const ref = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -45,6 +43,17 @@ const ScreenView: React.FC<{ stream: MediaStream; isLocal: boolean }> = ({
     }
   }, [stream]);
 
+  return ref;
+}
+
+/** A live screen share. Muted for the person sharing it, who would otherwise
+ *  hear their own machine back. */
+const ScreenView: React.FC<{ stream: MediaStream; isLocal: boolean }> = ({
+  stream,
+  isLocal,
+}) => {
+  const ref = useVideoStream(stream);
+
   return (
     <video
       ref={ref}
@@ -52,6 +61,26 @@ const ScreenView: React.FC<{ stream: MediaStream; isLocal: boolean }> = ({
       playsInline
       muted={isLocal}
       className={styles.screenVideo}
+    />
+  );
+};
+
+/** Someone's camera. Always muted: their voice comes from the microphone track,
+ *  and a muted video is one the browser will start without a fresh click. Your
+ *  own preview is mirrored, the way every call shows you to yourself. */
+const CameraView: React.FC<{ stream: MediaStream; isLocal: boolean }> = ({
+  stream,
+  isLocal,
+}) => {
+  const ref = useVideoStream(stream);
+
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted
+      className={`${styles.cameraVideo} ${isLocal ? styles.cameraMirrored : ""}`}
     />
   );
 };
@@ -81,13 +110,19 @@ const ParticipantTile: React.FC<TileProps> = ({
 
   return (
     <div className={classes}>
-      <span className={styles.avatarWrap}>
-        <Avatar
-          username={peer.username}
-          size={compact ? "lg" : "xl"}
-          className={peer.isMuted ? styles.avatarMuted : undefined}
-        />
-      </span>
+      {/* The avatar stands in until the first frames arrive, and again once
+          the roster says the camera is off. */}
+      {peer.isCameraOn && peer.cameraStream ? (
+        <CameraView stream={peer.cameraStream} isLocal={peer.isLocal} />
+      ) : (
+        <span className={styles.avatarWrap}>
+          <Avatar
+            username={peer.username}
+            size={compact ? "lg" : "xl"}
+            className={peer.isMuted ? styles.avatarMuted : undefined}
+          />
+        </span>
+      )}
 
       {peer.isScreenSharing && onTogglePin && (
         <button
@@ -148,11 +183,13 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
     speakingIds,
     isAudioMuted,
     isDeafened,
+    isCameraOn,
     isScreenSharing,
     connectAudio,
     disconnectAudio,
     toggleMute,
     toggleDeafen,
+    toggleCamera,
     toggleScreenShare,
   } = useRTC(roomId);
   const permissions = usePermissions();
@@ -227,6 +264,22 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
               )}
             </button>
           </Tooltip>
+
+          {permissions.can_stream_video && (
+            <Tooltip
+              content={isCameraOn ? "Turn off camera" : "Turn on camera"}
+            >
+              <button
+                type="button"
+                className={`${styles.ctrl} ${isCameraOn ? styles.ctrlAccent : ""}`}
+                onClick={toggleCamera}
+                aria-label={isCameraOn ? "Turn off camera" : "Turn on camera"}
+                aria-pressed={isCameraOn}
+              >
+                {isCameraOn ? <Video size={20} /> : <VideoOff size={20} />}
+              </button>
+            </Tooltip>
+          )}
 
           {permissions.can_share_screen && (
             <Tooltip
@@ -307,7 +360,8 @@ export const VoiceStage: React.FC<VoiceStageProps> = ({ roomId }) => {
             {isJoining ? "Connecting…" : "No one is in voice"}
           </span>
           <span className={styles.emptyBody}>
-            Join to talk, or present your screen for everyone in the room.
+            Join to talk, turn on your camera, or present your screen for
+            everyone in the room.
           </span>
         </div>
         {controls}

@@ -86,8 +86,12 @@ func TestTrackNameCarriesPublisherIdentity(t *testing.T) {
 	if _, _, ok := sfu.SplitTrackName("d7a1b2c3-dead-beef-0000-000000000000"); ok {
 		t.Error("expected a random browser track id to be rejected")
 	}
-	if _, _, ok := sfu.SplitTrackName("camera.user-1"); ok {
+	if _, _, ok := sfu.SplitTrackName("webcam.user-1"); ok {
 		t.Error("expected an unknown kind to be rejected")
+	}
+
+	if kind, _, ok := sfu.SplitTrackName(sfu.TrackName(sfu.KindCamera, "user-1")); !ok || kind != sfu.KindCamera {
+		t.Errorf("expected a camera track name to parse as %q, got %q (ok=%v)", sfu.KindCamera, kind, ok)
 	}
 }
 

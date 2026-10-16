@@ -64,6 +64,20 @@
   white-space: nowrap;
 }
 
+.mediaActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Two classes deep so the stretch beats IconButton's fixed size whichever
+   stylesheet the bundler emits first. A border rather than a fill gives them a
+   shape at rest without masking the button's own hover and toggled-on fills. */
+.mediaActions .mediaAction {
+  flex: 1;
+  width: auto;
+  border-color: var(--color-border-subtle);
+}
+
 /* Wide action buttons */
 .wideBtn {
   flex-direction: row;

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   MicOff,
   ScreenShare,
+  Video,
   Link2,
   LogOut,
   type LucideIcon,
@@ -182,6 +183,11 @@ export const RoomSidebar: React.FC<RoomSidebarProps> = ({
                     {peer.isMuted && (
                       <span className={`${styles.stateIcon} ${styles.muted}`}>
                         <MicOff size={14} aria-label="Muted" />
+                      </span>
+                    )}
+                    {peer.isCameraOn && (
+                      <span className={`${styles.stateIcon} ${styles.sharing}`}>
+                        <Video size={14} aria-label="Camera on" />
                       </span>
                     )}
                     {peer.isScreenSharing && (

@@ -632,6 +632,9 @@ func (h *Hub) handleSFUSignaling(event *Event) {
 		if err := json.Unmarshal(event.Payload, &sdpPayload); err != nil {
 			return
 		}
+		if sdpPayload.Streams != nil {
+			peer.DeclareStreams(sdpPayload.Streams)
+		}
 		offer := webrtc.SessionDescription{SDP: sdpPayload.SDP, Type: webrtc.SDPTypeOffer}
 		answer, err := peer.HandleOffer(offer)
 		if err != nil {
@@ -659,6 +662,11 @@ func (h *Hub) handleSFUSignaling(event *Event) {
 		var sdpPayload SFUSDOPayload
 		if err := json.Unmarshal(event.Payload, &sdpPayload); err != nil {
 			return
+		}
+		// An answer can start media too: a track the browser attached to a
+		// transceiver that the SFU's offer covers starts flowing with the answer.
+		if sdpPayload.Streams != nil {
+			peer.DeclareStreams(sdpPayload.Streams)
 		}
 		if err := peer.HandleAnswer(webrtc.SessionDescription{SDP: sdpPayload.SDP, Type: webrtc.SDPTypeAnswer}); err != nil {
 			slog.Error("failed to apply sfu answer", "user_id", event.SenderID, "error", err)

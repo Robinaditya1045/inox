@@ -5,6 +5,7 @@ export interface RTCContextValue {
   connectionState: RTCConnectionState;
   isAudioMuted: boolean;
   isDeafened: boolean;
+  isCameraOn: boolean;
   isScreenSharing: boolean;
   /** Everyone in the call, you included, from the server's roster. */
   peers: VoicePeer[];
@@ -15,6 +16,7 @@ export interface RTCContextValue {
   disconnectAudio: () => void;
   toggleMute: () => void;
   toggleDeafen: () => void;
+  toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
 }
 

@@ -26,11 +26,11 @@ var (
 
 // Peer represents an individual WebRTC client connection inside an SFU Room.
 //
-// A peer is both a publisher (its microphone and screen) and a subscriber (everyone
-// else's tracks). Subscriptions change whenever someone joins, leaves, or starts
-// sharing, and every one of those changes needs a fresh offer/answer exchange —
-// tracks attached to an already-negotiated connection carry no media until the
-// browser has been told they exist. Negotiate drives those exchanges.
+// A peer is both a publisher (its microphone, camera and screen) and a subscriber
+// (everyone else's tracks). Subscriptions change whenever someone joins, leaves,
+// or starts sharing, and every one of those changes needs a fresh offer/answer
+// exchange — tracks attached to an already-negotiated connection carry no media
+// until the browser has been told they exist. Negotiate drives those exchanges.
 type Peer struct {
 	ID       string
 	UserID   string
@@ -51,6 +51,11 @@ type Peer struct {
 	dirty bool
 	// queued marks a renegotiation deferred because an exchange was already in flight.
 	queued bool
+
+	// streamKinds is what the browser says each stream it publishes is, keyed by
+	// MediaStream ID. A camera and a screen share are both just video on the wire;
+	// only the browser knows which is which.
+	streamKinds map[string]string
 
 	muted  bool
 	closed bool
@@ -323,6 +328,35 @@ func (p *Peer) Muted() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.muted
+}
+
+// DeclareStreams records what each stream the browser publishes is, keyed by the
+// MediaStream ID that its SDP carries in the msid. The browser sends the full set
+// with every description, so this replaces rather than merges. It has to land
+// before the description it came with is applied, because that is what lets the
+// browser's media start arriving.
+func (p *Peer) DeclareStreams(kinds map[string]string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.streamKinds = kinds
+}
+
+// publishedKind classifies a track this peer published. Audio is always the
+// microphone. Video is whatever the browser declared its stream to be; a browser
+// that declares nothing predates cameras, so its only video is a screen share.
+func (p *Peer) publishedKind(streamID string, codec webrtc.RTPCodecType) string {
+	if codec != webrtc.RTPCodecTypeVideo {
+		return KindMic
+	}
+
+	p.mu.Lock()
+	declared := p.streamKinds[streamID]
+	p.mu.Unlock()
+
+	if declared == KindCamera || declared == KindScreen {
+		return declared
+	}
+	return KindScreen
 }
 
 // Close gracefully terminates the WebRTC PeerConnection. It is idempotent: a peer
