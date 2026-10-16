@@ -415,6 +415,23 @@
   color: var(--color-danger-text);
 }
 
+/* Skip ±10s: the seconds sit inside the circular arrow, like most players */
+.skipBtn {
+  position: relative;
+}
+
+.skipLabel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 /* ── Volume: slider widens on hover, like most players ── */
 .volume {
   display: flex;

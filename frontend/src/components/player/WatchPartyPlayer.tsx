@@ -36,6 +36,8 @@ import {
   Radio,
   Check,
   Film,
+  RotateCcw,
+  RotateCw,
 } from "lucide-react";
 import styles from "./WatchPartyPlayer.module.css";
 
@@ -54,6 +56,9 @@ const RETRY_MAX_MS = 30_000;
 // pipeline -- the screen goes black -- and the one thing it fixes is an upstream the
 // server has re-resolved since this player loaded it.
 const LIVE_RELOAD_AFTER_ATTEMPTS = 3;
+
+// How far the skip buttons and arrow keys jump on an on-demand video.
+const SKIP_SECONDS = 10;
 
 // How hard hls.js tries each request of a live stream. The defaults are tuned for
 // on-demand video, where a segment is worth waiting for: they retry one for half a
@@ -528,6 +533,18 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     [permissions.can_control_playback, emitSeek],
   );
 
+  // A skip is just a room-wide seek relative to where this player is. Live streams
+  // have no timeline to move along, so it is VOD-only.
+  const handleSkip = useCallback(
+    (delta: number) => {
+      const video = videoRef.current;
+      if (!video || isLive) return;
+      const end = Number.isFinite(video.duration) ? video.duration : Infinity;
+      handleSeek(Math.min(Math.max(video.currentTime + delta, 0), end));
+    },
+    [isLive, handleSeek],
+  );
+
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVol = parseFloat(e.target.value);
     setVolume(newVol);
@@ -588,6 +605,12 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       } else if (e.code === "KeyF") {
         e.preventDefault();
         toggleFullscreen();
+      } else if (e.code === "ArrowLeft" || e.code === "KeyJ") {
+        e.preventDefault();
+        handleSkip(-SKIP_SECONDS);
+      } else if (e.code === "ArrowRight" || e.code === "KeyL") {
+        e.preventDefault();
+        handleSkip(SKIP_SECONDS);
       }
     };
 
@@ -595,7 +618,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     if (!container) return;
     container.addEventListener("keydown", handleKeyDown);
     return () => container.removeEventListener("keydown", handleKeyDown);
-  }, [handlePlayClick, toggleMute, toggleFullscreen]);
+  }, [handlePlayClick, toggleMute, toggleFullscreen, handleSkip]);
 
   const setQualityLevel = (level: number) => {
     if (hlsRef.current) {
@@ -805,6 +828,36 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
                   />
                 )}
               </button>
+
+              {/* Skip back / forward (VOD only) */}
+              {!isLive && canControl && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleSkip(-SKIP_SECONDS)}
+                    aria-label={`Rewind ${SKIP_SECONDS} seconds`}
+                    title={`Rewind ${SKIP_SECONDS}s (←)`}
+                    className={`${styles.iconBtn} ${styles.skipBtn}`}
+                  >
+                    <RotateCcw size={24} aria-hidden="true" />
+                    <span className={styles.skipLabel} aria-hidden="true">
+                      {SKIP_SECONDS}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSkip(SKIP_SECONDS)}
+                    aria-label={`Forward ${SKIP_SECONDS} seconds`}
+                    title={`Forward ${SKIP_SECONDS}s (→)`}
+                    className={`${styles.iconBtn} ${styles.skipBtn}`}
+                  >
+                    <RotateCw size={24} aria-hidden="true" />
+                    <span className={styles.skipLabel} aria-hidden="true">
+                      {SKIP_SECONDS}
+                    </span>
+                  </button>
+                </>
+              )}
 
               {/* Volume */}
               <div className={styles.volume}>
