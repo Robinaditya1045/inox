@@ -150,8 +150,12 @@ explicitly if you need previews to reach the API.
 
 ## Gotchas
 
-- **Admin access** is granted only by listing an address in `ADMIN_EMAILS`;
-  there is no role column on `users`. Sign up with that exact address.
+- **Admin access** starts with `ADMIN_EMAILS`: those addresses are owners, and
+  owners add further admins from the admin portal's Access tab. There is no role
+  column on `users`. Sign up with each owner address before (or as soon as) it is
+  listed: sign-up does not verify email ownership, so whoever registers an unclaimed
+  owner address first becomes an owner. The Access tab flags any owner address
+  nobody has signed up with yet.
 - **`PUBLIC_IP` / `WEBRTC_PUBLIC_IP`** must be the VM's public address. The
   instance only ever sees its private `10.0.0.x` address, so without this the
   SFU advertises candidates no remote browser can route to.

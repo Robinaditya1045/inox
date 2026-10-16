@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/inox/inox/backend/internal/admin"
 	"github.com/inox/inox/backend/internal/api"
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
@@ -64,6 +65,7 @@ func (a *App) Run() error {
 	roomService := room.NewRoomService(roomRepo, userRepo, stateRepo)
 	chatService := room.NewChatService(chatRepo, roomRepo)
 	friendService := friend.NewService(friend.NewRepository(a.DB), userRepo)
+	adminService := admin.NewService(admin.NewRepository(a.DB), userRepo, a.Config.AdminEmails)
 
 	obsRepo := observability.NewRepository(a.DB)
 	eventAggregator := observability.NewEventAggregator(obsRepo)
@@ -103,6 +105,7 @@ func (a *App) Run() error {
 	wsHandler := handler.NewWSHandler(hub)
 	chatHandler := handler.NewChatHandler(chatService)
 	adminHandler := handler.NewAdminHandler(telemetryHub)
+	adminAccessHandler := handler.NewAdminAccessHandler(adminService)
 	friendHandler := handler.NewFriendHandler(friendService)
 
 	mediaRepo := media.NewRepository(a.DB)
@@ -178,7 +181,7 @@ func (a *App) Run() error {
 	middleware.SetAllowedOrigins(a.Config.CORSAllowedOrigins)
 
 	// 6. Register router with wired handlers & middleware
-	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, liveHandler, friendHandler, a.DB, a.Redis)
+	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, adminService, adminAccessHandler, mediaHandler, liveHandler, friendHandler, a.DB, a.Redis)
 
 	// Whole-request read/write timeouts are wrong for this service. Uploads are
 	// large by design (the admin portal offers 1 GB multipart and 3 GB direct) and

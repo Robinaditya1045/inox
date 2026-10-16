@@ -30,71 +30,89 @@ func (f *fakeAuthService) ValidateSession(ctx context.Context, sessionID string)
 	return nil, auth.ErrSessionNotFound
 }
 
-func TestRequireAdminRole(t *testing.T) {
-	// Set up admin emails env
-	origAdminEmails := os.Getenv("ADMIN_EMAILS")
-	defer os.Setenv("ADMIN_EMAILS", origAdminEmails)
-	os.Setenv("ADMIN_EMAILS", "admin@inox.app,super@inox.app")
+// fakeAdminAccess resolves admin roles by session ID.
+type fakeAdminAccess struct {
+	roles map[string]domain.AdminRole
+	err   error
+}
 
-	handler := RequireAdminRole()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (f *fakeAdminAccess) RoleFor(ctx context.Context, session *domain.Session) (domain.AdminRole, error) {
+	if f.err != nil {
+		return domain.AdminRoleNone, f.err
+	}
+	return f.roles[session.ID], nil
+}
+
+// serveAsSession runs handler with session (if any) already placed in the context by RequireAuth.
+func serveAsSession(handler http.Handler, session *domain.Session) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	if session != nil {
+		req = req.WithContext(context.WithValue(req.Context(), sessionContextKey, session))
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestRequireAdminRoleAndOwner(t *testing.T) {
+	access := &fakeAdminAccess{roles: map[string]domain.AdminRole{
+		"sess_owner": domain.AdminRoleOwner,
+		"sess_admin": domain.AdminRoleAdmin,
+	}}
+	var seenRole domain.AdminRole
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenRole, _ = GetAdminRoleFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}))
+	})
 
-	// 1. No session -> 403 Forbidden
-	req1 := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-	if rec1.Code != http.StatusForbidden {
-		t.Errorf("expected 403 Forbidden when no session in context, got %d", rec1.Code)
-	}
-
-	// 2. Regular user session -> 403 Forbidden
-	req2 := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
-	userSession := &domain.Session{
-		ID:       "sess-1",
-		UserID:   "usr-1",
-		Username: "alice",
-		Email:    "alice@example.com",
-		Role:     domain.SystemRoleUser,
-	}
-	ctx2 := context.WithValue(req2.Context(), sessionContextKey, userSession)
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2.WithContext(ctx2))
-	if rec2.Code != http.StatusForbidden {
-		t.Errorf("expected 403 Forbidden for regular user, got %d", rec2.Code)
+	tests := []struct {
+		name      string
+		session   *domain.Session
+		ownerOnly bool
+		wantCode  int
+		wantRole  domain.AdminRole
+	}{
+		{name: "no session", wantCode: http.StatusForbidden},
+		{name: "normal user", session: &domain.Session{ID: "sess_user"}, wantCode: http.StatusForbidden},
+		{name: "admin", session: &domain.Session{ID: "sess_admin"}, wantCode: http.StatusOK, wantRole: domain.AdminRoleAdmin},
+		{name: "owner", session: &domain.Session{ID: "sess_owner"}, wantCode: http.StatusOK, wantRole: domain.AdminRoleOwner},
+		{name: "owner-only: normal user", session: &domain.Session{ID: "sess_user"}, ownerOnly: true, wantCode: http.StatusForbidden},
+		{name: "owner-only: admin", session: &domain.Session{ID: "sess_admin"}, ownerOnly: true, wantCode: http.StatusForbidden},
+		{name: "owner-only: owner", session: &domain.Session{ID: "sess_owner"}, ownerOnly: true, wantCode: http.StatusOK, wantRole: domain.AdminRoleOwner},
 	}
 
-	// 3. System role admin -> 200 OK
-	req3 := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
-	adminSession := &domain.Session{
-		ID:       "sess-2",
-		UserID:   "usr-2",
-		Username: "admin",
-		Email:    "bob@example.com",
-		Role:     domain.SystemRoleAdmin,
-	}
-	ctx3 := context.WithValue(req3.Context(), sessionContextKey, adminSession)
-	rec3 := httptest.NewRecorder()
-	handler.ServeHTTP(rec3, req3.WithContext(ctx3))
-	if rec3.Code != http.StatusOK {
-		t.Errorf("expected 200 OK for user with SystemRoleAdmin, got %d", rec3.Code)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seenRole = domain.AdminRoleNone
+			gate := RequireAdminRole(access)
+			if tt.ownerOnly {
+				gate = RequireAdminOwner(access)
+			}
 
-	// 4. Admin email match via ADMIN_EMAILS -> 200 OK
-	req4 := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
-	emailSession := &domain.Session{
-		ID:       "sess-3",
-		UserID:   "usr-3",
-		Username: "super",
-		Email:    "super@inox.app",
-		Role:     domain.SystemRoleUser,
+			rec := serveAsSession(gate(next), tt.session)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("expected HTTP %d, got %d", tt.wantCode, rec.Code)
+			}
+			if seenRole != tt.wantRole {
+				t.Errorf("expected role %q in context, got %q", tt.wantRole, seenRole)
+			}
+		})
 	}
-	ctx4 := context.WithValue(req4.Context(), sessionContextKey, emailSession)
-	rec4 := httptest.NewRecorder()
-	handler.ServeHTTP(rec4, req4.WithContext(ctx4))
-	if rec4.Code != http.StatusOK {
-		t.Errorf("expected 200 OK for user matching ADMIN_EMAILS, got %d", rec4.Code)
+}
+
+func TestRequireAdminRoleFailsClosed(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	session := &domain.Session{ID: "sess_admin"}
+
+	// No resolver wired: nobody is an admin.
+	if rec := serveAsSession(RequireAdminRole(nil)(next), session); rec.Code != http.StatusForbidden {
+		t.Errorf("nil access: expected 403, got %d", rec.Code)
+	}
+	// Resolver unreachable: refuse rather than guess, and say it is temporary.
+	failing := &fakeAdminAccess{err: errors.New("db: connection refused")}
+	if rec := serveAsSession(RequireAdminRole(failing)(next), session); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("failing access: expected 503, got %d", rec.Code)
 	}
 }
 
@@ -103,7 +121,7 @@ func TestRequireMetricsAccess(t *testing.T) {
 	defer os.Setenv("METRICS_AUTH_TOKEN", origToken)
 	os.Setenv("METRICS_AUTH_TOKEN", "secret-token-123")
 
-	handler := RequireMetricsAccess(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireMetricsAccess(nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("metrics"))
 	}))
@@ -140,21 +158,23 @@ func TestRequireMetricsAccess(t *testing.T) {
 // An admin must be able to reach /metrics with the session the rest of the API
 // accepts. This used to read a cookie named "session", which nothing ever sets.
 func TestRequireMetricsAccessAdminSession(t *testing.T) {
-	origAdminEmails := os.Getenv("ADMIN_EMAILS")
 	origToken := os.Getenv("METRICS_AUTH_TOKEN")
-	defer os.Setenv("ADMIN_EMAILS", origAdminEmails)
 	defer os.Setenv("METRICS_AUTH_TOKEN", origToken)
-	os.Setenv("ADMIN_EMAILS", "admin@inox.app")
 	os.Setenv("METRICS_AUTH_TOKEN", "")
 
 	svc := &fakeAuthService{
 		sessions: map[string]*domain.Session{
+			"sess_owner": {ID: "sess_owner", Email: "owner@inox.app"},
 			"sess_admin": {ID: "sess_admin", Email: "admin@inox.app"},
 			"sess_user":  {ID: "sess_user", Email: "user@inox.app"},
 		},
 		lookupErrs: map[string]error{"sess_unreachable": errors.New("redis: connection refused")},
 	}
-	handler := RequireMetricsAccess(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	access := &fakeAdminAccess{roles: map[string]domain.AdminRole{
+		"sess_owner": domain.AdminRoleOwner,
+		"sess_admin": domain.AdminRoleAdmin,
+	}}
+	handler := RequireMetricsAccess(svc, access)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -164,6 +184,7 @@ func TestRequireMetricsAccessAdminSession(t *testing.T) {
 		bearer   string
 		wantCode int
 	}{
+		{name: "owner session cookie", cookie: "sess_owner", wantCode: http.StatusOK},
 		{name: "admin session cookie", cookie: "sess_admin", wantCode: http.StatusOK},
 		{name: "admin session bearer", bearer: "sess_admin", wantCode: http.StatusOK},
 		{name: "non-admin session", cookie: "sess_user", wantCode: http.StatusForbidden},

@@ -83,9 +83,12 @@ development. `RequireAuth` also accepts `Authorization: Bearer`, `X-Session-ID`
 or `?session_id=`, which is what lets the WebSocket handshake carry a session at
 all, since browsers cannot set headers on it.
 
-There is no role column on `users`. Administrative access is granted solely by
-listing an address in `ADMIN_EMAILS`; with that unset, every admin route returns
-403.
+There is no role column on `users`. Admin portal access has two tiers: owners
+are the addresses listed in `ADMIN_EMAILS`, and admins are users an owner adds
+from the portal's Access tab (stored in `admin_users`). Both can use every admin
+route; only owners can add or remove admins. The role is resolved per request and
+never appears in anything the main app reads. With `ADMIN_EMAILS` unset there are
+no owners, so nobody can be made an admin and every admin route returns 403.
 
 ## Repository layout
 
@@ -165,7 +168,7 @@ development; production is stricter.
 | `SESSION_SECRET` | development placeholder | Must be set and at least 32 characters outside development |
 | `SESSION_DURATION_HOURS` | `168` | |
 | `CORS_ALLOWED_ORIGINS` | localhost origins | Exact match, comma separated, no wildcards |
-| `ADMIN_EMAILS` | unset | The only thing granting admin access |
+| `ADMIN_EMAILS` | unset | Admin portal owners, comma separated. Owners add further admins from the portal |
 | `MINIO_ENDPOINT` | `localhost:9000` | Falls back to local disk if unreachable at boot |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `minioadmin` | |
 | `MINIO_BUCKET_NAME` | `inox-media` | Created on startup if absent |

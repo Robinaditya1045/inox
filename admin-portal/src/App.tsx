@@ -4,6 +4,7 @@ import { SystemPulseDashboard } from "@/components/dashboard/SystemPulseDashboar
 import { MediaCommandCenter } from "@/components/media/MediaCommandCenter";
 import { LiveChannelCenter } from "@/components/live/LiveChannelCenter";
 import { RoomCommandCenter } from "@/components/rooms/RoomCommandCenter";
+import { AdminAccessCenter } from "@/components/access/AdminAccessCenter";
 import {
   Card,
   CardContent,
@@ -12,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useTelemetryStream } from "@/hooks/useTelemetryStream";
+import { useAdminRole } from "@/hooks/useAdminRole";
 
 export function App() {
   const [activeTab, setActiveTab] = React.useState("pulse");
@@ -21,6 +23,7 @@ export function App() {
   // WebSocket down and discarded all chart history on every tab switch, and
   // left the header's connection badge hardcoded to "LIVE".
   const telemetry = useTelemetryStream();
+  const adminRole = useAdminRole();
 
   return (
     <AppLayout
@@ -28,6 +31,7 @@ export function App() {
       setActiveTab={setActiveTab}
       isConnected={telemetry.isConnected}
       isDemoMode={telemetry.isDemoMode}
+      adminRole={adminRole}
     >
       {activeTab === "pulse" && <SystemPulseDashboard telemetry={telemetry} />}
 
@@ -38,6 +42,8 @@ export function App() {
       {activeTab === "rooms" && (
         <RoomCommandCenter liveRooms={telemetry.current?.rooms} />
       )}
+
+      {activeTab === "access" && adminRole === "owner" && <AdminAccessCenter />}
 
       {activeTab === "debug" && (
         <Card className="border-zinc-800 animate-enter">

@@ -34,6 +34,8 @@ type Config struct {
 	WebRTCPortMin          string
 	WebRTCPortMax          string
 	WebRTCPublicIP         string
+	// AdminEmails lists the admin portal owners, comma-separated. Owners can add admins.
+	AdminEmails string
 }
 
 func Load() (*Config, error) {
@@ -77,6 +79,7 @@ func Load() (*Config, error) {
 		// Cloud, EC2, GCE). Left empty the SFU advertises its private IP, which no
 		// remote browser can route to, and voice chat never leaves "checking".
 		WebRTCPublicIP: getEnv("WEBRTC_PUBLIC_IP", ""),
+		AdminEmails:    getEnv("ADMIN_EMAILS", ""),
 	}
 
 	// Fail fast if DATABASE_URL or REDIS_URL is empty

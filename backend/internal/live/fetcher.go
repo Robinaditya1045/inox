@@ -32,8 +32,9 @@ const MaxManifestBytes = 8 << 20
 // Every request originates from a URL an operator typed into the admin portal and is
 // executed from inside our network, which makes this an SSRF primitive by
 // construction. Admin-gating is not sufficient mitigation on its own: admin here
-// means an address listed in ADMIN_EMAILS, and the blast radius of a mistake is the
-// cloud metadata endpoint and every internal service we can reach. Hence two
+// means an owner listed in ADMIN_EMAILS or an admin one of them added, and the blast
+// radius of a mistake is the cloud metadata endpoint and every internal service we
+// can reach. Hence two
 // independent controls -- a host allowlist checked before dialling, and an address
 // check performed at dial time on every hop.
 type Fetcher struct {
@@ -72,9 +73,9 @@ func AllowLoopback() Option {
 // NewFetcher builds a guarded HTTP client.
 //
 // An empty allowlist permits any public host, loudly: the only people adding
-// channels are the operators in ADMIN_EMAILS, and making them enumerate every CDN
-// edge a source shards across costs more than it protects. Private address ranges
-// stay blocked regardless -- that guard is never relaxed.
+// channels are the owners in ADMIN_EMAILS and the admins they add, and making them
+// enumerate every CDN edge a source shards across costs more than it protects.
+// Private address ranges stay blocked regardless -- that guard is never relaxed.
 func NewFetcher(allowedHosts string, opts ...Option) *Fetcher {
 	hosts := splitHosts(allowedHosts)
 	allowAny := len(hosts) == 0

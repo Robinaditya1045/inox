@@ -7,8 +7,10 @@ import {
   Terminal,
   Shield,
   RefreshCw,
+  KeyRound,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import type { AdminRole } from "@/types/admin";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -16,6 +18,8 @@ interface AppLayoutProps {
   setActiveTab: (tab: string) => void;
   isConnected?: boolean;
   isDemoMode?: boolean;
+  /** Null until the backend confirms it; owners also get the Access tab. */
+  adminRole?: AdminRole | null;
 }
 
 export function AppLayout({
@@ -24,6 +28,7 @@ export function AppLayout({
   setActiveTab,
   isConnected = false,
   isDemoMode = false,
+  adminRole = null,
 }: AppLayoutProps) {
   const navItems = [
     { id: "pulse", label: "System Pulse", icon: Activity },
@@ -31,6 +36,9 @@ export function AppLayout({
     { id: "live", label: "Live Channels", icon: RadioTower },
     { id: "rooms", label: "Room Inspector", icon: Radio },
     { id: "debug", label: "Live Tracing", icon: Terminal },
+    ...(adminRole === "owner"
+      ? [{ id: "access", label: "Access", icon: KeyRound }]
+      : []),
   ];
 
   return (
@@ -132,10 +140,14 @@ export function AppLayout({
             </span>
           </div>
 
-          <Badge variant="success" className="hidden md:inline-flex">
-            <Shield className="h-3 w-3 mr-1" aria-hidden="true" />
-            RBAC ADMIN
-          </Badge>
+          {/* Only once the backend confirms a role: in demo mode, while loading, or
+              for a session without access, claiming one would be untrue. */}
+          {adminRole && (
+            <Badge variant="success" className="hidden md:inline-flex">
+              <Shield className="h-3 w-3 mr-1" aria-hidden="true" />
+              {adminRole === "owner" ? "RBAC OWNER" : "RBAC ADMIN"}
+            </Badge>
+          )}
 
           <button
             type="button"

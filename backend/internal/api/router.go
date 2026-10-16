@@ -26,6 +26,7 @@ func NewRouter(
 	wsHandler *handler.WSHandler,
 	chatHandler *handler.ChatHandler,
 	adminHandler *handler.AdminHandler,
+	adminAccess middleware.AdminAccess, adminAccessHandler *handler.AdminAccessHandler,
 	mediaHandler *handler.MediaHandler,
 	liveHandler *handler.LiveHandler,
 	friendHandler *handler.FriendHandler,
@@ -81,6 +82,8 @@ func NewRouter(
 	if authService != nil {
 		// Protected Endpoints requiring explicit Redis session authentication
 		requireAuth := middleware.RequireAuth(authService)
+		// Owners (ADMIN_EMAILS) and the admins they add; see package admin.
+		requireAdmin := middleware.RequireAdminRole(adminAccess)
 
 		if liveHandler != nil {
 			// The master playlist is the one live route that needs a real session.
@@ -142,26 +145,36 @@ func NewRouter(
 
 		// Protected Admin Endpoints (requires authenticated session and system admin privileges)
 		if adminHandler != nil {
-			mux.Handle("GET /metrics", middleware.RequireMetricsAccess(authService)(http.HandlerFunc(adminHandler.ServePrometheus)))
-			mux.Handle("GET /api/v1/admin/telemetry", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(adminHandler.GetSnapshot))))
-			mux.Handle("GET /api/v1/admin/telemetry/ws", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(adminHandler.ServeTelemetryWS))))
+			mux.Handle("GET /metrics", middleware.RequireMetricsAccess(authService, adminAccess)(http.HandlerFunc(adminHandler.ServePrometheus)))
+			mux.Handle("GET /api/v1/admin/telemetry", requireAuth(requireAdmin(http.HandlerFunc(adminHandler.GetSnapshot))))
+			mux.Handle("GET /api/v1/admin/telemetry/ws", requireAuth(requireAdmin(http.HandlerFunc(adminHandler.ServeTelemetryWS))))
+		}
+
+		// Admin portal access. Any admin can ask which role they hold; only owners can
+		// see, add or remove admins.
+		if adminAccessHandler != nil {
+			requireOwner := middleware.RequireAdminOwner(adminAccess)
+			mux.Handle("GET /api/v1/admin/me", requireAuth(requireAdmin(http.HandlerFunc(adminAccessHandler.Me))))
+			mux.Handle("GET /api/v1/admin/admins", requireAuth(requireOwner(http.HandlerFunc(adminAccessHandler.List))))
+			mux.Handle("POST /api/v1/admin/admins", requireAuth(requireOwner(http.HandlerFunc(adminAccessHandler.Grant))))
+			mux.Handle("DELETE /api/v1/admin/admins/{user_id}", requireAuth(requireOwner(http.HandlerFunc(adminAccessHandler.Revoke))))
 		}
 
 		// Protected Admin Media Endpoints (requires authenticated session and system admin privileges)
 		if mediaHandler != nil {
-			mux.Handle("POST /api/v1/admin/media/upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Upload))))
-			mux.Handle("POST /api/v1/admin/media/presigned-url", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CreatePresignedUpload))))
-			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CompleteDirectUpload))))
-			mux.Handle("POST /api/v1/admin/media/register", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Register))))
-			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Delete))))
+			mux.Handle("POST /api/v1/admin/media/upload", requireAuth(requireAdmin(http.HandlerFunc(mediaHandler.Upload))))
+			mux.Handle("POST /api/v1/admin/media/presigned-url", requireAuth(requireAdmin(http.HandlerFunc(mediaHandler.CreatePresignedUpload))))
+			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(requireAdmin(http.HandlerFunc(mediaHandler.CompleteDirectUpload))))
+			mux.Handle("POST /api/v1/admin/media/register", requireAuth(requireAdmin(http.HandlerFunc(mediaHandler.Register))))
+			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(requireAdmin(http.HandlerFunc(mediaHandler.Delete))))
 		}
 
 		// Protected Admin Live Channel Endpoints
 		if liveHandler != nil {
-			mux.Handle("GET /api/v1/admin/live/channels", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.List))))
-			mux.Handle("POST /api/v1/admin/live/channels", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.Create))))
-			mux.Handle("POST /api/v1/admin/live/test-resolve", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.TestResolve))))
-			mux.Handle("DELETE /api/v1/admin/live/channels/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(liveHandler.Delete))))
+			mux.Handle("GET /api/v1/admin/live/channels", requireAuth(requireAdmin(http.HandlerFunc(liveHandler.List))))
+			mux.Handle("POST /api/v1/admin/live/channels", requireAuth(requireAdmin(http.HandlerFunc(liveHandler.Create))))
+			mux.Handle("POST /api/v1/admin/live/test-resolve", requireAuth(requireAdmin(http.HandlerFunc(liveHandler.TestResolve))))
+			mux.Handle("DELETE /api/v1/admin/live/channels/{id}", requireAuth(requireAdmin(http.HandlerFunc(liveHandler.Delete))))
 		}
 	}
 

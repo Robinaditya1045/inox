@@ -65,44 +65,63 @@ func GetRoomMemberFromContext(ctx context.Context) (*domain.RoomMember, bool) {
 	return m, ok
 }
 
-// IsAdminSession helper verifies if the current session has system administrator privileges.
-func IsAdminSession(session *domain.Session) bool {
-	if session == nil {
-		return false
-	}
-	if session.Role == domain.SystemRoleAdmin {
-		return true
-	}
-	// Also allow configured admin emails via ADMIN_EMAILS environment variable
-	adminEmails := strings.Split(os.Getenv("ADMIN_EMAILS"), ",")
-	for _, e := range adminEmails {
-		e = strings.TrimSpace(strings.ToLower(e))
-		if e != "" && e == strings.ToLower(session.Email) {
-			return true
-		}
-	}
-	return false
+const adminRoleContextKey contextKey = "admin_role"
+
+// AdminAccess resolves a session's admin portal role. admin.Service implements it.
+type AdminAccess interface {
+	RoleFor(ctx context.Context, session *domain.Session) (domain.AdminRole, error)
 }
 
-// RequireAdminRole verifies that the authenticated user has system administrator privileges.
+// RequireAdminRole admits owners (ADMIN_EMAILS) and the admins they add, and records
+// which one the caller is for GetAdminRoleFromContext. Must be chained after RequireAuth.
+func RequireAdminRole(access AdminAccess) func(http.Handler) http.Handler {
+	return requireAdmin(access, false)
+}
+
+// RequireAdminOwner admits owners only: deciding who has admin access is theirs alone.
 // Must be chained after RequireAuth.
-func RequireAdminRole() func(http.Handler) http.Handler {
+func RequireAdminOwner(access AdminAccess) func(http.Handler) http.Handler {
+	return requireAdmin(access, true)
+}
+
+func requireAdmin(access AdminAccess, ownerOnly bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			session, ok := GetSessionFromContext(r.Context())
-			if !ok || !IsAdminSession(session) {
+			// With no access resolver nobody is an admin: fail closed.
+			if !ok || access == nil {
 				respond.WriteError(w, http.StatusForbidden, "access denied: system administrator privileges required")
 				return
 			}
-			next.ServeHTTP(w, r)
+			role, err := access.RoleFor(r.Context(), session)
+			if err != nil {
+				respond.WriteError(w, http.StatusServiceUnavailable, "admin access check unavailable, try again shortly")
+				return
+			}
+			if role == domain.AdminRoleNone {
+				respond.WriteError(w, http.StatusForbidden, "access denied: system administrator privileges required")
+				return
+			}
+			if ownerOnly && role != domain.AdminRoleOwner {
+				respond.WriteError(w, http.StatusForbidden, "access denied: only owners can manage admins")
+				return
+			}
+			ctx := context.WithValue(r.Context(), adminRoleContextKey, role)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
+// GetAdminRoleFromContext retrieves the role recorded by RequireAdminRole or RequireAdminOwner.
+func GetAdminRoleFromContext(ctx context.Context) (domain.AdminRole, bool) {
+	role, ok := ctx.Value(adminRoleContextKey).(domain.AdminRole)
+	return role, ok
+}
+
 // RequireMetricsAccess guards telemetry exposition endpoints like /metrics.
 // Allows access if (1) request is loopback IP, (2) Authorization Bearer token matches METRICS_AUTH_TOKEN,
-// or (3) request is made by an authenticated system administrator.
-func RequireMetricsAccess(authService auth.AuthService) func(http.Handler) http.Handler {
+// or (3) request is made by an authenticated owner or admin.
+func RequireMetricsAccess(authService auth.AuthService, access AdminAccess) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// 1. Check if loopback address (local Prometheus scraping)
@@ -123,15 +142,22 @@ func RequireMetricsAccess(authService auth.AuthService) func(http.Handler) http.
 			}
 
 			// 3. Check if caller has an active admin session
-			if authService != nil {
+			if authService != nil && access != nil {
 				session, err := authenticate(r, authService)
 				if errors.Is(err, errSessionStoreUnavailable) {
 					respond.WriteError(w, http.StatusServiceUnavailable, "session store unavailable, try again shortly")
 					return
 				}
-				if err == nil && IsAdminSession(session) {
-					next.ServeHTTP(w, r)
-					return
+				if err == nil {
+					role, err := access.RoleFor(r.Context(), session)
+					if err != nil {
+						respond.WriteError(w, http.StatusServiceUnavailable, "admin access check unavailable, try again shortly")
+						return
+					}
+					if role != domain.AdminRoleNone {
+						next.ServeHTTP(w, r)
+						return
+					}
 				}
 			}
 
