@@ -74,6 +74,12 @@
   animation: var(--animate-fade-in);
 }
 
+/* The watch party stays mounted behind the other channels. The display above
+   would otherwise beat the browser's own rule for [hidden]. */
+.channelView[hidden] {
+  display: none;
+}
+
 .backdrop {
   display: none;
 }

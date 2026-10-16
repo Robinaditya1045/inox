@@ -276,17 +276,23 @@ export const RoomPage: React.FC = () => {
             </div>
           )}
 
-          {activeChannel === "watch-party" && (
-            <div key="watch-party" className={shellStyles.channelView}>
-              <div className={shellStyles.playerArea}>
-                <WatchPartyPlayer
-                  onOpenLibrary={
-                    permissions.can_control_playback ? openLibrary : undefined
-                  }
-                />
-              </div>
+          {/* Hidden rather than unmounted while another channel is showing, so
+              the party keeps playing — and in sync — behind voice or chat.
+              Unmounting it tore the stream down, lost volume and quality, and
+              on the way back reloaded it at the last sync event's position
+              rather than where the room had got to. */}
+          <div
+            className={shellStyles.channelView}
+            hidden={activeChannel !== "watch-party"}
+          >
+            <div className={shellStyles.playerArea}>
+              <WatchPartyPlayer
+                onOpenLibrary={
+                  permissions.can_control_playback ? openLibrary : undefined
+                }
+              />
             </div>
-          )}
+          </div>
         </div>
 
         <aside
