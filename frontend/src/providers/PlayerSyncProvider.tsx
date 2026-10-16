@@ -69,6 +69,53 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
   // The server elects the leader and announces it; this client only compares.
   const isLeader = !!user && !!leaderId && user.id === leaderId;
 
+  // Applies the server's authoritative state for the room. receivedAt is when it
+  // arrived, which can be earlier than now when it was held back (see below).
+  const applySync = useCallback(
+    (payload: WSPlaybackPayload, receivedAt: number) => {
+      isRemoteUpdateRef.current = true;
+      if (payload.media_url) {
+        setMediaUrlState(payload.media_url);
+      }
+
+      setKind(payload.kind ?? "vod");
+      setLeaderId(payload.leader_id ?? null);
+      setLeaderName(payload.leader_name ?? null);
+      if (payload.live_position) {
+        setLiveAnchor({
+          position: payload.live_position,
+          receivedAt,
+          ageMs: payload.age_ms ?? 0,
+        });
+      }
+
+      let targetTime = payload.media_time_seconds || 0;
+      if (payload.is_playing && payload.last_updated) {
+        const elapsedSec = Math.max(
+          0,
+          (Date.now() - payload.last_updated) / 1000,
+        );
+        targetTime += elapsedSec;
+      }
+
+      setCurrentTime(targetTime);
+      setIsPlaying(!!payload.is_playing);
+      setLastSyncTimestamp(Date.now());
+    },
+    [],
+  );
+
+  // The room socket is opened from the URL, so the server's SYNC_PLAYBACK can land
+  // before activeRoom does — and the resets below, which run when it does, used to
+  // wipe it: someone joining mid-film sat paused at 0:00 while the room played on.
+  // A sync for a room that is not active yet is held here and applied after them.
+  const roomIdRef = useRef(roomId);
+  const pendingSyncRef = useRef<{
+    roomId: string;
+    payload: WSPlaybackPayload;
+    receivedAt: number;
+  } | null>(null);
+
   // Reset playback whenever the room changes so room A's position never leaks into room B
   useEffect(() => {
     setMediaUrlState(activeRoom?.current_media_url || DEFAULT_STREAM_URL);
@@ -88,6 +135,15 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     setLeaderName(null);
     setLiveStatus(null);
   }, [roomId]);
+
+  // After both resets above, which is what lets a held sync survive them.
+  useEffect(() => {
+    roomIdRef.current = roomId;
+    const pending = pendingSyncRef.current;
+    if (!pending || pending.roomId !== roomId) return;
+    pendingSyncRef.current = null;
+    applySync(pending.payload, pending.receivedAt);
+  }, [roomId, applySync]);
 
   const clearRemoteFlag = useCallback(() => {
     isRemoteUpdateRef.current = false;
@@ -169,34 +225,16 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
           "PlayerSync: Authoritative SYNC_PLAYBACK received on join",
           { ...payload },
         );
-        isRemoteUpdateRef.current = true;
-        if (payload.media_url) {
-          setMediaUrlState(payload.media_url);
-        }
-
-        setKind(payload.kind ?? "vod");
-        setLeaderId(payload.leader_id ?? null);
-        setLeaderName(payload.leader_name ?? null);
-        if (payload.live_position) {
-          setLiveAnchor({
-            position: payload.live_position,
+        if (msg.room_id && msg.room_id !== roomIdRef.current) {
+          pendingSyncRef.current = {
+            roomId: msg.room_id,
+            payload,
             receivedAt: Date.now(),
-            ageMs: payload.age_ms ?? 0,
-          });
+          };
+          return;
         }
-
-        let targetTime = payload.media_time_seconds || 0;
-        if (payload.is_playing && payload.last_updated) {
-          const elapsedSec = Math.max(
-            0,
-            (Date.now() - payload.last_updated) / 1000,
-          );
-          targetTime += elapsedSec;
-        }
-
-        setCurrentTime(targetTime);
-        setIsPlaying(!!payload.is_playing);
-        setLastSyncTimestamp(Date.now());
+        pendingSyncRef.current = null;
+        applySync(payload, Date.now());
       }
     });
 
@@ -240,7 +278,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       unsubLivePosition();
       unsubLiveStatus();
     };
-  }, [subscribe]);
+  }, [subscribe, applySync]);
 
   const setMediaUrl = useCallback(
     (url: string) => {
