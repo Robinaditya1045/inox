@@ -20,6 +20,10 @@ import type {
   WSLivePositionPayload,
   WSLiveStatusPayload,
   WSPlaybackPayload,
+  WSQueue,
+  WSQueueAdvancePayload,
+  WSQueueSetPayload,
+  WSQueueStatePayload,
 } from "../types/ws";
 import { logger } from "../utils/logger";
 
@@ -59,6 +63,9 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     null,
   );
 
+  // ── Play queue ────────────────────────────────────────────
+  const [queue, setQueue] = useState<WSQueue | null>(null);
+
   // Prevents echo loops when the video element is driven by a remote WebSocket event
   const isRemoteUpdateRef = useRef<boolean>(false);
 
@@ -81,6 +88,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       setKind(payload.kind ?? "vod");
       setLeaderId(payload.leader_id ?? null);
       setLeaderName(payload.leader_name ?? null);
+      setQueue(payload.queue ?? null);
       if (payload.live_position) {
         setLiveAnchor({
           position: payload.live_position,
@@ -134,6 +142,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     setLeaderId(null);
     setLeaderName(null);
     setLiveStatus(null);
+    setQueue(null);
   }, [roomId]);
 
   // After both resets above, which is what lets a held sync survive them.
@@ -213,9 +222,17 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
         setLeaderName(null);
         setLiveStatus(null);
         setCurrentTime(0);
-        setIsPlaying(false);
+        // A pick from the library arrives paused; the next video of a queue
+        // arrives already playing.
+        setIsPlaying(!!payload.is_playing);
         setLastSyncTimestamp(Date.now());
       }
+    });
+
+    const unsubQueueState = subscribe("QUEUE_STATE", (msg) => {
+      if (msg.room_id && msg.room_id !== roomIdRef.current) return;
+      const payload = msg.payload as WSQueueStatePayload | undefined;
+      setQueue(payload?.queue ?? null);
     });
 
     const unsubSyncPlayback = subscribe("SYNC_PLAYBACK", (msg) => {
@@ -273,6 +290,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       unsubPause();
       unsubSeek();
       unsubChangeMedia();
+      unsubQueueState();
       unsubSyncPlayback();
       unsubLiveLeader();
       unsubLivePosition();
@@ -367,6 +385,39 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     });
   }, [isLeader, send]);
 
+  // The queue is the server's: these only ask, and the room (this client
+  // included) changes when the server answers with CHANGE_MEDIA and QUEUE_STATE.
+  const playQueue = useCallback(
+    (next: WSQueue) => {
+      if (!permissions.can_control_playback) {
+        logger.warn("PlayerSync: Permission denied to start a queue");
+        return;
+      }
+      send<WSQueueSetPayload>("QUEUE_SET", { queue: next });
+      logger.info("PlayerSync: Requested play queue", {
+        title: next.title,
+        items: next.items.length,
+      });
+    },
+    [permissions.can_control_playback, send],
+  );
+
+  const advanceQueue = useCallback(
+    (toIndex?: number) => {
+      if (!permissions.can_control_playback || !queue) return;
+      send<WSQueueAdvancePayload>("QUEUE_ADVANCE", {
+        from_index: queue.index,
+        ...(toIndex !== undefined ? { to_index: toIndex } : {}),
+      });
+    },
+    [permissions.can_control_playback, queue, send],
+  );
+
+  const clearQueue = useCallback(() => {
+    if (!permissions.can_control_playback || !queue) return;
+    send("QUEUE_CLEAR", {});
+  }, [permissions.can_control_playback, queue, send]);
+
   const notifyLocalProgress = useCallback((time: number) => {
     if (!isRemoteUpdateRef.current) {
       setCurrentTime(time);
@@ -392,6 +443,10 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     liveStatus,
     reportLivePosition,
     declineLiveLeadership,
+    queue,
+    playQueue,
+    advanceQueue,
+    clearQueue,
   };
 
   return (

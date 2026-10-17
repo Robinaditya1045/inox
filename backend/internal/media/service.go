@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,6 +25,19 @@ type Service interface {
 	GetStreamFile(ctx context.Context, key string) (io.ReadCloser, string, error)
 	SaveDirectLocalFile(ctx context.Context, key string, reader io.Reader, size int64, contentType string) (string, error)
 	ReconcileOrphanedAssets(ctx context.Context)
+	UploadThumbnail(ctx context.Context, assetID string, reader io.Reader, size int64, contentType string) (*domain.MediaAsset, error)
+	BackfillThumbnails(ctx context.Context)
+}
+
+// ErrUnsupportedThumbnail rejects a poster upload that is not a web image format.
+var ErrUnsupportedThumbnail = errors.New("thumbnail must be a JPEG, PNG or WebP image")
+
+// thumbnailExtensions maps the image types a browser can show in the library to
+// the extension the stored object gets.
+var thumbnailExtensions = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
 }
 
 type mediaService struct {
@@ -248,4 +262,56 @@ func extractStorageKey(sourceURL string) string {
 		return sourceURL[idx:]
 	}
 	return filepath.Base(sourceURL)
+}
+
+// UploadThumbnail stores a poster image for an asset, replacing any it had --
+// including one captured from the video. A hand-picked poster always wins.
+func (s *mediaService) UploadThumbnail(ctx context.Context, assetID string, reader io.Reader, size int64, contentType string) (*domain.MediaAsset, error) {
+	ext, ok := thumbnailExtensions[contentType]
+	if !ok {
+		return nil, ErrUnsupportedThumbnail
+	}
+	if _, err := s.repo.GetAssetByID(ctx, assetID); err != nil {
+		return nil, err
+	}
+
+	key := fmt.Sprintf("thumbs/%s-%s%s", assetID, generateUUID()[:8], ext)
+	url, err := s.storage.SaveFile(ctx, key, reader, size, contentType)
+	if err != nil {
+		return nil, fmt.Errorf("storage save failed: %w", err)
+	}
+	if err := s.repo.SetThumbnail(ctx, assetID, url, false); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAssetByID(ctx, assetID)
+}
+
+// BackfillThumbnails captures posters for playable videos that have none, such as
+// those uploaded before posters were captured during transcoding. Assets it still
+// cannot capture a frame for keep the library's default poster.
+func (s *mediaService) BackfillThumbnails(ctx context.Context) {
+	assets, err := s.repo.ListAssetsMissingThumbnail(ctx)
+	if err != nil {
+		slog.Error("failed to list media assets missing a poster", "error", err)
+		return
+	}
+	if len(assets) == 0 {
+		return
+	}
+	slog.Info("capturing posters for media assets that have none", "count", len(assets))
+
+	for _, asset := range assets {
+		switch {
+		case s.queue != nil:
+			if err := s.queue.EnqueueGenerateThumbnail(ctx, asset.ID); err != nil {
+				slog.Warn("failed to enqueue poster capture", "asset_id", asset.ID, "error", err)
+			}
+		case s.processor != nil && s.processor.CanCaptureFrames():
+			// One at a time: each capture is an ffmpeg process, and this runs at
+			// boot alongside everything else.
+			if err := s.processor.GenerateThumbnail(ctx, asset); err != nil {
+				slog.Warn("could not capture a poster frame", "asset_id", asset.ID, "error", err)
+			}
+		}
+	}
 }

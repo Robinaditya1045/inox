@@ -29,6 +29,7 @@ func NewRouter(
 	mediaHandler *handler.MediaHandler,
 	liveHandler *handler.LiveHandler,
 	friendHandler *handler.FriendHandler,
+	playlistHandler *handler.PlaylistHandler,
 	dbPool *pgxpool.Pool,
 	redisClient *redis.Client,
 ) http.Handler {
@@ -106,6 +107,18 @@ func NewRouter(
 			mux.Handle("GET /api/v1/users/search", requireAuth(http.HandlerFunc(friendHandler.SearchUsers)))
 		}
 
+		if playlistHandler != nil {
+			// A user's own playlists. Ownership is checked by the service.
+			mux.Handle("GET /api/v1/playlists", requireAuth(http.HandlerFunc(playlistHandler.List)))
+			mux.Handle("POST /api/v1/playlists", requireAuth(http.HandlerFunc(playlistHandler.Create)))
+			mux.Handle("GET /api/v1/playlists/{id}", requireAuth(http.HandlerFunc(playlistHandler.Get)))
+			mux.Handle("PATCH /api/v1/playlists/{id}", requireAuth(http.HandlerFunc(playlistHandler.Update)))
+			mux.Handle("DELETE /api/v1/playlists/{id}", requireAuth(http.HandlerFunc(playlistHandler.Delete)))
+			mux.Handle("POST /api/v1/playlists/{id}/items", requireAuth(http.HandlerFunc(playlistHandler.AddItem)))
+			mux.Handle("PUT /api/v1/playlists/{id}/items/order", requireAuth(http.HandlerFunc(playlistHandler.Reorder)))
+			mux.Handle("DELETE /api/v1/playlists/{id}/items/{item_id}", requireAuth(http.HandlerFunc(playlistHandler.RemoveItem)))
+		}
+
 		if roomHandler != nil && roomService != nil {
 			requireMember := middleware.RequireRoomMembership(roomService)
 
@@ -154,6 +167,7 @@ func NewRouter(
 			mux.Handle("POST /api/v1/admin/media/complete-upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CompleteDirectUpload))))
 			mux.Handle("POST /api/v1/admin/media/register", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Register))))
 			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Delete))))
+			mux.Handle("POST /api/v1/admin/media/{id}/thumbnail", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.UploadThumbnail))))
 		}
 
 		// Protected Admin Live Channel Endpoints

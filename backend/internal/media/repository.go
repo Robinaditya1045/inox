@@ -20,6 +20,9 @@ type Repository interface {
 	GetAssetsByStatus(ctx context.Context, statuses []domain.MediaStatus) ([]*domain.MediaAsset, error)
 	AddRendition(ctx context.Context, r *domain.MediaRendition) error
 	DeleteAsset(ctx context.Context, id string) error
+	SetThumbnail(ctx context.Context, id, thumbnailURL string, onlyIfMissing bool) error
+	SetDuration(ctx context.Context, id string, seconds int) error
+	ListAssetsMissingThumbnail(ctx context.Context) ([]*domain.MediaAsset, error)
 }
 
 type postgresRepository struct {
@@ -182,6 +185,55 @@ func (r *postgresRepository) GetAssetsByStatus(ctx context.Context, statuses []d
 	rows, err := r.db.Query(ctx, query, statusStrings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get assets by status: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []*domain.MediaAsset
+	for rows.Next() {
+		a := &domain.MediaAsset{}
+		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Description, &a.SourceURL, &a.Status, &a.DurationSeconds, &a.Progress, &a.ThumbnailURL, &a.HLSMasterURL, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan asset: %w", err)
+		}
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
+}
+
+// SetThumbnail records an asset's poster image. With onlyIfMissing the write is
+// skipped when the asset already has one, so a frame captured by the transcoder
+// never replaces a poster someone uploaded -- the check is in the UPDATE itself
+// because an upload can land while the transcode is still running.
+func (r *postgresRepository) SetThumbnail(ctx context.Context, id, thumbnailURL string, onlyIfMissing bool) error {
+	query := `UPDATE media_assets SET thumbnail_url = $2, updated_at = NOW() WHERE id = $1`
+	if onlyIfMissing {
+		query += ` AND COALESCE(thumbnail_url, '') = ''`
+	}
+	if _, err := r.db.Exec(ctx, query, id, thumbnailURL); err != nil {
+		return fmt.Errorf("failed to update media thumbnail: %w", err)
+	}
+	return nil
+}
+
+// SetDuration records an asset's running time as measured by ffprobe.
+func (r *postgresRepository) SetDuration(ctx context.Context, id string, seconds int) error {
+	if _, err := r.db.Exec(ctx, `UPDATE media_assets SET duration_seconds = $2, updated_at = NOW() WHERE id = $1`, id, seconds); err != nil {
+		return fmt.Errorf("failed to update media duration: %w", err)
+	}
+	return nil
+}
+
+// ListAssetsMissingThumbnail returns playable on-demand assets with no poster yet:
+// the ones a frame can still be captured for. Live channels have no frame to take.
+func (r *postgresRepository) ListAssetsMissingThumbnail(ctx context.Context) ([]*domain.MediaAsset, error) {
+	query := `
+		SELECT id, COALESCE(kind, 'vod'), title, description, source_url, status, duration_seconds, COALESCE(progress, 0), COALESCE(thumbnail_url, ''), COALESCE(hls_master_url, ''), created_by, created_at, updated_at
+		FROM media_assets
+		WHERE COALESCE(kind, 'vod') = 'vod' AND status = 'ready' AND COALESCE(thumbnail_url, '') = ''
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list assets missing thumbnails: %w", err)
 	}
 	defer rows.Close()
 

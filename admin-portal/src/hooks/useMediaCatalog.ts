@@ -11,6 +11,7 @@ export interface UseMediaCatalogResult {
   uploadDirectS3: (file: File, title: string, description: string, onProgress?: (percent: number) => void) => Promise<MediaAsset>
   registerExternal: (req: RegisterMediaRequest) => Promise<MediaAsset>
   deleteMedia: (id: string) => Promise<void>
+  uploadThumbnail: (id: string, file: File) => Promise<void>
   refresh: () => Promise<void>
   toggleDemoMode: () => void
 }
@@ -337,6 +338,21 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     setAssets(prev => prev.filter(a => a.id !== id))
   }, [])
 
+  // Replaces an asset's poster with an uploaded image. Without one, the worker
+  // captures a frame from the video itself.
+  const uploadThumbnail = React.useCallback(async (id: string, file: File): Promise<void> => {
+    if (isDemoModeRef.current) {
+      const url = URL.createObjectURL(file)
+      setAssets(prev => prev.map(a => (a.id === id ? { ...a, thumbnail_url: url } : a)))
+      return
+    }
+
+    const formData = new FormData()
+    formData.append("file", file)
+    const updated = await uploadWithProgress<MediaAsset>(`/admin/media/${id}/thumbnail`, formData)
+    setAssets(prev => prev.map(a => (a.id === id ? { ...a, ...updated } : a)))
+  }, [])
+
   const toggleDemoMode = React.useCallback(() => {
     // Keep the updater pure and drive the reload from the resolved value, so
     // flipping the switch actually swaps the catalog instead of leaving the
@@ -363,6 +379,7 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     uploadDirectS3,
     registerExternal,
     deleteMedia,
+    uploadThumbnail,
     refresh: () => fetchAssets(false),
     toggleDemoMode,
   }

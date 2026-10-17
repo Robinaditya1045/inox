@@ -4,13 +4,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Play, Trash2, Search, Film, CheckCircle2, Loader2, AlertCircle, Clock, Layers } from "lucide-react"
+import { Play, Trash2, Search, Film, CheckCircle2, Loader2, AlertCircle, Clock, Layers, ImagePlus } from "lucide-react"
 
 interface MediaCatalogTableProps {
   assets: MediaAsset[]
   isLoading: boolean
   onSelectAsset: (asset: MediaAsset) => void
   onDeleteAsset: (id: string) => Promise<void>
+  onUploadThumbnail: (id: string, file: File) => Promise<void>
 }
 
 export function MediaCatalogTable({
@@ -18,10 +19,36 @@ export function MediaCatalogTable({
   isLoading,
   onSelectAsset,
   onDeleteAsset,
+  onUploadThumbnail,
 }: MediaCatalogTableProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string>("all")
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
+  const [thumbnailTarget, setThumbnailTarget] = React.useState<string | null>(null)
+  const [uploadingThumbId, setUploadingThumbId] = React.useState<string | null>(null)
+  const thumbnailInputRef = React.useRef<HTMLInputElement>(null)
+
+  const pickThumbnail = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    setThumbnailTarget(id)
+    thumbnailInputRef.current?.click()
+  }
+
+  const handleThumbnailFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // Cleared so that choosing the same file again still fires a change.
+    e.target.value = ""
+    if (!file || !thumbnailTarget) return
+    setUploadingThumbId(thumbnailTarget)
+    try {
+      await onUploadThumbnail(thumbnailTarget, file)
+    } catch (err) {
+      alert(`Failed to upload thumbnail: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setUploadingThumbId(null)
+      setThumbnailTarget(null)
+    }
+  }
 
   const filteredAssets = React.useMemo(() => {
     const query = searchQuery.toLowerCase()
@@ -108,6 +135,13 @@ export function MediaCatalogTable({
 
   return (
     <div className="space-y-4">
+      <input
+        ref={thumbnailInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={handleThumbnailFile}
+      />
       {/* Search & Filter Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#111111] p-4 rounded-xl border border-zinc-800">
         <div className="relative flex-1 max-w-md">
@@ -234,6 +268,21 @@ export function MediaCatalogTable({
                         className="h-8 px-2.5 text-xs font-mono"
                       >
                         <Play className="h-3 w-3 mr-1.5 fill-current" /> Preview
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={asset.thumbnail_url ? "Replace thumbnail" : "Upload thumbnail (otherwise a frame is captured from the video)"}
+                        aria-label="Upload thumbnail"
+                        disabled={uploadingThumbId === asset.id}
+                        onClick={(e) => pickThumbnail(e, asset.id)}
+                        className="h-8 w-8 p-0 text-zinc-500 hover:text-cyan-400 hover:bg-cyan-500/10"
+                      >
+                        {uploadingThumbId === asset.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                        ) : (
+                          <ImagePlus className="h-3.5 w-3.5" />
+                        )}
                       </Button>
                       <Button
                         variant="ghost"

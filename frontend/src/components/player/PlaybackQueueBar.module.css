@@ -1,0 +1,220 @@
+.bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border-subtle);
+  animation: var(--animate-rise-in);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.summary:hover {
+  background: var(--color-fill-hover);
+}
+
+.summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 0;
+}
+
+.icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-compact);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position {
+  flex-shrink: 0;
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.next {
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.next strong {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.controls {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+/* ── Episode strip ─────────────────────────────────────── */
+.strip {
+  list-style: none;
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  animation: var(--animate-fade-in);
+}
+
+.stripItem {
+  flex: 0 0 160px;
+  scroll-snap-align: start;
+}
+
+.stripBtn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.stripBtn:disabled {
+  cursor: default;
+}
+
+.stripBtn:focus-visible {
+  outline: none;
+}
+
+.stripBtn:focus-visible .stripPoster {
+  box-shadow: var(--color-focus-ring);
+}
+
+.stripPoster {
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+  transition: box-shadow var(--transition-fast);
+}
+
+.stripBtn:not(:disabled):hover .stripPoster {
+  box-shadow: 0 0 0 1px var(--color-border-strong);
+}
+
+.stripItem[data-current] .stripPoster {
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.stripItem[data-played] .stripPoster {
+  opacity: 0.55;
+}
+
+.stripIndex,
+.stripDuration {
+  position: absolute;
+  bottom: var(--space-1);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-on-media);
+  background: var(--color-media-scrim-strong);
+}
+
+.stripIndex {
+  left: var(--space-1);
+}
+
+.stripItem[data-current] .stripIndex {
+  background: var(--color-accent);
+}
+
+.stripDuration {
+  right: var(--space-1);
+}
+
+.stripTitle {
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.stripItem[data-current] .stripTitle {
+  color: var(--color-accent-text);
+}
+
+@media (max-width: 640px) {
+  .bar {
+    margin: var(--space-2);
+    margin-top: 0;
+  }
+
+  .stripItem {
+    flex-basis: 132px;
+  }
+}

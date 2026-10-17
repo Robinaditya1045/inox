@@ -1,0 +1,144 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+.card:focus-visible {
+  outline: none;
+}
+
+.card:focus-visible .poster,
+.card:focus-visible .newTile {
+  box-shadow: var(--color-focus-ring);
+}
+
+/* Two sheets peeking out above the poster mark it as a collection */
+.stack {
+  position: relative;
+  display: block;
+  padding-top: var(--space-2);
+}
+
+.stack::before,
+.stack::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  translate: -50% 0;
+  height: var(--space-2);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  transition: translate var(--duration-normal) var(--ease-out);
+}
+
+.stack::before {
+  top: 0;
+  width: 84%;
+  background: var(--color-surface-3);
+}
+
+.stack::after {
+  top: 4px;
+  width: 92%;
+  background: var(--color-surface-4);
+}
+
+.card:hover .stack::before {
+  translate: -50% -2px;
+}
+
+.card:hover .stack::after {
+  translate: -50% -1px;
+}
+
+.poster {
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+  transition: box-shadow var(--transition-fast);
+}
+
+.card:hover .poster {
+  box-shadow:
+    0 0 0 1px var(--color-border-default),
+    var(--shadow-raised);
+}
+
+.count {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-label);
+  font-weight: 700;
+  color: var(--color-on-media);
+  background: var(--color-media-scrim-strong);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.title {
+  font-size: var(--text-compact);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/* ── New playlist ──────────────────────────────────────── */
+.newTile {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  margin-top: var(--space-2);
+  border-radius: var(--radius-lg);
+  border: 1.5px dashed var(--color-border-strong);
+  color: var(--color-text-muted);
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.newIcon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  transition: transform var(--duration-normal) var(--ease-spring);
+}
+
+.newCard:hover .newTile {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+
+.newCard:hover .newIcon {
+  transform: scale(1.08) rotate(90deg);
+}

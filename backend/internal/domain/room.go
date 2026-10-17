@@ -50,6 +50,10 @@ type RoomPlaybackState struct {
 	// full clock skew between the two machines. Clients receive an age instead and
 	// extrapolate from their own local receipt time.
 	LiveReceivedAt int64 `json:"live_received_at,omitempty"`
+
+	// Queue is the playlist the room is playing through, if any. When the current
+	// item ends the room moves on to the next one.
+	Queue *PlaybackQueue `json:"queue,omitempty"`
 }
 
 // LiveAgeMillis reports how stale the stored live position is, for the age field

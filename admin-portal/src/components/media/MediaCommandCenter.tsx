@@ -10,7 +10,7 @@ import type { MediaAsset } from "@/types/media"
 import { Film, UploadCloud, CheckCircle2, Loader2, Layers, RefreshCw, ShieldAlert, Video } from "lucide-react"
 
 export function MediaCommandCenter() {
-  const { assets, isLoading, isDemoMode, error, uploadMedia, uploadDirectS3, registerExternal, deleteMedia, refresh } = useMediaCatalog()
+  const { assets, isLoading, isDemoMode, error, uploadMedia, uploadDirectS3, registerExternal, deleteMedia, uploadThumbnail, refresh } = useMediaCatalog()
   const [isUploadOpen, setIsUploadOpen] = React.useState(false)
   const [previewAsset, setPreviewAsset] = React.useState<MediaAsset | null>(null)
 
@@ -131,6 +131,7 @@ export function MediaCommandCenter() {
         isLoading={isLoading}
         onSelectAsset={(asset) => setPreviewAsset(asset)}
         onDeleteAsset={deleteMedia}
+        onUploadThumbnail={uploadThumbnail}
       />
 
       {/* Video Upload Modal */}

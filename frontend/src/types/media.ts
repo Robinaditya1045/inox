@@ -27,6 +27,26 @@ export interface MediaAsset {
   renditions?: MediaRendition[];
 }
 
+export interface PlaylistItem {
+  id: string;
+  playlist_id: string;
+  media_asset_id: string;
+  position: number;
+  added_at: string;
+  media: MediaAsset;
+}
+
+/** One of the signed-in user's playlists. Reads always carry the items, in order. */
+export interface Playlist {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string;
+  items: PlaylistItem[];
+  created_at: string;
+  updated_at: string;
+}
+
 export type LiveResolver = "direct" | "api" | "static" | "browser";
 
 export type LiveChannelStatus =

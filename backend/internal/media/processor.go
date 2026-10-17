@@ -263,6 +263,19 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 	// Transcoding finished, updating to 96% while uploading HLS segments to MinIO
 	_ = p.repo.UpdateAssetProgress(ctx, asset.ID, 96, domain.MediaStatusProcessing)
 
+	// The library shows a running time and a poster for every video. Both come
+	// from the source while it is still on local disk; a poster that was uploaded
+	// by hand is left alone. Neither is worth failing a finished transcode over.
+	if totalDurationUs > 0 {
+		_ = p.repo.SetDuration(ctx, asset.ID, int((totalDurationUs+500_000)/1_000_000))
+	}
+	if asset.ThumbnailURL == "" {
+		if err := p.captureThumbnail(ctx, asset.ID, inputPath, float64(totalDurationUs)/1e6); err != nil {
+			slog.Warn("could not capture a poster frame; the library will show the default poster",
+				"asset_id", asset.ID, "error", err)
+		}
+	}
+
 	// Upload generated HLS manifests and video chunks to object storage
 	files, err := os.ReadDir(tmpDir)
 	if err != nil {

@@ -38,7 +38,9 @@ import {
   Film,
   RotateCcw,
   RotateCw,
+  SkipForward,
 } from "lucide-react";
+import { MediaPoster } from "../library/MediaPoster";
 import styles from "./WatchPartyPlayer.module.css";
 
 interface WatchPartyPlayerProps {
@@ -59,6 +61,11 @@ const LIVE_RELOAD_AFTER_ATTEMPTS = 3;
 
 // How far the skip buttons and arrow keys jump on an on-demand video.
 const SKIP_SECONDS = 10;
+
+// The next video in a queue is announced this long before the current one
+// ends, on videos long enough for that not to cover most of them.
+const UP_NEXT_LEAD_SECONDS = 20;
+const UP_NEXT_MIN_DURATION = 60;
 
 // How hard hls.js tries each request of a live stream. The defaults are tuned for
 // on-demand video, where a segment is worth waiting for: they retry one for half a
@@ -128,9 +135,19 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     liveStatus,
     reportLivePosition,
     declineLiveLeadership,
+    queue,
+    advanceQueue,
   } = usePlayerSync();
 
   const isLive = kind === "live";
+
+  // The queue's next video, while the room is on the queue's current one. A
+  // video picked from outside the queue has nothing up next.
+  const queueCurrent = queue?.items[queue.index];
+  const upNext =
+    queue && !isLive && queueCurrent?.media_url === mediaUrl
+      ? (queue.items[queue.index + 1] ?? null)
+      : null;
 
   const permissions = usePermissions();
   const { isConnected } = useRoomSocket();
@@ -355,12 +372,18 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   // so nothing would tell the server; the room would stay "playing" (and listed
   // under the lobby's Now Streaming) until everyone left. Anyone who could have
   // paused says so; the PAUSE is idempotent if several of them do.
+  //
+  // In a queue, the end of a video means the next one. Everyone who could have
+  // paused asks the server to move on; it only acts on the first ask.
   const handleEnded = () => {
     setIsPlayingLocal(false);
     const video = videoRef.current;
-    if (!isLive && permissions.can_control_playback && video) {
-      emitPause(video.currentTime);
+    if (isLive || !permissions.can_control_playback || !video) return;
+    if (upNext) {
+      advanceQueue();
+      return;
     }
+    emitPause(video.currentTime);
   };
 
   const handleLoadedMetadata = () => {
@@ -373,10 +396,13 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     if (remoteTime > 0 && Math.abs(video.currentTime - remoteTime) > 0.5) {
       video.currentTime = remoteTime;
       setProgress(remoteTime);
-      if (isPlayingRemote && video.paused) {
-        video.play().catch(() => {});
-        setIsPlayingLocal(true);
-      }
+    }
+    // Including from 0:00: the next video of a queue arrives already playing,
+    // and the play() the sync effect made before this source could take it
+    // may have gone nowhere.
+    if (isPlayingRemote && video.paused) {
+      video.play().catch(() => {});
+      setIsPlayingLocal(true);
     }
   };
 
@@ -753,6 +779,37 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
           </div>
         )
       ) : null}
+
+      {/* Up next: announced over the last stretch of a queued video, the way
+          a streaming service lines up the next episode. */}
+      {upNext &&
+        duration > UP_NEXT_MIN_DURATION &&
+        duration - progress <= UP_NEXT_LEAD_SECONDS && (
+          <div
+            className={styles.upNext}
+            role="status"
+            aria-live="polite"
+          >
+            <MediaPoster
+              src={upNext.thumbnail_url}
+              className={styles.upNextPoster}
+            />
+            <span className={styles.upNextText}>
+              <span className={styles.upNextLabel}>Up next</span>
+              <span className={styles.upNextTitle}>{upNext.title}</span>
+            </span>
+            {canControl && (
+              <button
+                type="button"
+                className={styles.upNextBtn}
+                onClick={() => advanceQueue()}
+              >
+                <SkipForward size={13} aria-hidden="true" />
+                Play now
+              </button>
+            )}
+          </div>
+        )}
 
       {/* Bottom Controls */}
       {hasMedia && (

@@ -17,6 +17,7 @@ import { Tabs } from "../components/common/Tabs";
 import { Badge } from "../components/common/Badge";
 import { WatchPartyPlayer } from "../components/player/WatchPartyPlayer";
 import { MediaLibraryPicker } from "../components/player/MediaLibraryPicker";
+import { PlaybackQueueBar } from "../components/player/PlaybackQueueBar";
 import { ChatPanel } from "../components/chat/ChatPanel";
 import { MemberList } from "../components/room/MemberList";
 import { AudioRenderer } from "../components/rtc/AudioRenderer";
@@ -87,7 +88,7 @@ export const RoomPage: React.FC = () => {
   // otherwise switching rooms leaves you on the old room's socket.
   const { subscribe } = useRoomSocket(roomId);
   const rtc = useRTC(roomId);
-  const { setMediaUrl, mediaUrl, isPlaying } = usePlayerSync();
+  const { setMediaUrl, mediaUrl, isPlaying, playQueue } = usePlayerSync();
   const { members } = usePresence();
 
   useEffect(() => {
@@ -286,11 +287,14 @@ export const RoomPage: React.FC = () => {
             hidden={activeChannel !== "watch-party"}
           >
             <div className={shellStyles.playerArea}>
-              <WatchPartyPlayer
-                onOpenLibrary={
-                  permissions.can_control_playback ? openLibrary : undefined
-                }
-              />
+              <div className={shellStyles.playerSlot}>
+                <WatchPartyPlayer
+                  onOpenLibrary={
+                    permissions.can_control_playback ? openLibrary : undefined
+                  }
+                />
+              </div>
+              <PlaybackQueueBar />
             </div>
           </div>
         </div>
@@ -386,6 +390,7 @@ export const RoomPage: React.FC = () => {
           onClose={() => setIsLibraryOpen(false)}
           currentUrl={mediaUrl}
           onSelectUrl={setMediaUrl}
+          onPlayQueue={playQueue}
         />
       )}
     </>

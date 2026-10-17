@@ -1,0 +1,228 @@
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  animation: var(--animate-fade-in);
+}
+
+/* ── Hero ──────────────────────────────────────────────── */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: end;
+}
+
+.cover {
+  box-shadow: var(--shadow-raised);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: calc(var(--space-2) * -1);
+  padding: 2px var(--space-1);
+  margin-left: calc(var(--space-1) * -1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.back:hover {
+  color: var(--color-text-primary);
+}
+
+.name {
+  font-size: var(--text-title);
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.description {
+  font-size: var(--text-compact);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.meta {
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-top: var(--space-2);
+}
+
+.confirmText {
+  font-size: var(--text-compact);
+  font-weight: 600;
+  color: var(--color-danger-text);
+  margin-right: var(--space-1);
+}
+
+/* ── Items ─────────────────────────────────────────────── */
+.items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 calc(var(--space-2) * -1);
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-lg);
+  transition: background-color var(--transition-fast);
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+.item:hover {
+  background: var(--color-fill-hover);
+}
+
+.item[data-current] {
+  background: var(--color-accent-subtle);
+}
+
+.position {
+  width: 22px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.item[data-current] .position {
+  color: var(--color-accent-text);
+}
+
+.itemMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.itemMain:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.itemMain:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.thumb {
+  width: 112px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+}
+
+.thumbPlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-on-media);
+  background: var(--color-media-scrim);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.itemMain:not(:disabled):hover .thumbPlay,
+.itemMain:focus-visible .thumbPlay {
+  opacity: 1;
+}
+
+.itemText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.itemTitle {
+  font-size: var(--text-compact);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item[data-current] .itemTitle {
+  color: var(--color-accent-text);
+}
+
+.itemMeta {
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.itemActions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.item:hover .itemActions,
+.item:focus-within .itemActions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .itemActions {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .thumb {
+    width: 88px;
+  }
+}

@@ -42,6 +42,14 @@ const (
 	EventLivePosition EventType = "LIVE_POSITION" // leader→server, then server→room
 	EventLiveLeader   EventType = "LIVE_LEADER"   // server→room on election and handoff
 	EventLiveStatus   EventType = "LIVE_STATUS"   // server→room when a channel degrades
+
+	// Play queue. A room can play through a playlist, moving on by itself when a
+	// video ends. Members send commands; the hub owns the queue and answers every
+	// change with QUEUE_STATE (plus CHANGE_MEDIA when the video changes).
+	EventQueueSet     EventType = "QUEUE_SET"     // member→server: start a queue
+	EventQueueAdvance EventType = "QUEUE_ADVANCE" // member→server: move to another item
+	EventQueueClear   EventType = "QUEUE_CLEAR"   // member→server: stop playing through
+	EventQueueState   EventType = "QUEUE_STATE"   // server→room: the queue now
 )
 
 // Event represents a standardized real-time message exchanged over WebSocket connections.
@@ -73,6 +81,33 @@ type VideoControlPayload struct {
 	LivePosition *domain.LivePosition `json:"live_position,omitempty"`
 	AgeMillis    int64                `json:"age_ms,omitempty"`
 	IsDVR        bool                 `json:"is_dvr,omitempty"`
+
+	// Queue rides along on SYNC_PLAYBACK so that a late joiner learns what the
+	// room is playing through along with where it is.
+	Queue *domain.PlaybackQueue `json:"queue,omitempty"`
+}
+
+// QueueSetPayload starts a room playing through a list, at Queue.Index.
+type QueueSetPayload struct {
+	Queue domain.PlaybackQueue `json:"queue"`
+}
+
+// QueueAdvancePayload moves a room's queue on from FromIndex: to ToIndex when
+// given, otherwise to the next item.
+//
+// FromIndex makes the command idempotent. Every member whose video ends sends
+// one, and only the first still names the item the room is on; the rest are
+// stale by the time they arrive and are dropped, instead of each skipping the
+// room one item further.
+type QueueAdvancePayload struct {
+	FromIndex int  `json:"from_index"`
+	ToIndex   *int `json:"to_index,omitempty"`
+}
+
+// QueueStatePayload is the room's queue after a change. Queue is null when the
+// room is no longer playing through one.
+type QueueStatePayload struct {
+	Queue *domain.PlaybackQueue `json:"queue"`
 }
 
 // LivePositionPayload carries the sync leader's playhead, expressed in the stream's

@@ -1,0 +1,258 @@
+.card {
+  position: relative;
+  min-width: 0;
+  animation: var(--animate-rise-in);
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  color: inherit;
+}
+
+.hit:focus-visible {
+  outline: none;
+}
+
+.hit:focus-visible .poster {
+  box-shadow: var(--color-focus-ring);
+}
+
+.poster {
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+  transition:
+    box-shadow var(--transition-fast),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.card:hover .poster {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px var(--color-border-default),
+    var(--shadow-raised);
+}
+
+.card:hover .poster img,
+.card:hover .poster > span:first-child {
+  transform: scale(1.04);
+}
+
+.card[data-selected] .poster {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    var(--shadow-raised);
+}
+
+.card[data-disabled] {
+  opacity: 0.45;
+}
+
+.card[data-disabled] .hit {
+  cursor: not-allowed;
+}
+
+.card[data-disabled]:hover .poster {
+  transform: none;
+}
+
+/* Darkens the picture's edges so the chips stay legible on any frame */
+.scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, var(--color-media-scrim), transparent 34%),
+    linear-gradient(to top, var(--color-media-scrim), transparent 30%);
+  opacity: 0.85;
+}
+
+.badges {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.duration,
+.nowPlaying {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-label);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-on-media);
+  background: var(--color-media-scrim-strong);
+}
+
+.nowPlaying {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--color-accent);
+}
+
+/* Three bars bouncing, the universal "this is playing" sign */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 10px;
+}
+
+.eq i {
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: eq 0.9s var(--ease-in-out) infinite alternate;
+}
+
+.eq i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.eq i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+@keyframes eq {
+  from {
+    transform: scaleY(0.3);
+  }
+}
+
+.check {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  animation: var(--animate-pop-in);
+}
+
+/* Play, centred on the poster. The layer has the poster's box and lets clicks
+   through to the card everywhere but the button itself. */
+.playLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.play {
+  pointer-events: auto;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  color: var(--color-on-media);
+  background: var(--color-accent);
+  box-shadow: var(--shadow-raised);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--duration-normal) var(--ease-spring),
+    background-color var(--transition-fast);
+}
+
+.play:hover {
+  background: var(--color-accent-hover);
+}
+
+.play svg {
+  margin-left: 2px;
+}
+
+.card:hover .play,
+.card:focus-within .play {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.play:active {
+  transform: scale(0.92);
+}
+
+.actions {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.card:hover .actions,
+.card:focus-within .actions,
+.actions:has([data-state="open"]) {
+  opacity: 1;
+}
+
+/* Touch screens have no hover to reveal them */
+@media (hover: none) {
+  .actions {
+    opacity: 1;
+  }
+
+  .play {
+    display: none;
+  }
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.title {
+  font-size: var(--text-compact);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  color: var(--color-text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card[data-selected] .title {
+  color: var(--color-accent-text);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}

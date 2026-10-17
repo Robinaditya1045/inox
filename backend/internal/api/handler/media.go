@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -52,6 +53,7 @@ func (h *MediaHandler) NormalizeAsset(asset *domain.MediaAsset) *domain.MediaAss
 	}
 	asset.SourceURL = replaceURL(asset.SourceURL)
 	asset.HLSMasterURL = replaceURL(asset.HLSMasterURL)
+	asset.ThumbnailURL = replaceURL(asset.ThumbnailURL)
 	if asset.Renditions != nil {
 		for _, r := range asset.Renditions {
 			r.PlaylistURL = replaceURL(r.PlaylistURL)
@@ -288,6 +290,55 @@ func (h *MediaHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	respond.WriteJSON(w, http.StatusOK, h.NormalizeAsset(asset))
 }
 
+// maxThumbnailUpload caps a poster image. Posters are shown at card size, so
+// anything near this is far larger than it needs to be.
+const maxThumbnailUpload = 10 << 20 // 10 MB
+
+// UploadThumbnail replaces an asset's poster with an uploaded image.
+func (h *MediaHandler) UploadThumbnail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respond.WriteError(w, http.StatusBadRequest, "invalid media asset id")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxThumbnailUpload)
+	if err := r.ParseMultipartForm(maxThumbnailUpload); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "thumbnail too large or malformed (10 MB max)")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "file parameter missing")
+		return
+	}
+	defer file.Close()
+
+	// Sniffed rather than taken from the part header, which is whatever the
+	// client claims and is what the stream proxy will later serve it as.
+	sniff := make([]byte, 512)
+	n, _ := io.ReadFull(file, sniff)
+	contentType := http.DetectContentType(sniff[:n])
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to read thumbnail")
+		return
+	}
+
+	asset, err := h.service.UploadThumbnail(r.Context(), id, file, header.Size, contentType)
+	if err != nil {
+		switch {
+		case errors.Is(err, media.ErrUnsupportedThumbnail):
+			respond.WriteError(w, http.StatusUnsupportedMediaType, err.Error())
+		case strings.Contains(err.Error(), "not found"):
+			respond.WriteError(w, http.StatusNotFound, err.Error())
+		default:
+			respond.WriteError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	respond.WriteJSON(w, http.StatusOK, h.NormalizeAsset(asset))
+}
+
 // Delete removes an asset from the catalog and purges its stored files.
 func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -358,7 +409,9 @@ func (h *MediaHandler) StreamProxy(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 	}
 
-	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") {
+	// Posters are stored under a fresh key each time one is replaced, so they can
+	// be cached as long as segments.
+	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") || strings.HasPrefix(key, "thumbs/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")

@@ -45,6 +45,30 @@ func (p *TranscodeProcessor) ProcessTask(ctx context.Context, t *asynq.Task) err
 	return nil
 }
 
+// ThumbnailProcessor captures a poster frame for an asset that is already playable.
+type ThumbnailProcessor struct {
+	mediaProcessor *media.Processor
+	repo           media.Repository
+}
+
+func (p *ThumbnailProcessor) ProcessTask(ctx context.Context, t *asynq.Task) error {
+	var payload media.GenerateThumbnailPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal task payload: %w", err)
+	}
+
+	asset, err := p.repo.GetAssetByID(ctx, payload.AssetID)
+	if err != nil {
+		// Deleted since it was queued; there is nothing left to capture.
+		return fmt.Errorf("failed to fetch asset from db: %w: %w", err, asynq.SkipRetry)
+	}
+	if err := p.mediaProcessor.GenerateThumbnail(ctx, asset); err != nil {
+		slog.Warn("poster capture failed", "asset_id", asset.ID, "error", err)
+		return err
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -106,6 +130,10 @@ func main() {
 
 	mux := asynq.NewServeMux()
 	mux.Handle(media.TaskTypeTranscodeMedia, &TranscodeProcessor{
+		mediaProcessor: processor,
+		repo:           mediaRepo,
+	})
+	mux.Handle(media.TaskTypeGenerateThumbnail, &ThumbnailProcessor{
 		mediaProcessor: processor,
 		repo:           mediaRepo,
 	})

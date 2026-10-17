@@ -279,6 +279,7 @@ func (h *Hub) registerClient(client *Client) {
 		LeaderName:       state.LeaderName,
 		LivePosition:     state.LivePosition,
 		AgeMillis:        state.LiveAgeMillis(time.Now().UnixMilli()),
+		Queue:            state.Queue,
 	})
 	syncEvt := &Event{
 		Type:      EventSyncPlayback,
@@ -464,6 +465,13 @@ func (h *Hub) dispatchLocal(event *Event) {
 		h.applyLiveLeader(event)
 	}
 
+	// Queue commands are not relayed: the hub answers them with the media change
+	// and the queue that result.
+	if isQueueCommand(event.Type) {
+		h.applyQueueCommand(event)
+		return
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		slog.Error("failed to serialize event payload for broadcast", "error", err)
@@ -481,7 +489,7 @@ func (h *Hub) dispatchLocal(event *Event) {
 	}
 
 	// Update authoritative in-memory playback state when media control events occur
-	var stateUpdated bool
+	var stateUpdated, queueChanged bool
 	if event.Type == EventPlay {
 		var payload VideoControlPayload
 		if err := json.Unmarshal(event.Payload, &payload); err == nil {
@@ -514,10 +522,17 @@ func (h *Hub) dispatchLocal(event *Event) {
 			state := h.getOrCreatePlaybackState(event.RoomID)
 			state.MediaURL = payload.MediaURL
 			state.Kind = h.kindForMediaURL(payload.MediaURL)
-			state.IsPlaying = false
+			// A pick from the library arrives paused; the next item of a queue
+			// arrives playing (see applyQueueCommand).
+			state.IsPlaying = payload.IsPlaying
 			state.MediaTimeSeconds = 0
 			state.LastUpdated = time.Now().UnixMilli()
 			stateUpdated = true
+
+			if reconciled := reconcileQueue(state.Queue, payload.MediaURL); reconciled != state.Queue {
+				state.Queue = reconciled
+				queueChanged = true
+			}
 
 			// Switching media invalidates any live position: the old one names a
 			// segment in a stream nobody is watching any more.
@@ -539,12 +554,8 @@ func (h *Hub) dispatchLocal(event *Event) {
 		}
 	}
 
-	if stateUpdated && h.stateRepo != nil {
-		go func(rID string, st *domain.RoomPlaybackState) {
-			// make a copy for thread-safety before passing to goroutine
-			stCopy := *st
-			_ = h.stateRepo.SetPlaybackState(context.Background(), rID, &stCopy)
-		}(event.RoomID, h.playbackStates[event.RoomID])
+	if stateUpdated {
+		h.persistPlaybackState(event.RoomID)
 	}
 
 	for client := range roomClients {
@@ -583,6 +594,16 @@ func (h *Hub) dispatchLocal(event *Event) {
 				h.releaseLiveLeadership(evicted)
 			}
 		}
+	}
+
+	// After the media change itself, so clients have the new video before they
+	// are told where it sits in (or that it has left) the queue.
+	if queueChanged {
+		var queue *domain.PlaybackQueue
+		if state, ok := h.playbackStates[event.RoomID]; ok {
+			queue = state.Queue
+		}
+		h.dispatchLocal(queueStateEvent(event.RoomID, queue))
 	}
 }
 

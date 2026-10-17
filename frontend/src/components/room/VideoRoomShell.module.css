@@ -63,6 +63,15 @@
   min-height: 0;
   overflow: hidden;
   padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The player fills whatever the play queue bar under it leaves */
+.playerSlot {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Each channel's content eases in when you switch to it */

@@ -22,6 +22,10 @@ export type WSEventType =
   | "LIVE_POSITION"
   | "LIVE_LEADER"
   | "LIVE_STATUS"
+  | "QUEUE_SET"
+  | "QUEUE_ADVANCE"
+  | "QUEUE_CLEAR"
+  | "QUEUE_STATE"
   | "ERROR";
 
 export interface WSMessage<T = unknown> {
@@ -72,6 +76,47 @@ export interface WSPlaybackPayload {
   /** How stale live_position was at transmission. Never a timestamp — see below. */
   age_ms?: number;
   is_dvr?: boolean;
+  /** On SYNC_PLAYBACK: the list the room is playing through, if any. */
+  queue?: WSQueue | null;
+}
+
+export interface WSQueueItem {
+  /** Canonical play URL, compared against the room's media URL as-is. */
+  media_url: string;
+  title: string;
+  thumbnail_url?: string;
+  media_asset_id?: string;
+  duration_seconds?: number;
+}
+
+/**
+ * A list the room plays through, moving on by itself when a video ends. A
+ * snapshot of a playlist taken when it was started, owned by the server.
+ */
+export interface WSQueue {
+  playlist_id?: string;
+  title: string;
+  items: WSQueueItem[];
+  /** The item the room is on now. */
+  index: number;
+}
+
+export interface WSQueueSetPayload {
+  queue: WSQueue;
+}
+
+/**
+ * Move the queue on from `from_index` (to `to_index`, or the next item). The
+ * server drops it unless the room is still on `from_index`, so every member
+ * whose video ends can send one and the room still moves only once.
+ */
+export interface WSQueueAdvancePayload {
+  from_index: number;
+  to_index?: number;
+}
+
+export interface WSQueueStatePayload {
+  queue: WSQueue | null;
 }
 
 /**

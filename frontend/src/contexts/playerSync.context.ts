@@ -3,6 +3,7 @@ import type {
   MediaKind,
   WSLivePosition,
   WSLiveStatusPayload,
+  WSQueue,
 } from "../types/ws";
 
 /**
@@ -54,6 +55,16 @@ export interface PlayerSyncContextValue {
    * temporary and must not trigger a handover.
    */
   declineLiveLeadership: () => void;
+
+  // ── Play queue ────────────────────────────────────────────
+  /** The list the room is playing through, as the server last announced it. */
+  queue: WSQueue | null;
+  /** Starts the room playing through a list, at queue.index. */
+  playQueue: (queue: WSQueue) => void;
+  /** Moves the room's queue on: to toIndex, or to the next item. */
+  advanceQueue: (toIndex?: number) => void;
+  /** Stops playing through the queue; the current video carries on. */
+  clearQueue: () => void;
 }
 
 export const PlayerSyncContext = createContext<PlayerSyncContextValue | null>(
