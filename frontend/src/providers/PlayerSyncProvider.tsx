@@ -53,6 +53,13 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number>(
     Date.now(),
   );
+  const [playbackRate, setPlaybackRateState] = useState<number>(1);
+  // Read by the socket handlers, which subscribe once and would otherwise see
+  // the rate from when they did.
+  const playbackRateRef = useRef(1);
+  useEffect(() => {
+    playbackRateRef.current = playbackRate;
+  }, [playbackRate]);
 
   // ── Live channel state ────────────────────────────────────
   const [kind, setKind] = useState<MediaKind>("vod");
@@ -89,6 +96,8 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       setLeaderId(payload.leader_id ?? null);
       setLeaderName(payload.leader_name ?? null);
       setQueue(payload.queue ?? null);
+      const rate = payload.playback_rate || 1;
+      setPlaybackRateState(rate);
       if (payload.live_position) {
         setLiveAnchor({
           position: payload.live_position,
@@ -103,7 +112,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
           0,
           (Date.now() - payload.last_updated) / 1000,
         );
-        targetTime += elapsedSec;
+        targetTime += elapsedSec * rate;
       }
 
       setCurrentTime(targetTime);
@@ -143,6 +152,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     setLeaderName(null);
     setLiveStatus(null);
     setQueue(null);
+    setPlaybackRateState(1);
   }, [roomId]);
 
   // After both resets above, which is what lets a held sync survive them.
@@ -172,7 +182,8 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
           ? Math.max(0, (Date.now() - msg.timestamp) / 1000)
           : 0;
         const targetTime =
-          payload.media_time_seconds + (latencySec < 5 ? latencySec : 0);
+          payload.media_time_seconds +
+          (latencySec < 5 ? latencySec * playbackRateRef.current : 0);
 
         setCurrentTime(targetTime);
         setIsPlaying(true);
@@ -207,6 +218,24 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       }
     });
 
+    const unsubSetRate = subscribe("SET_RATE", (msg) => {
+      const payload = msg.payload as WSPlaybackPayload;
+      if (
+        !payload ||
+        typeof payload.playback_rate !== "number" ||
+        typeof payload.media_time_seconds !== "number"
+      )
+        return;
+      logger.debug("PlayerSync: Remote SET_RATE received", {
+        rate: payload.playback_rate,
+        sender: msg.sender_name,
+      });
+      isRemoteUpdateRef.current = true;
+      setPlaybackRateState(payload.playback_rate);
+      setCurrentTime(payload.media_time_seconds);
+      setLastSyncTimestamp(Date.now());
+    });
+
     const unsubChangeMedia = subscribe("CHANGE_MEDIA", (msg) => {
       const payload = msg.payload as WSPlaybackPayload;
       if (payload && payload.media_url) {
@@ -221,6 +250,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
         setLeaderId(null);
         setLeaderName(null);
         setLiveStatus(null);
+        setPlaybackRateState(1);
         setCurrentTime(0);
         // A pick from the library arrives paused; the next video of a queue
         // arrives already playing.
@@ -289,6 +319,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       unsubPlay();
       unsubPause();
       unsubSeek();
+      unsubSetRate();
       unsubChangeMedia();
       unsubQueueState();
       unsubSyncPlayback();
@@ -306,6 +337,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       }
       // Apply locally first — playback must not depend on the server echoing the event back.
       setMediaUrlState(url);
+      setPlaybackRateState(1);
       setCurrentTime(0);
       setIsPlaying(false);
       setLastSyncTimestamp(Date.now());
@@ -358,6 +390,23 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
       setCurrentTime(time);
       send<WSPlaybackPayload>("SEEK", { media_time_seconds: time });
       logger.debug("PlayerSync: Emitted SEEK", { time });
+    },
+    [permissions.can_control_playback, send],
+  );
+
+  const setPlaybackRate = useCallback(
+    (rate: number, time: number) => {
+      if (!permissions.can_control_playback) {
+        logger.warn("PlayerSync: Permission denied to emit SET_RATE");
+        return;
+      }
+      setPlaybackRateState(rate);
+      setCurrentTime(time);
+      send<WSPlaybackPayload>("SET_RATE", {
+        playback_rate: rate,
+        media_time_seconds: time,
+      });
+      logger.debug("PlayerSync: Emitted SET_RATE", { rate, time });
     },
     [permissions.can_control_playback, send],
   );
@@ -433,6 +482,8 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     play,
     pause,
     seek,
+    playbackRate,
+    setPlaybackRate,
     notifyLocalProgress,
     clearRemoteFlag,
     kind,

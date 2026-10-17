@@ -275,6 +275,7 @@ func (h *Hub) registerClient(client *Client) {
 		IsPlaying:        state.IsPlaying,
 		MediaTimeSeconds: state.MediaTimeSeconds,
 		LastUpdated:      state.LastUpdated,
+		PlaybackRate:     state.PlaybackRate,
 		LeaderID:         state.LeaderID,
 		LeaderName:       state.LeaderName,
 		LivePosition:     state.LivePosition,
@@ -472,6 +473,12 @@ func (h *Hub) dispatchLocal(event *Event) {
 		return
 	}
 
+	// A speed change is checked and folded into room state before it is relayed;
+	// one the room cannot take is dropped rather than half-applied by clients.
+	if event.Type == EventSetRate && !h.applyPlaybackRate(event) {
+		return
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		slog.Error("failed to serialize event payload for broadcast", "error", err)
@@ -527,6 +534,9 @@ func (h *Hub) dispatchLocal(event *Event) {
 			state.IsPlaying = payload.IsPlaying
 			state.MediaTimeSeconds = 0
 			state.LastUpdated = time.Now().UnixMilli()
+			// Each video starts at normal speed, so nobody is dropped into the next
+			// one at 3x.
+			state.PlaybackRate = 0
 			stateUpdated = true
 
 			if reconciled := reconcileQueue(state.Queue, payload.MediaURL); reconciled != state.Queue {

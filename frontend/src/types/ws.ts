@@ -26,6 +26,7 @@ export type WSEventType =
   | "QUEUE_ADVANCE"
   | "QUEUE_CLEAR"
   | "QUEUE_STATE"
+  | "SET_RATE"
   | "ERROR";
 
 export interface WSMessage<T = unknown> {
@@ -67,6 +68,8 @@ export interface WSPlaybackPayload {
   is_playing?: boolean;
   media_time_seconds: number;
   last_updated?: number;
+  /** On SET_RATE and SYNC_PLAYBACK: the room's VOD speed. Absent means 1. */
+  playback_rate?: number;
 
   /** Selects how the rest of this payload is read. Absent means "vod". */
   kind?: MediaKind;

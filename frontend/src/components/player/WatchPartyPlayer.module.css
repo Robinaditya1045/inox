@@ -543,6 +543,20 @@
   min-width: 168px;
 }
 
+.qualityBtn:disabled {
+  cursor: not-allowed;
+}
+
+.speedMenu {
+  min-width: 132px;
+}
+
+/* Off normal speed, the badge says so at a glance */
+.speedBtnActive {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+
 .bitrate {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;

@@ -36,6 +36,7 @@ import {
   Radio,
   Check,
   Film,
+  Gauge,
   RotateCcw,
   RotateCw,
   SkipForward,
@@ -61,6 +62,9 @@ const LIVE_RELOAD_AFTER_ATTEMPTS = 3;
 
 // How far the skip buttons and arrow keys jump on an on-demand video.
 const SKIP_SECONDS = 10;
+
+// The speeds the room can be set to. The hub accepts 0.25–3x (ws.MaxPlaybackRate).
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
 // The next video in a queue is announced this long before the current one
 // ends, on videos long enough for that not to cover most of them.
@@ -89,6 +93,8 @@ const LIVE_PLAYLIST_POLICY: { default: LoaderConfig } = {
     errorRetry: { maxNumRetry: 4, retryDelayMs: 1_000, maxRetryDelayMs: 4_000 },
   },
 };
+
+const formatRate = (rate: number) => `${rate}×`;
 
 export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   onOpenLibrary,
@@ -126,6 +132,8 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     play: emitPlay,
     pause: emitPause,
     seek: emitSeek,
+    playbackRate,
+    setPlaybackRate: emitPlaybackRate,
     notifyLocalProgress,
     clearRemoteFlag,
     kind,
@@ -517,6 +525,17 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     };
   }, [isLive, isLeader]);
 
+  // Apply the room's speed. defaultPlaybackRate is set too because every new
+  // source resets playbackRate to it. A live stream starts at 1 and from then on
+  // its drift correction owns playbackRate, so this does not fight it.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const rate = isLive ? 1 : playbackRate;
+    video.defaultPlaybackRate = rate;
+    video.playbackRate = rate;
+  }, [playbackRate, isLive, mediaUrl]);
+
   const handlePlayClick = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -569,6 +588,29 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       handleSeek(Math.min(Math.max(video.currentTime + delta, 0), end));
     },
     [isLive, handleSeek],
+  );
+
+  // Speed is room-wide, like a seek: one viewer at 2x would leave the room behind.
+  // It carries this player's position so everyone realigns as it changes.
+  const handleRateChange = useCallback(
+    (rate: number) => {
+      const video = videoRef.current;
+      if (!video || isLive || !permissions.can_control_playback) return;
+      emitPlaybackRate(rate, video.currentTime);
+    },
+    [isLive, permissions.can_control_playback, emitPlaybackRate],
+  );
+
+  // Steps through PLAYBACK_RATES from wherever the room is now.
+  const stepRate = useCallback(
+    (direction: 1 | -1) => {
+      const next =
+        direction > 0
+          ? PLAYBACK_RATES.find((r) => r > playbackRate)
+          : [...PLAYBACK_RATES].reverse().find((r) => r < playbackRate);
+      if (next !== undefined) handleRateChange(next);
+    },
+    [playbackRate, handleRateChange],
   );
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -637,6 +679,9 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       } else if (e.code === "ArrowRight" || e.code === "KeyL") {
         e.preventDefault();
         handleSkip(SKIP_SECONDS);
+      } else if (e.key === ">" || e.key === "<") {
+        e.preventDefault();
+        stepRate(e.key === ">" ? 1 : -1);
       }
     };
 
@@ -644,7 +689,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     if (!container) return;
     container.addEventListener("keydown", handleKeyDown);
     return () => container.removeEventListener("keydown", handleKeyDown);
-  }, [handlePlayClick, toggleMute, toggleFullscreen, handleSkip]);
+  }, [handlePlayClick, toggleMute, toggleFullscreen, handleSkip, stepRate]);
 
   const setQualityLevel = (level: number) => {
     if (hlsRef.current) {
@@ -785,11 +830,7 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       {upNext &&
         duration > UP_NEXT_MIN_DURATION &&
         duration - progress <= UP_NEXT_LEAD_SECONDS && (
-          <div
-            className={styles.upNext}
-            role="status"
-            aria-live="polite"
-          >
+          <div className={styles.upNext} role="status" aria-live="polite">
             <MediaPoster
               src={upNext.thumbnail_url}
               className={styles.upNextPoster}
@@ -948,6 +989,54 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
             </div>
 
             <div className={styles.cluster}>
+              {/* Playback speed (VOD only). Not portalled, like the quality
+                  menu below, so it still shows in fullscreen. */}
+              {!isLive && (
+                <DropdownMenu.Root modal={false}>
+                  <DropdownMenu.Trigger asChild disabled={!canControl}>
+                    <button
+                      type="button"
+                      aria-label={`Playback speed, ${formatRate(playbackRate)}`}
+                      title={
+                        canControl
+                          ? "Playback speed (Shift + < / >)"
+                          : "Only people who can control playback can change the speed"
+                      }
+                      className={`${styles.qualityBtn} ${playbackRate !== 1 ? styles.speedBtnActive : ""}`}
+                    >
+                      <Gauge size={13} aria-hidden="true" />
+                      {formatRate(playbackRate)}
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content
+                    className={`${menuStyles.content} ${styles.speedMenu}`}
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                  >
+                    <DropdownMenu.Label className={menuStyles.label}>
+                      Speed
+                    </DropdownMenu.Label>
+                    {PLAYBACK_RATES.map((rate) => (
+                      <DropdownMenu.Item
+                        key={rate}
+                        className={menuStyles.item}
+                        onSelect={() => handleRateChange(rate)}
+                      >
+                        <span className={menuStyles.itemLabel}>
+                          {rate === 1 ? "Normal" : formatRate(rate)}
+                        </span>
+                        {playbackRate === rate && (
+                          <span className={menuStyles.itemCheck}>
+                            <Check size={14} />
+                          </span>
+                        )}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              )}
+
               {/* Quality Selector. Not portalled: in fullscreen only the player's
                   own subtree is visible, so the menu has to live inside it. */}
               {levels.length > 0 && (

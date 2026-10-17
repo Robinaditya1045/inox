@@ -35,6 +35,10 @@ export interface PlayerSyncContextValue {
   play: (time: number) => void;
   pause: (time: number) => void;
   seek: (time: number) => void;
+  /** The room's VOD speed. Live streams always play at 1. */
+  playbackRate: number;
+  /** Changes the room's speed, realigning everyone at `time`. */
+  setPlaybackRate: (rate: number, time: number) => void;
   notifyLocalProgress: (time: number) => void;
   clearRemoteFlag: () => void;
 

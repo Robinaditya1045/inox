@@ -38,6 +38,10 @@ type RoomPlaybackState struct {
 	MediaTimeSeconds float64   `json:"media_time_seconds"`
 	LastUpdated      int64     `json:"last_updated"` // Epoch millis
 
+	// PlaybackRate is the room's speed for VOD, as set by SET_RATE. Zero means
+	// normal speed, which is also what state persisted before rates existed reads as.
+	PlaybackRate float64 `json:"playback_rate,omitempty"`
+
 	// ── Live only ───────────────────────────────────────────
 	LeaderID   string `json:"leader_id,omitempty"`
 	LeaderName string `json:"leader_name,omitempty"`
@@ -54,6 +58,14 @@ type RoomPlaybackState struct {
 	// Queue is the playlist the room is playing through, if any. When the current
 	// item ends the room moves on to the next one.
 	Queue *PlaybackQueue `json:"queue,omitempty"`
+}
+
+// Rate is the room's playback speed, with the zero value read as normal speed.
+func (s *RoomPlaybackState) Rate() float64 {
+	if s.PlaybackRate <= 0 {
+		return 1
+	}
+	return s.PlaybackRate
 }
 
 // LiveAgeMillis reports how stale the stored live position is, for the age field

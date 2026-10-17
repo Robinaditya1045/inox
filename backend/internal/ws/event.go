@@ -50,6 +50,10 @@ const (
 	EventQueueAdvance EventType = "QUEUE_ADVANCE" // member→server: move to another item
 	EventQueueClear   EventType = "QUEUE_CLEAR"   // member→server: stop playing through
 	EventQueueState   EventType = "QUEUE_STATE"   // server→room: the queue now
+
+	// SET_RATE changes a VOD room's playback speed. It carries the sender's
+	// playhead so the room realigns at the moment the speed changes.
+	EventSetRate EventType = "SET_RATE"
 )
 
 // Event represents a standardized real-time message exchanged over WebSocket connections.
@@ -73,6 +77,9 @@ type VideoControlPayload struct {
 	IsPlaying        bool    `json:"is_playing"`
 	MediaTimeSeconds float64 `json:"media_time_seconds"`
 	LastUpdated      int64   `json:"last_updated,omitempty"` // Epoch millis
+	// PlaybackRate is the room's VOD speed, on SET_RATE and SYNC_PLAYBACK. Absent
+	// means normal speed.
+	PlaybackRate float64 `json:"playback_rate,omitempty"`
 
 	// ── Live only ───────────────────────────────────────────
 	Kind         string               `json:"kind,omitempty"`
