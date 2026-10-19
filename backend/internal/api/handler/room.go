@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -42,6 +43,13 @@ func (h *RoomHandler) SetActivitySource(src ActivitySource) {
 type createRoomRequest struct {
 	Name      string `json:"name"`
 	IsPrivate bool   `json:"is_private"`
+	// Password is optional. When set, nobody can join the room with its link
+	// alone — see room.authorizeJoin.
+	Password string `json:"password"`
+}
+
+type joinRoomRequest struct {
+	Password string `json:"password"`
 }
 
 type assignRoleRequest struct {
@@ -63,9 +71,9 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rm, member, err := h.roomService.CreateRoom(r.Context(), session.UserID, req.Name, req.IsPrivate)
+	rm, member, err := h.roomService.CreateRoom(r.Context(), session.UserID, req.Name, req.IsPrivate, req.Password)
 	if err != nil {
-		if errors.Is(err, room.ErrInvalidRoomName) {
+		if errors.Is(err, room.ErrInvalidRoomName) || errors.Is(err, room.ErrInvalidRoomPassword) {
 			respond.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -134,13 +142,43 @@ func (h *RoomHandler) JoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	member, err := h.roomService.JoinRoom(r.Context(), roomID, session.UserID)
+	var req joinRoomRequest
+	// The body is optional: a room with no password is joined with an empty POST.
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		respond.WriteError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	member, err := h.roomService.JoinRoom(r.Context(), roomID, session.UserID, req.Password)
 	if err != nil {
-		respond.WriteError(w, http.StatusInternalServerError, "failed to join room")
+		switch {
+		case errors.Is(err, room.ErrRoomNotFound):
+			respond.WriteError(w, http.StatusNotFound, "room not found")
+		case errors.Is(err, room.ErrRoomPasswordRequired):
+			writeJoinRefusal(w, "room_password_required", err)
+		case errors.Is(err, room.ErrRoomPasswordIncorrect):
+			writeJoinRefusal(w, "room_password_incorrect", err)
+		case errors.Is(err, room.ErrRoomPrivate):
+			writeJoinRefusal(w, "room_private", err)
+		default:
+			respond.WriteError(w, http.StatusInternalServerError, "failed to join room")
+		}
 		return
 	}
 
 	respond.WriteJSON(w, http.StatusOK, member)
+}
+
+// writeJoinRefusal refuses a join with a machine-readable reason, so a client can
+// tell "ask them for the password" from "they cannot come in at all" without
+// matching on prose. All three are 403, not 401: the session is perfectly valid,
+// it is the room that is closed, and a 401 is what this API uses to mean the
+// session itself is no good.
+func writeJoinRefusal(w http.ResponseWriter, code string, err error) {
+	respond.WriteJSON(w, http.StatusForbidden, map[string]string{
+		"error": err.Error(),
+		"code":  code,
+	})
 }
 
 // GetRoom retrieves details of a room the user is actively participating in.

@@ -67,9 +67,11 @@ export const roomService = {
     return response as Room;
   },
 
-  async joinRoom(roomId: string): Promise<Room> {
+  async joinRoom(roomId: string, password?: string): Promise<Room> {
     logger.info("RoomService: Joining room", { roomId });
-    await apiClient.post(`/rooms/${roomId}/join`);
+    // Sent in the body, never the query string: a password does not belong in
+    // request logs or a browser history entry.
+    await apiClient.post(`/rooms/${roomId}/join`, { password: password ?? "" });
     return this.getRoom(roomId);
   },
 

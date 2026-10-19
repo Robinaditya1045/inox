@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/inox/inox/backend/internal/auth"
@@ -14,12 +15,25 @@ var (
 	ErrInvalidRoomName  = errors.New("room name must be between 3 and 100 characters")
 	ErrPermissionDenied = errors.New("you do not have permission to perform this action")
 	ErrCannotAlterOwner = errors.New("cannot demote, modify permissions, or kick the room owner")
+
+	ErrInvalidRoomPassword   = errors.New("room password must be between 4 and 128 characters")
+	ErrRoomPrivate           = errors.New("this room is private: you need an invitation to join it")
+	ErrRoomPasswordRequired  = errors.New("this room needs a password")
+	ErrRoomPasswordIncorrect = errors.New("that room password is not right")
+)
+
+// A room password is a shared secret people type, not a login credential, so the
+// floor is low enough to be memorable and the ceiling only exists to bound the
+// work Argon2 is asked to do.
+const (
+	minRoomPasswordLength = 4
+	maxRoomPasswordLength = 128
 )
 
 // RoomService defines the business logic contract for room management and RBAC governance.
 type RoomService interface {
-	CreateRoom(ctx context.Context, ownerID, name string, isPrivate bool) (*domain.Room, *domain.RoomMember, error)
-	JoinRoom(ctx context.Context, roomID, userID string) (*domain.RoomMember, error)
+	CreateRoom(ctx context.Context, ownerID, name string, isPrivate bool, password string) (*domain.Room, *domain.RoomMember, error)
+	JoinRoom(ctx context.Context, roomID, userID, password string) (*domain.RoomMember, error)
 	GetRoomAndMember(ctx context.Context, roomID, userID string) (*domain.Room, *domain.RoomMember, error)
 	AssignRole(ctx context.Context, roomID, requesterID, targetUserID string, newRole domain.Role, customPerms *domain.Permissions) (*domain.RoomMember, error)
 	KickMember(ctx context.Context, roomID, requesterID, targetUserID string) error
@@ -45,16 +59,33 @@ func NewRoomService(repo RoomRepository, userRepo auth.UserRepository, stateRepo
 }
 
 // CreateRoom validates input and atomically creates a room with the creator as RoleOwner.
-func (s *roomService) CreateRoom(ctx context.Context, ownerID, name string, isPrivate bool) (*domain.Room, *domain.RoomMember, error) {
+// An empty password means the room has none.
+func (s *roomService) CreateRoom(ctx context.Context, ownerID, name string, isPrivate bool, password string) (*domain.Room, *domain.RoomMember, error) {
 	name = strings.TrimSpace(name)
 	if len(name) < 3 || len(name) > 100 {
 		return nil, nil, ErrInvalidRoomName
+	}
+
+	// Trimmed because this gets copied out of a chat message as often as it gets
+	// typed, and a trailing space nobody can see would lock everyone out.
+	password = strings.TrimSpace(password)
+	if password != "" && (len(password) < minRoomPasswordLength || len(password) > maxRoomPasswordLength) {
+		return nil, nil, ErrInvalidRoomPassword
 	}
 
 	room := &domain.Room{
 		Name:      name,
 		OwnerID:   ownerID,
 		IsPrivate: isPrivate,
+	}
+
+	if password != "" {
+		hash, err := auth.HashPassword(password)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to hash room password: %w", err)
+		}
+		room.PasswordHash = hash
+		room.HasPassword = true
 	}
 
 	ownerPerms := domain.DefaultPermissionsForRole(domain.RoleOwner)
@@ -67,8 +98,9 @@ func (s *roomService) CreateRoom(ctx context.Context, ownerID, name string, isPr
 	return room, member, nil
 }
 
-// JoinRoom adds a user to a room as a RoleMember if they are not already joined.
-func (s *roomService) JoinRoom(ctx context.Context, roomID, userID string) (*domain.RoomMember, error) {
+// JoinRoom adds a user to a room as a RoleMember if they are not already joined,
+// once authorizeJoin is satisfied that they are allowed in at all.
+func (s *roomService) JoinRoom(ctx context.Context, roomID, userID, password string) (*domain.RoomMember, error) {
 	// Check if already joined
 	existing, err := s.repo.GetMember(ctx, roomID, userID)
 	if err == nil && existing != nil {
@@ -76,6 +108,14 @@ func (s *roomService) JoinRoom(ctx context.Context, roomID, userID string) (*dom
 	}
 	if !errors.Is(err, ErrMemberNotFound) {
 		return nil, fmt.Errorf("failed checking existing membership: %w", err)
+	}
+
+	rm, err := s.repo.GetRoomByID(ctx, roomID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeJoin(ctx, rm, userID, password); err != nil {
+		return nil, err
 	}
 
 	member := &domain.RoomMember{
@@ -90,6 +130,51 @@ func (s *roomService) JoinRoom(ctx context.Context, roomID, userID string) (*dom
 		return nil, fmt.Errorf("service failed to join room: %w", err)
 	}
 	return member, nil
+}
+
+// authorizeJoin decides whether userID may let themselves into rm with the
+// credential they presented.
+//
+// The owner and anyone holding an invitation are always allowed. For everyone
+// else the room's password is the credential, and a private room that has no
+// password refuses the link outright: is_private used to do nothing but hide a
+// room from the lobby, so its URL was enough to get in, which made "private" a
+// promise the backend did not keep.
+func (s *roomService) authorizeJoin(ctx context.Context, rm *domain.Room, userID, password string) error {
+	if rm.OwnerID == userID {
+		return nil
+	}
+
+	invited, err := s.repo.HasInvitation(ctx, rm.ID, userID)
+	if err != nil {
+		return fmt.Errorf("failed checking room invitation: %w", err)
+	}
+	if invited {
+		return nil
+	}
+
+	if rm.PasswordHash != "" {
+		if password == "" {
+			return ErrRoomPasswordRequired
+		}
+		ok, err := auth.VerifyPassword(password, rm.PasswordHash)
+		if err != nil {
+			// A hash that will not parse is an operator problem, not a wrong
+			// password. The caller is refused either way, but this one should be
+			// visible somewhere other than their screen.
+			slog.Error("failed to verify room password", "room_id", rm.ID, "error", err)
+			return ErrRoomPasswordIncorrect
+		}
+		if !ok {
+			return ErrRoomPasswordIncorrect
+		}
+		return nil
+	}
+
+	if rm.IsPrivate {
+		return ErrRoomPrivate
+	}
+	return nil
 }
 
 // addMemberOrGetExisting inserts a membership, and if a concurrent request got

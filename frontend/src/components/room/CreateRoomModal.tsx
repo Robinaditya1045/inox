@@ -4,7 +4,7 @@ import { Modal } from "../common/Modal";
 import { TextField } from "../common/TextField";
 import { Button } from "../common/Button";
 import { useRoom } from "../../hooks/useRoom";
-import { Tv, Lock, Globe, AlertCircle } from "lucide-react";
+import { Tv, Lock, Globe, AlertCircle, KeyRound } from "lucide-react";
 import styles from "./CreateRoomModal.module.css";
 
 interface CreateRoomModalProps {
@@ -18,6 +18,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 }) => {
   const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
+  const [password, setPassword] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const privacyDescId = useId();
 
@@ -38,10 +39,12 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
       const newRoom = await createRoom({
         name: name.trim(),
         is_private: isPrivate,
+        password: password.trim() || undefined,
       });
       onClose();
       setName("");
       setIsPrivate(false);
+      setPassword("");
       navigate(`/room/${newRoom.id}`);
     } catch {
       // Error handled by room context
@@ -107,7 +110,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
               </span>
               <span id={privacyDescId} className={styles.privacyDesc}>
                 {isPrivate
-                  ? "Hidden from the lobby. People join by invite or with the room link."
+                  ? "Hidden from the lobby. People join by invitation, or with the password below."
                   : "Anyone in the lobby can see and join it."}
               </span>
             </span>
@@ -120,6 +123,27 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
             <span className={styles.switchThumb} />
           </span>
         </button>
+
+        <TextField
+          label="Room password"
+          type="password"
+          name="room-password"
+          autoComplete="new-password"
+          placeholder="Optional"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (validationError) setValidationError(null);
+          }}
+          icon={<KeyRound size={16} />}
+          helperText={
+            isPrivate && !password.trim()
+              ? "Without one, a private room can only be joined by invitation."
+              : "With a password set, the room's link alone won't let anyone in."
+          }
+          revealable
+          maxLength={128}
+        />
 
         <div className={styles.footer}>
           <Button type="button" variant="ghost" onClick={onClose}>

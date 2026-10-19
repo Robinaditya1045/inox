@@ -67,3 +67,19 @@
     display: none;
   }
 }
+
+/* Password prompt shown when a join is refused for want of one. */
+.passwordForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 20rem;
+  text-align: left;
+}
+
+.passwordActions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

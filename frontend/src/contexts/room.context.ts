@@ -5,6 +5,7 @@ import type {
   RoomRole,
   RoomPermissions,
   RoomInvitation,
+  RoomJoinRefusal,
 } from "../types";
 
 export interface RoomContextValue {
@@ -18,8 +19,11 @@ export interface RoomContextValue {
   /** The room list has been fetched at least once for the current user. */
   hasLoadedRooms: boolean;
   roomError: string | null;
+  /** Set alongside roomError when a join was refused for a reason the UI can act
+   *  on, so it can prompt for a password instead of only reporting the failure. */
+  roomErrorCode: RoomJoinRefusal | null;
   createRoom: (data: CreateRoomRequest) => Promise<Room>;
-  joinRoom: (roomId: string) => Promise<Room>;
+  joinRoom: (roomId: string, password?: string) => Promise<Room>;
   leaveRoom: () => Promise<void>;
   /** Close the room connection and hang up, keeping membership (for logout). */
   disconnectFromRoom: () => void;
