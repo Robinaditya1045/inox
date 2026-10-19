@@ -29,6 +29,7 @@ type RoomRepository interface {
 	ListRoomMembers(ctx context.Context, roomID string) ([]*domain.RoomMember, error)
 	CreateInvitation(ctx context.Context, inv *domain.RoomInvitation) error
 	GetInvitationByID(ctx context.Context, invID string) (*domain.RoomInvitation, error)
+	HasInvitation(ctx context.Context, roomID, userID string) (bool, error)
 	ListPendingInvitationsForUser(ctx context.Context, userID string) ([]*domain.RoomInvitation, error)
 	UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error
 	UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error
@@ -58,11 +59,11 @@ func (r *postgresRoomRepository) CreateRoomWithOwner(ctx context.Context, room *
 		room.CurrentMediaURL = "https://media.w3.org/2010/05/bunny/movie.mp4"
 	}
 	roomQuery := `
-		INSERT INTO rooms (name, owner_id, is_private, current_media_url)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO rooms (name, owner_id, is_private, current_media_url, password_hash)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, current_media_url, created_at, updated_at
 	`
-	err = tx.QueryRow(ctx, roomQuery, room.Name, room.OwnerID, room.IsPrivate, room.CurrentMediaURL).Scan(
+	err = tx.QueryRow(ctx, roomQuery, room.Name, room.OwnerID, room.IsPrivate, room.CurrentMediaURL, room.PasswordHash).Scan(
 		&room.ID,
 		&room.CurrentMediaURL,
 		&room.CreatedAt,
@@ -109,10 +110,10 @@ func (r *postgresRoomRepository) CreateRoomWithOwner(ctx context.Context, room *
 
 // GetRoomByID queries a room by its UUID.
 func (r *postgresRoomRepository) GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error) {
-	query := `SELECT id, name, owner_id, is_private, COALESCE(current_media_url, 'https://media.w3.org/2010/05/bunny/movie.mp4'), created_at, updated_at FROM rooms WHERE id = $1`
+	query := `SELECT id, name, owner_id, is_private, COALESCE(current_media_url, 'https://media.w3.org/2010/05/bunny/movie.mp4'), created_at, updated_at, password_hash FROM rooms WHERE id = $1`
 	var room domain.Room
 	err := r.db.QueryRow(ctx, query, roomID).Scan(
-		&room.ID, &room.Name, &room.OwnerID, &room.IsPrivate, &room.CurrentMediaURL, &room.CreatedAt, &room.UpdatedAt,
+		&room.ID, &room.Name, &room.OwnerID, &room.IsPrivate, &room.CurrentMediaURL, &room.CreatedAt, &room.UpdatedAt, &room.PasswordHash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -120,6 +121,7 @@ func (r *postgresRoomRepository) GetRoomByID(ctx context.Context, roomID string)
 		}
 		return nil, fmt.Errorf("failed to query room: %w", err)
 	}
+	room.HasPassword = room.PasswordHash != ""
 	members, err := r.ListRoomMembers(ctx, roomID)
 	if err == nil {
 		room.Members = members
@@ -268,7 +270,7 @@ func (r *postgresRoomRepository) RemoveMember(ctx context.Context, roomID, userI
 // ListRooms returns all public rooms and private rooms where the user is an owner or member.
 func (r *postgresRoomRepository) ListRooms(ctx context.Context, userID string) ([]*domain.Room, error) {
 	query := `
-		SELECT DISTINCT r.id, r.name, r.owner_id, r.is_private, COALESCE(r.current_media_url, 'https://media.w3.org/2010/05/bunny/movie.mp4'), r.created_at, r.updated_at
+		SELECT DISTINCT r.id, r.name, r.owner_id, r.is_private, COALESCE(r.current_media_url, 'https://media.w3.org/2010/05/bunny/movie.mp4'), r.created_at, r.updated_at, (r.password_hash <> '') AS has_password
 		FROM rooms r
 		LEFT JOIN room_members rm ON r.id = rm.room_id
 		WHERE r.is_private = false OR r.owner_id = $1 OR rm.user_id = $1
@@ -284,7 +286,7 @@ func (r *postgresRoomRepository) ListRooms(ctx context.Context, userID string) (
 	var rooms []*domain.Room
 	for rows.Next() {
 		room := &domain.Room{}
-		if err := rows.Scan(&room.ID, &room.Name, &room.OwnerID, &room.IsPrivate, &room.CurrentMediaURL, &room.CreatedAt, &room.UpdatedAt); err != nil {
+		if err := rows.Scan(&room.ID, &room.Name, &room.OwnerID, &room.IsPrivate, &room.CurrentMediaURL, &room.CreatedAt, &room.UpdatedAt, &room.HasPassword); err != nil {
 			return nil, fmt.Errorf("failed to scan room: %w", err)
 		}
 		rooms = append(rooms, room)
@@ -385,6 +387,25 @@ func (r *postgresRoomRepository) GetInvitationByID(ctx context.Context, invID st
 		return nil, fmt.Errorf("failed to get invitation: %w", err)
 	}
 	return &inv, nil
+}
+
+// HasInvitation reports whether userID holds an invitation to the room that they
+// have not declined. A still-pending one counts: being invited is what grants
+// access to a private room, and an invitee should not have to go via the
+// invitations list before a link they were sent will open.
+func (r *postgresRoomRepository) HasInvitation(ctx context.Context, roomID, userID string) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM room_invitations
+			WHERE room_id = $1 AND invitee_id = $2 AND status <> $3
+		)
+	`
+	var exists bool
+	err := r.db.QueryRow(ctx, query, roomID, userID, domain.InvitationStatusDeclined).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check room invitation: %w", err)
+	}
+	return exists, nil
 }
 
 // ListPendingInvitationsForUser lists all pending invitations for a specific user.

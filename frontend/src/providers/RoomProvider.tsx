@@ -15,6 +15,7 @@ import type {
   CreateRoomRequest,
   RoomRole,
   RoomInvitation,
+  RoomJoinRefusal,
 } from "../types";
 import { useAuth } from "../hooks/useAuth";
 import { logger } from "../utils/logger";
@@ -25,12 +26,28 @@ interface RoomProviderProps {
   children: ReactNode;
 }
 
+const JOIN_REFUSALS: RoomJoinRefusal[] = [
+  "room_password_required",
+  "room_password_incorrect",
+  "room_private",
+];
+
+/** Reads the backend's refusal code off a failed join, if it sent one. */
+const joinRefusalOf = (err: unknown): RoomJoinRefusal | null => {
+  if (!(err instanceof APIError)) return null;
+  const code = (err.data as { code?: string } | null)?.code;
+  return JOIN_REFUSALS.find((refusal) => refusal === code) ?? null;
+};
+
 export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [invitations, setInvitations] = useState<RoomInvitation[]>([]);
   const [isLoadingRoom, setIsLoadingRoom] = useState<boolean>(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomErrorCode, setRoomErrorCode] = useState<RoomJoinRefusal | null>(
+    null,
+  );
   // False until the first room list for this user has come back (or failed), so
   // the lobby can show a skeleton instead of a premature "no rooms" state.
   const [hasLoadedRooms, setHasLoadedRooms] = useState<boolean>(false);
@@ -43,6 +60,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
   const clearRoomError = useCallback(() => {
     setRoomError(null);
+    setRoomErrorCode(null);
   }, []);
 
   const refreshRooms = useCallback(async () => {
@@ -133,35 +151,40 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     [refreshRooms],
   );
 
-  const joinRoom = useCallback(async (roomId: string): Promise<Room> => {
-    const seq = ++joinSeqRef.current;
-    setIsLoadingRoom(true);
-    setRoomError(null);
-    try {
-      const joinedRoom = await roomService.joinRoom(roomId);
-      if (seq !== joinSeqRef.current) {
-        logger.info("RoomProvider: Discarding superseded join result", {
-          roomId,
-        });
+  const joinRoom = useCallback(
+    async (roomId: string, password?: string): Promise<Room> => {
+      const seq = ++joinSeqRef.current;
+      setIsLoadingRoom(true);
+      setRoomError(null);
+      setRoomErrorCode(null);
+      try {
+        const joinedRoom = await roomService.joinRoom(roomId, password);
+        if (seq !== joinSeqRef.current) {
+          logger.info("RoomProvider: Discarding superseded join result", {
+            roomId,
+          });
+          return joinedRoom;
+        }
+        setActiveRoom(joinedRoom);
+        logger.info("RoomProvider: Successfully joined room", { roomId });
         return joinedRoom;
+      } catch (err) {
+        const msg =
+          err instanceof APIError ? err.message : "Failed to join room.";
+        if (seq === joinSeqRef.current) {
+          setRoomError(msg);
+          setRoomErrorCode(joinRefusalOf(err));
+        }
+        logger.error("RoomProvider: Join room error", { err });
+        throw err;
+      } finally {
+        if (seq === joinSeqRef.current) {
+          setIsLoadingRoom(false);
+        }
       }
-      setActiveRoom(joinedRoom);
-      logger.info("RoomProvider: Successfully joined room", { roomId });
-      return joinedRoom;
-    } catch (err) {
-      const msg =
-        err instanceof APIError ? err.message : "Failed to join room.";
-      if (seq === joinSeqRef.current) {
-        setRoomError(msg);
-      }
-      logger.error("RoomProvider: Join room error", { err });
-      throw err;
-    } finally {
-      if (seq === joinSeqRef.current) {
-        setIsLoadingRoom(false);
-      }
-    }
-  }, []);
+    },
+    [],
+  );
 
   const leaveRoom = useCallback(async () => {
     // Always tear local state down, even if there is nothing to tell the server about —
@@ -304,6 +327,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     isLoadingRoom,
     hasLoadedRooms,
     roomError,
+    roomErrorCode,
     createRoom,
     joinRoom,
     leaveRoom,

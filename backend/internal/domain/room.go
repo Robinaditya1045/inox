@@ -91,6 +91,12 @@ type Room struct {
 	UpdatedAt       time.Time     `json:"updated_at"`
 	Members         []*RoomMember `json:"members,omitempty"`
 
+	// PasswordHash is the Argon2id hash of the room's join password, empty when
+	// the room has none. It is never serialized: a client only ever learns that a
+	// password exists, from HasPassword, and never the hash itself.
+	PasswordHash string `json:"-"`
+	HasPassword  bool   `json:"has_password"`
+
 	// Activity is set only when someone is connected to the room right now, so
 	// the lobby can tell a room that is in use from one that merely exists.
 	Activity *RoomActivity `json:"activity,omitempty"`

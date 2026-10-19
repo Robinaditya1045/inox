@@ -9,6 +9,7 @@ import { usePresence } from "../hooks/usePresence";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useAuth } from "../hooks/useAuth";
 import { Button } from "../components/common/Button";
+import { TextField } from "../components/common/TextField";
 import { IconButton } from "../components/common/IconButton";
 import { Skeleton } from "../components/common/Skeleton";
 import { Spinner } from "../components/common/Spinner";
@@ -24,7 +25,14 @@ import { AudioRenderer } from "../components/rtc/AudioRenderer";
 import { RoomSidebar, type RoomChannel } from "../components/room/RoomSidebar";
 import { RoomHeader, type SidePanelTab } from "../components/room/RoomHeader";
 import { VoiceStage } from "../components/room/VoiceStage";
-import { MessageSquare, RotateCcw, ShieldAlert, Users, X } from "lucide-react";
+import {
+  KeyRound,
+  MessageSquare,
+  RotateCcw,
+  ShieldAlert,
+  Users,
+  X,
+} from "lucide-react";
 import { tabIds } from "../utils/tabs";
 import shellStyles from "../components/room/VideoRoomShell.module.css";
 import styles from "./RoomPage.module.css";
@@ -36,13 +44,21 @@ const PANEL_TABS_ID = "room-panel";
 
 export const RoomPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
-  const { activeRoom, joinRoom, leaveRoom, roomError, clearRoomError } =
-    useRoom();
+  const {
+    activeRoom,
+    joinRoom,
+    leaveRoom,
+    roomError,
+    roomErrorCode,
+    isLoadingRoom,
+    clearRoomError,
+  } = useRoom();
   const permissions = usePermissions();
   const navigate = useNavigate();
 
   const [activeChannel, setActiveChannel] =
     useState<RoomChannel>("watch-party");
+  const [passwordAttempt, setPasswordAttempt] = useState("");
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   // Tracked separately so narrowing the window never pops a drawer open over
   // the room just because the column happened to be showing.
@@ -190,6 +206,63 @@ export const RoomPage: React.FC = () => {
             Joining room…
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // ── Password needed ───────────────────────────────────────────────────
+  // Of the reasons a join can be refused, these two are the ones the viewer can
+  // do something about, so they get a prompt rather than a dead end.
+  if (
+    roomErrorCode === "room_password_required" ||
+    roomErrorCode === "room_password_incorrect"
+  ) {
+    return (
+      <div className={styles.state}>
+        <EmptyState
+          as="h1"
+          icon={<KeyRound size={24} />}
+          title="This room has a password"
+          description={
+            roomErrorCode === "room_password_incorrect"
+              ? "That password didn't work. Check it and try again."
+              : "Ask whoever shared the room for its password."
+          }
+          action={
+            <form
+              className={styles.passwordForm}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (roomId) joinRoom(roomId, passwordAttempt).catch(() => {});
+              }}
+            >
+              <TextField
+                label="Room password"
+                type="password"
+                name="room-password"
+                autoComplete="off"
+                value={passwordAttempt}
+                onChange={(e) => setPasswordAttempt(e.target.value)}
+                icon={<KeyRound size={16} />}
+                revealable
+                maxLength={128}
+                required
+              />
+              <div className={styles.passwordActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => navigate("/")}
+                >
+                  Return to Lobby
+                </Button>
+                <Button type="submit" isLoading={isLoadingRoom}>
+                  Join room
+                </Button>
+              </div>
+            </form>
+          }
+        />
       </div>
     );
   }

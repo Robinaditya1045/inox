@@ -12,17 +12,18 @@ import (
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/domain"
+	"github.com/inox/inox/backend/internal/room"
 )
 
 type mockRoomService struct{}
 
-func (m *mockRoomService) CreateRoom(ctx context.Context, ownerID, name string, isPrivate bool) (*domain.Room, *domain.RoomMember, error) {
+func (m *mockRoomService) CreateRoom(ctx context.Context, ownerID, name string, isPrivate bool, password string) (*domain.Room, *domain.RoomMember, error) {
 	rm := &domain.Room{ID: "room-http-123", Name: name, OwnerID: ownerID, IsPrivate: isPrivate}
 	mem := &domain.RoomMember{RoomID: rm.ID, UserID: ownerID, Role: domain.RoleOwner, Permissions: domain.DefaultPermissionsForRole(domain.RoleOwner)}
 	return rm, mem, nil
 }
 
-func (m *mockRoomService) JoinRoom(ctx context.Context, roomID, userID string) (*domain.RoomMember, error) {
+func (m *mockRoomService) JoinRoom(ctx context.Context, roomID, userID, password string) (*domain.RoomMember, error) {
 	return &domain.RoomMember{RoomID: roomID, UserID: userID, Role: domain.RoleMember, Permissions: domain.DefaultPermissionsForRole(domain.RoleMember)}, nil
 }
 
@@ -185,5 +186,76 @@ func TestListRoomsStillServesWhenActivityFails(t *testing.T) {
 	}
 	if _, present := rooms[0]["activity"]; present {
 		t.Errorf("expected no activity when the source fails, got %+v", rooms[0]["activity"])
+	}
+}
+
+// refusingRoomService stands in for a room nobody may let themselves into.
+type refusingRoomService struct {
+	*mockRoomService
+	err error
+}
+
+func (m *refusingRoomService) JoinRoom(ctx context.Context, roomID, userID, password string) (*domain.RoomMember, error) {
+	return nil, m.err
+}
+
+// The client has to tell "ask them for the password" apart from "they cannot come
+// in at all" to know whether to show a prompt, so the refusal carries a code and
+// not just prose.
+func TestJoinRoomHTTPHandlerReportsWhyItRefused(t *testing.T) {
+	cases := []struct {
+		err  error
+		code string
+	}{
+		{room.ErrRoomPasswordRequired, "room_password_required"},
+		{room.ErrRoomPasswordIncorrect, "room_password_incorrect"},
+		{room.ErrRoomPrivate, "room_private"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.code, func(t *testing.T) {
+			roomHandler := handler.NewRoomHandler(&refusingRoomService{mockRoomService: &mockRoomService{}, err: tc.err})
+
+			body, _ := json.Marshal(map[string]any{"password": "wrong"})
+			req := httptest.NewRequest("POST", "/api/v1/rooms/room-1/join", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+			session := &domain.Session{ID: "sess_mock", UserID: "user-abc-1", Username: "robin", ExpiresAt: time.Now().Add(time.Hour)}
+			req = req.WithContext(middleware.WithSessionContext(req.Context(), session))
+			req.SetPathValue("id", "room-1")
+
+			roomHandler.JoinRoom(rec, req)
+
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("expected HTTP 403, got %d", rec.Code)
+			}
+			var resp map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("failed to decode refusal: %v", err)
+			}
+			if resp["code"] != tc.code {
+				t.Errorf("expected code %q, got %q", tc.code, resp["code"])
+			}
+			if resp["error"] == "" {
+				t.Error("expected the refusal to carry a human-readable error too")
+			}
+		})
+	}
+}
+
+// A room with no password is joined with a bodiless POST, which is what the
+// client sent before passwords existed.
+func TestJoinRoomHTTPHandlerAcceptsAnEmptyBody(t *testing.T) {
+	roomHandler := handler.NewRoomHandler(&mockRoomService{})
+
+	req := httptest.NewRequest("POST", "/api/v1/rooms/room-1/join", nil)
+	rec := httptest.NewRecorder()
+	session := &domain.Session{ID: "sess_mock", UserID: "user-abc-1", Username: "robin", ExpiresAt: time.Now().Add(time.Hour)}
+	req = req.WithContext(middleware.WithSessionContext(req.Context(), session))
+	req.SetPathValue("id", "room-1")
+
+	roomHandler.JoinRoom(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }

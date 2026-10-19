@@ -27,6 +27,9 @@ export interface Room {
   current_media_url?: string;
   created_at: string;
   members?: RoomMember[];
+  /** True when the room needs a password to join. The password itself and its
+   *  hash never leave the backend. */
+  has_password?: boolean;
   /** Present only while someone is connected to the room (from the live hub). */
   activity?: RoomActivity;
 }
@@ -44,7 +47,13 @@ export interface RoomActivity {
 export interface CreateRoomRequest {
   name: string;
   is_private: boolean;
+  /** Optional. With one set, the room's link alone will not get anyone in. */
+  password?: string;
 }
+
+/** Why the backend refused a join, from the `code` on its 403. */
+export type RoomJoinRefusal =
+  "room_password_required" | "room_password_incorrect" | "room_private";
 
 export type InvitationStatus = "pending" | "accepted" | "declined";
 

@@ -51,7 +51,7 @@ func TestChatServiceRBACAndHistoryWorkflow(t *testing.T) {
 	outsiderID := "user-charlie"
 
 	// 1. Create Room by Alice
-	rm, _, err := roomService.CreateRoom(ctx, ownerID, "Watch Party Chat Room", false)
+	rm, _, err := roomService.CreateRoom(ctx, ownerID, "Watch Party Chat Room", false, "")
 	if err != nil {
 		t.Fatalf("expected room creation to succeed, got %v", err)
 	}
@@ -72,7 +72,7 @@ func TestChatServiceRBACAndHistoryWorkflow(t *testing.T) {
 	}
 
 	// 4. Guest Bob joins room
-	bobMem, err := roomService.JoinRoom(ctx, rm.ID, guestID)
+	bobMem, err := roomService.JoinRoom(ctx, rm.ID, guestID, "")
 	if err != nil {
 		t.Fatalf("expected bob to join room, got %v", err)
 	}
