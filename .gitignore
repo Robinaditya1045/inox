@@ -16,3 +16,7 @@ INTERVIEW_PREP.md
 # Oracle deployment secrets and built admin bundle
 deploy/oracle/.env.prod
 deploy/oracle/admin-dist/
+
+# Local agent tooling
+.agents/
+skills-lock.json

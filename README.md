@@ -302,3 +302,7 @@ files, Prettier over changed client files. Install the hooks once with
 
 CI must pass before merge: `go vet`, `go test -race`, and lint plus typecheck
 for both clients.
+
+## License
+
+Released under the [MIT License](LICENSE).
