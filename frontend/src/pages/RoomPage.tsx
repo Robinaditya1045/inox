@@ -8,6 +8,7 @@ import { useRoomSocket } from "../hooks/useRoomSocket";
 import { usePresence } from "../hooks/usePresence";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../hooks/useToast";
 import { Button } from "../components/common/Button";
 import { IconButton } from "../components/common/IconButton";
 import { Skeleton } from "../components/common/Skeleton";
@@ -36,8 +37,16 @@ const PANEL_TABS_ID = "room-panel";
 
 export const RoomPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
-  const { activeRoom, joinRoom, leaveRoom, roomError, clearRoomError } =
-    useRoom();
+  const {
+    activeRoom,
+    joinRoom,
+    leaveRoom,
+    disconnectFromRoom,
+    refreshRooms,
+    roomError,
+    clearRoomError,
+  } = useRoom();
+  const { toast } = useToast();
   const permissions = usePermissions();
   const navigate = useNavigate();
 
@@ -100,6 +109,24 @@ export const RoomPage: React.FC = () => {
     // the room we just successfully joined.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
+
+  // The room was deleted (by its owner or an administrator) while we were in
+  // it. The server closes the socket right after this, so drop it first or the
+  // client would keep trying to reconnect to a room that no longer exists.
+  useEffect(() => {
+    return subscribe("ROOM_CLOSED", (msg) => {
+      if (msg.room_id && msg.room_id !== roomId) return;
+      disconnectFromRoom();
+      refreshRooms().catch(() => {});
+      toast({
+        tone: "danger",
+        title: "This room was deleted",
+        description:
+          "It no longer exists, so you've been taken back to the lobby.",
+      });
+      navigate("/");
+    });
+  }, [subscribe, roomId, disconnectFromRoom, refreshRooms, toast, navigate]);
 
   // Escape closes whichever drawer is open (only drawers exist below desktop).
   const anyDrawerOpen =

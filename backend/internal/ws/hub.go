@@ -73,6 +73,10 @@ type Hub struct {
 	// snapshot of which rooms are in use. The snapshot is taken on the loop,
 	// the only place h.rooms and h.playbackStates may be read.
 	activityRequests chan chan map[string]domain.RoomActivity
+
+	// closeRequests carries the IDs of deleted rooms from HTTP handlers into the
+	// loop, which tells the people in them and disconnects them (see CloseRoom).
+	closeRequests chan string
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
@@ -88,6 +92,7 @@ func NewHub() *Hub {
 		liveStatusNotices: make(chan liveStatusNotice, 64),
 		sfuSignals:        make(chan *Event, 256),
 		activityRequests:  make(chan chan map[string]domain.RoomActivity),
+		closeRequests:     make(chan string, 64),
 	}
 }
 
@@ -203,6 +208,9 @@ func (h *Hub) Run() {
 
 		case reply := <-h.activityRequests:
 			reply <- h.snapshotActivity()
+
+		case roomID := <-h.closeRequests:
+			h.dispatchEvent(&Event{Type: EventRoomClosed, RoomID: roomID, Timestamp: time.Now().UnixMilli()})
 
 		case <-h.Stop:
 			h.shutdownAll()
@@ -343,24 +351,7 @@ func (h *Hub) unregisterClient(client *Client) {
 
 		// Clean up empty rooms from memory
 		if len(roomClients) == 0 {
-			// Drop the leadership claim before the room state goes: otherwise it
-			// outlives the room, and the next person to join adopts a leader who
-			// is not there instead of triggering an election.
-			if state, ok := h.playbackStates[client.RoomID]; ok && state.LeaderID != "" {
-				h.dropLeaderClaim(client.RoomID, state.LeaderID)
-			}
-			delete(h.rooms, client.RoomID)
-			delete(h.playbackStates, client.RoomID)
-
-			if cancel, ok := h.roomCancelFuncs[client.RoomID]; ok {
-				cancel()
-				delete(h.roomCancelFuncs, client.RoomID)
-			}
-
-			observability.Global().DecActiveRooms()
-			if h.sfuManager != nil {
-				h.sfuManager.RemoveRoom(client.RoomID)
-			}
+			h.retireRoom(client.RoomID)
 		} else {
 			if h.sfuManager != nil {
 				if sfuRoom, err := h.sfuManager.GetRoom(client.RoomID); err == nil {
@@ -379,6 +370,29 @@ func (h *Hub) unregisterClient(client *Client) {
 			}
 			h.dispatchEvent(leaveEvt)
 		}
+	}
+}
+
+// retireRoom forgets a room nobody is connected to any more. Must only run on
+// the hub loop.
+func (h *Hub) retireRoom(roomID string) {
+	// Drop the leadership claim before the room state goes: otherwise it
+	// outlives the room, and the next person to join adopts a leader who
+	// is not there instead of triggering an election.
+	if state, ok := h.playbackStates[roomID]; ok && state.LeaderID != "" {
+		h.dropLeaderClaim(roomID, state.LeaderID)
+	}
+	delete(h.rooms, roomID)
+	delete(h.playbackStates, roomID)
+
+	if cancel, ok := h.roomCancelFuncs[roomID]; ok {
+		cancel()
+		delete(h.roomCancelFuncs, roomID)
+	}
+
+	observability.Global().DecActiveRooms()
+	if h.sfuManager != nil {
+		h.sfuManager.RemoveRoom(roomID)
 	}
 }
 
@@ -451,6 +465,11 @@ func (h *Hub) dispatchEvent(event *Event) {
 func (h *Hub) dispatchLocal(event *Event) {
 	roomClients, ok := h.rooms[event.RoomID]
 	if !ok || len(roomClients) == 0 {
+		return
+	}
+
+	if event.Type == EventRoomClosed {
+		h.closeRoomLocal(event)
 		return
 	}
 
@@ -816,6 +835,43 @@ func (h *Hub) sendToTarget(event *Event) {
 			break
 		}
 	}
+}
+
+// CloseRoom disconnects everyone in a room that has just been deleted, after
+// telling them why. Safe to call from any goroutine. The notice goes out as a
+// server event, so with the Redis event bus every process closes its share.
+func (h *Hub) CloseRoom(roomID string) {
+	select {
+	case h.closeRequests <- roomID:
+	default:
+		// Their sockets stay up, but every event they send is refused once the
+		// room is gone, and the next reconnect fails.
+		slog.Warn("dropped room close request; hub queue full", "room_id", roomID)
+	}
+}
+
+// closeRoomLocal must only run on the hub loop.
+func (h *Hub) closeRoomLocal(event *Event) {
+	roomClients := h.rooms[event.RoomID]
+	connections := len(roomClients)
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("failed to serialize room close notice", "error", err)
+		return
+	}
+	for client := range roomClients {
+		// Queued ahead of the close, so writePump sends the notice and then the
+		// close frame. A full buffer just means they get the close frame alone.
+		select {
+		case client.Send <- data:
+		default:
+		}
+		close(client.Send)
+		delete(roomClients, client)
+		observability.Global().DecActiveWSConnections()
+	}
+	slog.Info("closed deleted room", "room_id", event.RoomID, "connections", connections)
+	h.retireRoom(event.RoomID)
 }
 
 // RoomActivity reports every room with someone connected to this process: how many

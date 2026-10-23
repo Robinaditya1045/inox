@@ -111,3 +111,45 @@ func TestRoomActivityHonoursContextWhenHubIsNotRunning(t *testing.T) {
 		t.Fatalf("RoomActivity blocked for %s", elapsed)
 	}
 }
+
+// Deleting a room has to reach the people still in it: they get ROOM_CLOSED,
+// then their connection is closed, and the room drops out of the hub.
+func TestCloseRoomNotifiesAndDisconnects(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	defer hub.Shutdown()
+
+	newClient := func(roomID, userID string) *ws.Client {
+		return &ws.Client{Hub: hub, Send: make(chan []byte, 64), RoomID: roomID, UserID: userID, Username: userID}
+	}
+	alice := newClient("doomed", "alice")
+	bob := newClient("doomed", "bob")
+	carol := newClient("other", "carol")
+	for _, c := range []*ws.Client{alice, bob, carol} {
+		hub.Register <- c
+	}
+
+	hub.CloseRoom("doomed")
+
+	for _, c := range []*ws.Client{alice, bob} {
+		waitForEvent(t, c.Send, ws.EventRoomClosed)
+		select {
+		case _, ok := <-c.Send:
+			if ok {
+				t.Fatalf("%s: expected the send channel closed after ROOM_CLOSED", c.UserID)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s: send channel was never closed", c.UserID)
+		}
+	}
+	activity := activityNow(t, hub)
+	if _, ok := activity["doomed"]; ok {
+		t.Fatal("a closed room must drop out of the hub")
+	}
+	if activity["other"].viewers != 1 {
+		t.Fatalf("other rooms must be untouched, got %+v", activity["other"])
+	}
+	// The read pump unregisters a closed client afterwards; that must be harmless.
+	hub.Unregister <- alice
+	_ = activityNow(t, hub)
+}

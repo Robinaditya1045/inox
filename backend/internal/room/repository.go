@@ -26,6 +26,8 @@ type RoomRepository interface {
 	UpdateMemberPermissions(ctx context.Context, roomID, userID string, role domain.Role, perms domain.Permissions) (*domain.RoomMember, error)
 	RemoveMember(ctx context.Context, roomID, userID string) error
 	ListRooms(ctx context.Context, userID string) ([]*domain.Room, error)
+	// ListAllRooms lists every room, public and private, for administrators.
+	ListAllRooms(ctx context.Context) ([]*domain.Room, error)
 	ListRoomMembers(ctx context.Context, roomID string) ([]*domain.RoomMember, error)
 	CreateInvitation(ctx context.Context, inv *domain.RoomInvitation) error
 	GetInvitationByID(ctx context.Context, invID string) (*domain.RoomInvitation, error)
@@ -33,6 +35,8 @@ type RoomRepository interface {
 	UpdateInvitationStatus(ctx context.Context, invID string, status domain.InvitationStatus) error
 	UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error
 	DeleteRoom(ctx context.Context, roomID string) error
+	// DeleteRooms removes several rooms at once and returns the IDs that existed.
+	DeleteRooms(ctx context.Context, roomIDs []string) ([]string, error)
 }
 
 type postgresRoomRepository struct {
@@ -292,6 +296,38 @@ func (r *postgresRoomRepository) ListRooms(ctx context.Context, userID string) (
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows iteration failed: %w", err)
 	}
+	return r.attachMembers(ctx, rooms)
+}
+
+// ListAllRooms returns every room regardless of privacy, newest first.
+func (r *postgresRoomRepository) ListAllRooms(ctx context.Context) ([]*domain.Room, error) {
+	query := `
+		SELECT id, name, owner_id, is_private, COALESCE(current_media_url, ''), created_at, updated_at
+		FROM rooms
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all rooms: %w", err)
+	}
+	defer rows.Close()
+
+	var rooms []*domain.Room
+	for rows.Next() {
+		room := &domain.Room{}
+		if err := rows.Scan(&room.ID, &room.Name, &room.OwnerID, &room.IsPrivate, &room.CurrentMediaURL, &room.CreatedAt, &room.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan room: %w", err)
+		}
+		rooms = append(rooms, room)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return r.attachMembers(ctx, rooms)
+}
+
+// attachMembers loads the members of every listed room in one query.
+func (r *postgresRoomRepository) attachMembers(ctx context.Context, rooms []*domain.Room) ([]*domain.Room, error) {
 	if len(rooms) == 0 {
 		return []*domain.Room{}, nil
 	}
@@ -457,3 +493,28 @@ func (r *postgresRoomRepository) DeleteRoom(ctx context.Context, roomID string) 
 	return nil
 }
 
+// DeleteRooms removes the given rooms and everything that cascades from them in
+// one statement. IDs that match no room are skipped rather than failing the rest.
+func (r *postgresRoomRepository) DeleteRooms(ctx context.Context, roomIDs []string) ([]string, error) {
+	if len(roomIDs) == 0 {
+		return []string{}, nil
+	}
+	rows, err := r.db.Query(ctx, `DELETE FROM rooms WHERE id = ANY($1::uuid[]) RETURNING id`, roomIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete rooms: %w", err)
+	}
+	defer rows.Close()
+
+	deleted := make([]string, 0, len(roomIDs))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan deleted room: %w", err)
+		}
+		deleted = append(deleted, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to delete rooms: %w", err)
+	}
+	return deleted, nil
+}

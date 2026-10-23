@@ -31,6 +31,10 @@ type RoomService interface {
 	GetRoomByID(ctx context.Context, roomID string) (*domain.Room, error)
 	UpdateRoomMediaURL(ctx context.Context, roomID, mediaURL string) error
 	DeleteRoom(ctx context.Context, roomID, requesterID string) error
+	// ListAllRooms and DeleteRoomsAsAdmin back the admin portal; the caller is
+	// responsible for checking the requester is an administrator.
+	ListAllRooms(ctx context.Context) ([]*domain.Room, error)
+	DeleteRoomsAsAdmin(ctx context.Context, roomIDs []string) ([]string, error)
 	LeaveRoom(ctx context.Context, roomID, userID string) error
 }
 
@@ -322,7 +326,59 @@ func (s *roomService) DeleteRoom(ctx context.Context, roomID, requesterID string
 	if room.OwnerID != requesterID {
 		return ErrPermissionDenied
 	}
-	return s.repo.DeleteRoom(ctx, roomID)
+	members := s.membersOf(ctx, []string{roomID})
+	if err := s.repo.DeleteRoom(ctx, roomID); err != nil {
+		return err
+	}
+	s.forgetRooms(ctx, []string{roomID}, members)
+	return nil
+}
+
+func (s *roomService) ListAllRooms(ctx context.Context) ([]*domain.Room, error) {
+	return s.repo.ListAllRooms(ctx)
+}
+
+// DeleteRoomsAsAdmin deletes rooms whoever owns them, public or private, and
+// returns the IDs that were actually deleted (unknown IDs are skipped).
+func (s *roomService) DeleteRoomsAsAdmin(ctx context.Context, roomIDs []string) ([]string, error) {
+	members := s.membersOf(ctx, roomIDs)
+	deleted, err := s.repo.DeleteRooms(ctx, roomIDs)
+	if err != nil {
+		return nil, err
+	}
+	s.forgetRooms(ctx, deleted, members)
+	return deleted, nil
+}
+
+// membersOf collects who belongs to each room before it is deleted, since the
+// cascade takes the membership rows with it. Best effort: a room whose members
+// cannot be read is still deleted, and its cached verifications expire on their own.
+func (s *roomService) membersOf(ctx context.Context, roomIDs []string) map[string][]*domain.RoomMember {
+	if s.stateRepo == nil {
+		return nil
+	}
+	out := make(map[string][]*domain.RoomMember, len(roomIDs))
+	for _, id := range roomIDs {
+		if members, err := s.repo.ListRoomMembers(ctx, id); err == nil {
+			out[id] = members
+		}
+	}
+	return out
+}
+
+// forgetRooms drops what Redis remembers about deleted rooms: their playback
+// state, and the cached membership checks that would otherwise keep relaying
+// events from people still connected to them.
+func (s *roomService) forgetRooms(ctx context.Context, roomIDs []string, members map[string][]*domain.RoomMember) {
+	if s.stateRepo == nil {
+		return
+	}
+	for _, id := range roomIDs {
+		_ = s.stateRepo.ClearPlaybackState(ctx, id)
+		for _, m := range members[id] {
+			_ = s.stateRepo.InvalidateMemberVerification(ctx, id, m.UserID)
+		}
+	}
 }
 
 func (s *roomService) LeaveRoom(ctx context.Context, roomID, userID string) error {

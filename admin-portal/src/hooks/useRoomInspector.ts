@@ -257,9 +257,9 @@ export function useRoomInspector(liveRooms?: RoomTelemetry[]): UseRoomInspectorR
     }
 
     try {
-      // The backend has no /admin/rooms route; room deletion is the owner-scoped
-      // DELETE /rooms/{id} endpoint registered in backend/internal/api/router.go.
-      const res = await apiFetch(`/rooms/${roomId}`, { method: "DELETE" })
+      // The admin route deletes whoever owns the room; the owner-scoped
+      // DELETE /rooms/{id} refused every room the admin did not own.
+      const res = await apiFetch(`/admin/rooms/${encodeURIComponent(roomId)}`, { method: "DELETE" })
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
       setError(null)
       setRooms(prev => prev.filter(r => r.room_id !== roomId))

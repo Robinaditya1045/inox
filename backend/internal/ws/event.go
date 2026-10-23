@@ -54,6 +54,10 @@ const (
 	// SET_RATE changes a VOD room's playback speed. It carries the sender's
 	// playhead so the room realigns at the moment the speed changes.
 	EventSetRate EventType = "SET_RATE"
+
+	// ROOM_CLOSED tells everyone still in a room that it was deleted; the hub
+	// closes their connections right after sending it.
+	EventRoomClosed EventType = "ROOM_CLOSED"
 )
 
 // Event represents a standardized real-time message exchanged over WebSocket connections.

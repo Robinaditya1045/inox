@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/domain"
 	"github.com/inox/inox/backend/internal/room"
+
+	"github.com/google/uuid"
 )
 
 // ActivitySource reports which rooms are in use right now. The WebSocket hub
@@ -24,9 +27,19 @@ type ActivitySource interface {
 // decoration: a list without it is better than a slow list.
 const activityTimeout = 300 * time.Millisecond
 
+// RoomCloser disconnects everyone still in a room that has been deleted. The
+// WebSocket hub satisfies it.
+type RoomCloser interface {
+	CloseRoom(roomID string)
+}
+
+// maxAdminRoomDeletes bounds one bulk delete request.
+const maxAdminRoomDeletes = 500
+
 type RoomHandler struct {
 	roomService room.RoomService
 	activity    ActivitySource
+	closer      RoomCloser
 }
 
 func NewRoomHandler(roomService room.RoomService) *RoomHandler {
@@ -37,6 +50,21 @@ func NewRoomHandler(roomService room.RoomService) *RoomHandler {
 // are watching. Optional: without it rooms are listed with no activity.
 func (h *RoomHandler) SetActivitySource(src ActivitySource) {
 	h.activity = src
+}
+
+// SetRoomCloser lets room deletion turn out the people still connected to the
+// room. Optional: without it they stay connected until they leave.
+func (h *RoomHandler) SetRoomCloser(c RoomCloser) {
+	h.closer = c
+}
+
+func (h *RoomHandler) closeRooms(roomIDs []string) {
+	if h.closer == nil {
+		return
+	}
+	for _, id := range roomIDs {
+		h.closer.CloseRoom(id)
+	}
 }
 
 type createRoomRequest struct {
@@ -348,5 +376,93 @@ func (h *RoomHandler) DeleteRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.closeRooms([]string{roomID})
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "room deleted successfully"})
+}
+
+// AdminListRooms lists every room, public and private, with who is in it now.
+func (h *RoomHandler) AdminListRooms(w http.ResponseWriter, r *http.Request) {
+	rooms, err := h.roomService.ListAllRooms(r.Context())
+	if err != nil {
+		slog.Error("admin room list failed", "error", err)
+		respond.WriteError(w, http.StatusInternalServerError, "failed to list rooms")
+		return
+	}
+	h.attachActivity(r.Context(), rooms)
+	respond.WriteJSON(w, http.StatusOK, rooms)
+}
+
+// AdminDeleteRoom deletes one room whoever owns it.
+func (h *RoomHandler) AdminDeleteRoom(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("id")
+	if _, err := uuid.Parse(roomID); err != nil {
+		respond.WriteError(w, http.StatusNotFound, "room not found")
+		return
+	}
+	deleted, err := h.adminDelete(r.Context(), []string{roomID})
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to delete room")
+		return
+	}
+	if len(deleted) == 0 {
+		respond.WriteError(w, http.StatusNotFound, "room not found")
+		return
+	}
+	respond.WriteJSON(w, http.StatusOK, map[string][]string{"deleted": deleted})
+}
+
+type adminDeleteRoomsRequest struct {
+	RoomIDs []string `json:"room_ids"`
+}
+
+// AdminDeleteRooms deletes several rooms at once. IDs that match no room are
+// skipped; the response lists the rooms that were deleted.
+func (h *RoomHandler) AdminDeleteRooms(w http.ResponseWriter, r *http.Request) {
+	var req adminDeleteRoomsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.RoomIDs) == 0 {
+		respond.WriteError(w, http.StatusBadRequest, "room_ids is required")
+		return
+	}
+	if len(req.RoomIDs) > maxAdminRoomDeletes {
+		respond.WriteError(w, http.StatusBadRequest, fmt.Sprintf("at most %d rooms can be deleted at once", maxAdminRoomDeletes))
+		return
+	}
+	ids := make([]string, 0, len(req.RoomIDs))
+	seen := make(map[string]bool, len(req.RoomIDs))
+	for _, id := range req.RoomIDs {
+		if _, err := uuid.Parse(id); err != nil {
+			respond.WriteError(w, http.StatusBadRequest, fmt.Sprintf("%q is not a room ID", id))
+			return
+		}
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+
+	deleted, err := h.adminDelete(r.Context(), ids)
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to delete rooms")
+		return
+	}
+	respond.WriteJSON(w, http.StatusOK, map[string][]string{"deleted": deleted})
+}
+
+func (h *RoomHandler) adminDelete(ctx context.Context, roomIDs []string) ([]string, error) {
+	deleted, err := h.roomService.DeleteRoomsAsAdmin(ctx, roomIDs)
+	if err != nil {
+		slog.Error("admin room delete failed", "error", err, "rooms", len(roomIDs))
+		return nil, err
+	}
+	var adminID string
+	if session, ok := middleware.GetSessionFromContext(ctx); ok {
+		adminID = session.UserID
+	}
+	slog.Info("rooms deleted by admin", "admin_id", adminID, "rooms", deleted)
+	h.closeRooms(deleted)
+	return deleted, nil
 }

@@ -76,6 +76,14 @@ func (m *mockRoomService) LeaveRoom(ctx context.Context, roomID, userID string) 
 	return nil
 }
 
+func (m *mockRoomService) ListAllRooms(ctx context.Context) ([]*domain.Room, error) {
+	return []*domain.Room{}, nil
+}
+
+func (m *mockRoomService) DeleteRoomsAsAdmin(ctx context.Context, roomIDs []string) ([]string, error) {
+	return roomIDs, nil
+}
+
 func TestCreateRoomHTTPHandler(t *testing.T) {
 	mockSvc := &mockRoomService{}
 	roomHandler := handler.NewRoomHandler(mockSvc)
@@ -185,5 +193,93 @@ func TestListRoomsStillServesWhenActivityFails(t *testing.T) {
 	}
 	if _, present := rooms[0]["activity"]; present {
 		t.Errorf("expected no activity when the source fails, got %+v", rooms[0]["activity"])
+	}
+}
+
+// adminDeleteService deletes only the rooms it knows about and records what it
+// was asked to delete.
+type adminDeleteService struct {
+	mockRoomService
+	existing map[string]bool
+	asked    []string
+}
+
+func (s *adminDeleteService) DeleteRoomsAsAdmin(ctx context.Context, roomIDs []string) ([]string, error) {
+	s.asked = roomIDs
+	deleted := []string{}
+	for _, id := range roomIDs {
+		if s.existing[id] {
+			deleted = append(deleted, id)
+		}
+	}
+	return deleted, nil
+}
+
+type fakeRoomCloser struct{ closed []string }
+
+func (f *fakeRoomCloser) CloseRoom(roomID string) { f.closed = append(f.closed, roomID) }
+
+const (
+	roomA = "7d1c6f4e-8c1a-4a55-9a43-2b1f0f2b9e10"
+	roomB = "0b5e1d0a-3f2c-4e7b-8d9a-6c1e2f3a4b5c"
+	roomC = "f1e2d3c4-b5a6-4789-8a0b-1c2d3e4f5a6b"
+)
+
+func TestAdminDeleteRoomsSkipsUnknownAndClosesDeleted(t *testing.T) {
+	svc := &adminDeleteService{existing: map[string]bool{roomA: true, roomB: true}}
+	closer := &fakeRoomCloser{}
+	h := handler.NewRoomHandler(svc)
+	h.SetRoomCloser(closer)
+
+	body, _ := json.Marshal(map[string]any{"room_ids": []string{roomA, roomB, roomA, roomC}})
+	rec := httptest.NewRecorder()
+	h.AdminDeleteRooms(rec, httptest.NewRequest("POST", "/api/v1/admin/rooms/delete", bytes.NewReader(body)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if len(svc.asked) != 3 {
+		t.Errorf("service asked to delete %v, want the 3 distinct IDs", svc.asked)
+	}
+	var resp struct {
+		Deleted []string `json:"deleted"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Deleted) != 2 || len(closer.closed) != 2 {
+		t.Errorf("deleted %v, closed %v; want rooms A and B in both", resp.Deleted, closer.closed)
+	}
+}
+
+func TestAdminDeleteRoomsRejectsBadInput(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty":    `{"room_ids":[]}`,
+		"not uuid": `{"room_ids":["` + roomA + `","../etc"]}`,
+		"garbage":  `nope`,
+	} {
+		svc := &adminDeleteService{}
+		h := handler.NewRoomHandler(svc)
+		rec := httptest.NewRecorder()
+		h.AdminDeleteRooms(rec, httptest.NewRequest("POST", "/api/v1/admin/rooms/delete", bytes.NewReader([]byte(body))))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", name, rec.Code)
+		}
+		if svc.asked != nil {
+			t.Errorf("%s: nothing should have been deleted, service got %v", name, svc.asked)
+		}
+	}
+}
+
+func TestAdminDeleteRoomNotFound(t *testing.T) {
+	h := handler.NewRoomHandler(&adminDeleteService{})
+	for _, id := range []string{roomC, "not-a-uuid"} {
+		req := httptest.NewRequest("DELETE", "/api/v1/admin/rooms/"+id, nil)
+		req.SetPathValue("id", id)
+		rec := httptest.NewRecorder()
+		h.AdminDeleteRoom(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", id, rec.Code)
+		}
 	}
 }

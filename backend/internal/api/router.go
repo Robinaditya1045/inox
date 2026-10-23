@@ -164,6 +164,13 @@ func NewRouter(
 			mux.Handle("GET /api/v1/admin/telemetry/ws", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(adminHandler.ServeTelemetryWS))))
 		}
 
+		// Admin room management: every room, public or private, whoever owns it.
+		if roomHandler != nil {
+			mux.Handle("GET /api/v1/admin/rooms", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(roomHandler.AdminListRooms))))
+			mux.Handle("DELETE /api/v1/admin/rooms/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(roomHandler.AdminDeleteRoom))))
+			mux.Handle("POST /api/v1/admin/rooms/delete", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(roomHandler.AdminDeleteRooms))))
+		}
+
 		// Protected Admin Media Endpoints (requires authenticated session and system admin privileges)
 		if mediaHandler != nil {
 			mux.Handle("POST /api/v1/admin/media/upload", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Upload))))

@@ -27,6 +27,7 @@ export type WSEventType =
   | "QUEUE_CLEAR"
   | "QUEUE_STATE"
   | "SET_RATE"
+  | "ROOM_CLOSED"
   | "ERROR";
 
 export interface WSMessage<T = unknown> {

@@ -114,6 +114,25 @@ func (m *mockRoomRepository) DeleteRoom(ctx context.Context, roomID string) erro
 	return nil
 }
 
+func (m *mockRoomRepository) ListAllRooms(ctx context.Context) ([]*domain.Room, error) {
+	rooms := make([]*domain.Room, 0, len(m.rooms))
+	for _, r := range m.rooms {
+		rooms = append(rooms, r)
+	}
+	return rooms, nil
+}
+
+func (m *mockRoomRepository) DeleteRooms(ctx context.Context, roomIDs []string) ([]string, error) {
+	deleted := []string{}
+	for _, id := range roomIDs {
+		if _, ok := m.rooms[id]; ok {
+			delete(m.rooms, id)
+			deleted = append(deleted, id)
+		}
+	}
+	return deleted, nil
+}
+
 func TestRoomCreationAndRBACWorkflow(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRoomRepository()

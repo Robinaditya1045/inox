@@ -4,7 +4,6 @@ import { AppLayout } from "@/components/layout/AppLayout"
 import { PageBody, PageHeader } from "@/components/layout/PageHeader"
 import { UploadDialog } from "@/components/content/UploadDialog"
 import { LiveChannelCenter } from "@/components/live/LiveChannelCenter"
-import { RoomCommandCenter } from "@/components/rooms/RoomCommandCenter"
 import { ToastProvider } from "@/components/ui/toast"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DashboardPage } from "@/pages/DashboardPage"
@@ -12,9 +11,10 @@ import { ContentPage } from "@/pages/ContentPage"
 import { VideoLayout } from "@/pages/VideoLayout"
 import { VideoDetailsPage } from "@/pages/VideoDetailsPage"
 import { VideoCaptionsPage } from "@/pages/VideoCaptionsPage"
+import { RoomsPage } from "@/pages/RoomsPage"
 import { useTelemetryStream } from "@/hooks/useTelemetryStream"
 import { useMediaCatalog } from "@/hooks/useMediaCatalog"
-import { CatalogContext, StudioActionsContext, TelemetryContext, useTelemetry, type StudioActions } from "@/lib/contexts"
+import { CatalogContext, StudioActionsContext, TelemetryContext, type StudioActions } from "@/lib/contexts"
 
 export function App() {
   // The telemetry stream lives here rather than inside a page. Pages mount and
@@ -59,16 +59,6 @@ function LivePage() {
     <PageBody wide>
       <PageHeader title="Live channels" description="Channels that resolve to a live HLS stream rooms can tune into." className="mb-6" />
       <LiveChannelCenter />
-    </PageBody>
-  )
-}
-
-function RoomsPage() {
-  const telemetry = useTelemetry()
-  return (
-    <PageBody wide>
-      <PageHeader title="Rooms" description="Watch parties, who is in them, and what they are playing." className="mb-6" />
-      <RoomCommandCenter liveRooms={telemetry.current?.rooms} />
     </PageBody>
   )
 }
