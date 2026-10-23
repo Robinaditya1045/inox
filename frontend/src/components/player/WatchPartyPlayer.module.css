@@ -557,6 +557,59 @@
   border-color: var(--color-border-strong);
 }
 
+/* With captions on, the CC badge reads as switched on */
+.captionsBtnOn {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+  background: var(--color-fill-active);
+}
+
+.captionsMenu {
+  min-width: 168px;
+}
+
+/* ── Captions ───────────────────────────────────────────────
+   Centred near the bottom of the picture, lifted clear of the control bar
+   while it is showing (the same clearance as the up-next card). */
+.captions {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--space-3) + 92px);
+  z-index: 5;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(88%, 52rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-0-5);
+  pointer-events: none;
+  text-align: center;
+  transition: bottom var(--duration-slow) var(--ease-out);
+}
+
+.container[data-controls="hidden"] .captions {
+  bottom: var(--space-8);
+}
+
+.captionLine {
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-media-scrim-strong);
+  color: var(--color-on-media);
+  font-size: clamp(var(--text-compact), 2.6vw, var(--text-title));
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* In fullscreen the picture is the whole screen; captions scale with it. */
+.container:fullscreen .captionLine {
+  font-size: clamp(var(--text-heading), 2.4vw, var(--text-display));
+}
+
 .bitrate {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;

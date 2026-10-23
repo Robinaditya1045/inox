@@ -9,6 +9,19 @@ export interface MediaRendition {
   created_at: string;
 }
 
+/** One language's caption track for a library video, served as WebVTT from `url`. */
+export interface MediaCaption {
+  id: string;
+  media_asset_id: string;
+  /** BCP 47 tag, e.g. "en" or "pt-BR" */
+  language: string;
+  label: string;
+  url: string;
+  cue_count: number;
+  /** The track to show when captions are turned on with no language chosen */
+  is_default: boolean;
+}
+
 export interface MediaAsset {
   id: string;
   /** "live" for a live channel's library entry; uploads are "vod" */
@@ -25,6 +38,7 @@ export interface MediaAsset {
   created_at: string;
   updated_at: string;
   renditions?: MediaRendition[];
+  captions?: MediaCaption[];
 }
 
 export interface PlaylistItem {

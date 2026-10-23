@@ -37,11 +37,15 @@ import {
   Check,
   Film,
   Gauge,
+  Captions,
   RotateCcw,
   RotateCw,
   SkipForward,
 } from "lucide-react";
 import { MediaPoster } from "../library/MediaPoster";
+import { CaptionOverlay } from "./CaptionOverlay";
+import { useCaptionCues, useCaptionTracks } from "../../hooks/useCaptionTracks";
+import { pickCaptionTrack } from "../../utils/captions";
 import styles from "./WatchPartyPlayer.module.css";
 
 interface WatchPartyPlayerProps {
@@ -96,6 +100,30 @@ const LIVE_PLAYLIST_POLICY: { default: LoaderConfig } = {
 
 const formatRate = (rate: number) => `${rate}×`;
 
+// Whether captions are on and in which language, per viewer rather than per
+// room: one person needing captions should not put them on everyone's screen.
+const CAPTIONS_KEY = "inox_captions";
+
+interface CaptionPreference {
+  on: boolean;
+  language: string | null;
+}
+
+function readCaptionPreference(): CaptionPreference {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CAPTIONS_KEY) ?? "null");
+    if (saved && typeof saved.on === "boolean") {
+      return {
+        on: saved.on,
+        language: typeof saved.language === "string" ? saved.language : null,
+      };
+    }
+  } catch {
+    /* unreadable or unavailable: start with captions off */
+  }
+  return { on: false, language: null };
+}
+
 export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   onOpenLibrary,
 }) => {
@@ -148,6 +176,24 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
   } = usePlayerSync();
 
   const isLive = kind === "live";
+
+  // Captions: library videos only; a live stream has no fixed timeline to time
+  // a track against.
+  const captionTracks = useCaptionTracks(isLive ? null : mediaUrl || null);
+  const [captionPref, setCaptionPref] = useState(readCaptionPreference);
+  const captionTrack = captionPref.on
+    ? pickCaptionTrack(captionTracks, captionPref.language)
+    : null;
+  const captionCues = useCaptionCues(captionTrack?.url ?? null);
+
+  const updateCaptionPref = useCallback((next: CaptionPreference) => {
+    setCaptionPref(next);
+    try {
+      localStorage.setItem(CAPTIONS_KEY, JSON.stringify(next));
+    } catch {
+      /* not remembered past this page */
+    }
+  }, []);
 
   // The queue's next video, while the room is on the queue's current one. A
   // video picked from outside the queue has nothing up next.
@@ -682,6 +728,12 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
       } else if (e.key === ">" || e.key === "<") {
         e.preventDefault();
         stepRate(e.key === ">" ? 1 : -1);
+      } else if (e.code === "KeyC" && captionTracks.length > 0) {
+        e.preventDefault();
+        updateCaptionPref({
+          on: !captionPref.on,
+          language: captionTrack?.language ?? captionPref.language,
+        });
       }
     };
 
@@ -689,7 +741,17 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
     if (!container) return;
     container.addEventListener("keydown", handleKeyDown);
     return () => container.removeEventListener("keydown", handleKeyDown);
-  }, [handlePlayClick, toggleMute, toggleFullscreen, handleSkip, stepRate]);
+  }, [
+    handlePlayClick,
+    toggleMute,
+    toggleFullscreen,
+    handleSkip,
+    stepRate,
+    captionTracks.length,
+    captionPref,
+    captionTrack,
+    updateCaptionPref,
+  ]);
 
   const setQualityLevel = (level: number) => {
     if (hlsRef.current) {
@@ -765,6 +827,13 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
         className={`${styles.video} ${canControl || isLive ? styles.videoClickable : ""}`}
         onClick={handlePlayClick}
         playsInline
+      />
+
+      <CaptionOverlay
+        videoRef={videoRef}
+        cues={captionCues}
+        className={styles.captions}
+        lineClassName={styles.captionLine}
       />
 
       {/* Centre overlay: one state at a time, error first */}
@@ -989,6 +1058,74 @@ export const WatchPartyPlayer: React.FC<WatchPartyPlayerProps> = ({
             </div>
 
             <div className={styles.cluster}>
+              {/* Captions, when the video has any. Per viewer, unlike speed.
+                  Not portalled, like the menus below, so it works in fullscreen. */}
+              {captionTracks.length > 0 && (
+                <DropdownMenu.Root modal={false}>
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      type="button"
+                      aria-label={
+                        captionTrack
+                          ? `Captions: ${captionTrack.label}`
+                          : "Captions off"
+                      }
+                      title="Captions (c)"
+                      className={`${styles.qualityBtn} ${captionTrack ? styles.captionsBtnOn : ""}`}
+                    >
+                      <Captions size={15} aria-hidden="true" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content
+                    className={`${menuStyles.content} ${styles.captionsMenu}`}
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                  >
+                    <DropdownMenu.Label className={menuStyles.label}>
+                      Captions
+                    </DropdownMenu.Label>
+                    <DropdownMenu.Item
+                      className={menuStyles.item}
+                      onSelect={() =>
+                        updateCaptionPref({
+                          on: false,
+                          language: captionPref.language,
+                        })
+                      }
+                    >
+                      <span className={menuStyles.itemLabel}>Off</span>
+                      {!captionTrack && (
+                        <span className={menuStyles.itemCheck}>
+                          <Check size={14} />
+                        </span>
+                      )}
+                    </DropdownMenu.Item>
+                    {captionTracks.map((track) => (
+                      <DropdownMenu.Item
+                        key={track.id}
+                        className={menuStyles.item}
+                        onSelect={() =>
+                          updateCaptionPref({
+                            on: true,
+                            language: track.language,
+                          })
+                        }
+                      >
+                        <span className={menuStyles.itemLabel}>
+                          {track.label}
+                        </span>
+                        {captionTrack?.id === track.id && (
+                          <span className={menuStyles.itemCheck}>
+                            <Check size={14} />
+                          </span>
+                        )}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              )}
+
               {/* Playback speed (VOD only). Not portalled, like the quality
                   menu below, so it still shows in fullscreen. */}
               {!isLive && (
