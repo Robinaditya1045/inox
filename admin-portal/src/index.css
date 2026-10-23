@@ -13,6 +13,11 @@
   --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
+  /* Surfaces, as utilities (bg-canvas, bg-surface): the page behind everything,
+     and the cards and panels on it. Same values as --background and --card. */
+  --color-canvas: #0a0a0a;
+  --color-surface: #111111;
+
   /* Motion — the same vocabulary as the viewer app (frontend/src/styles/theme.css):
      `ease-snappy` for things arriving, `ease-exit` for things leaving, and a
      handful of named entrances exposed as `animate-*` utilities. */

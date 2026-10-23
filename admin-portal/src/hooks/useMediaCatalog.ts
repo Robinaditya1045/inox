@@ -1,6 +1,15 @@
 import * as React from "react"
-import { apiFetch, apiJson, uploadWithProgress } from "@/lib/api"
-import type { MediaAsset, PresignedUploadResponse, RegisterMediaRequest } from "@/types/media"
+import { ApiError, apiFetch, apiJson, uploadWithProgress } from "@/lib/api"
+import { parseCaptions, serializeCaptions } from "@/lib/vtt"
+import type {
+  CaptionInput,
+  CaptionUpdate,
+  MediaAsset,
+  MediaCaption,
+  MediaDetailsUpdate,
+  PresignedUploadResponse,
+  RegisterMediaRequest,
+} from "@/types/media"
 
 export interface UseMediaCatalogResult {
   assets: MediaAsset[]
@@ -11,10 +20,38 @@ export interface UseMediaCatalogResult {
   uploadDirectS3: (file: File, title: string, description: string, onProgress?: (percent: number) => void) => Promise<MediaAsset>
   registerExternal: (req: RegisterMediaRequest) => Promise<MediaAsset>
   deleteMedia: (id: string) => Promise<void>
-  uploadThumbnail: (id: string, file: File) => Promise<void>
+  /** Replaces the poster with an image; the portal always sends a cropped JPEG. */
+  uploadThumbnail: (id: string, image: Blob) => Promise<MediaAsset>
+  updateDetails: (id: string, update: MediaDetailsUpdate) => Promise<MediaAsset>
+  /** Drops a custom poster; the backend captures a frame from the video instead. */
+  resetThumbnail: (id: string) => Promise<MediaAsset>
+  createCaption: (id: string, input: CaptionInput) => Promise<MediaCaption>
+  updateCaption: (id: string, captionId: string, update: CaptionUpdate) => Promise<MediaCaption>
+  deleteCaption: (id: string, captionId: string) => Promise<void>
+  /** One asset, for a deep link to a video that is not in the loaded list. */
+  fetchAsset: (id: string) => Promise<MediaAsset | null>
   refresh: () => Promise<void>
   toggleDemoMode: () => void
 }
+
+// The list endpoint caps a page at 100. The content table sorts, filters and
+// paginates client-side, so it needs the whole library rather than a page.
+const PAGE_SIZE = 100
+const MAX_PAGES = 50
+
+// Demo captions are served from data: URLs, which fetch() reads like any other.
+function vttDataUrl(vtt: string): string {
+  return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`
+}
+
+const DEMO_VTT = `WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+Welcome to the watch party.
+
+00:00:04.500 --> 00:00:08.000
+Captions added in the portal show up for everyone in the room.
+`
 
 const MOCK_ASSETS: MediaAsset[] = [
   {
@@ -29,6 +66,19 @@ const MOCK_ASSETS: MediaAsset[] = [
     created_by: "admin-robin",
     created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
     updated_at: new Date(Date.now() - 3600000 * 23).toISOString(),
+    captions: [
+      {
+        id: "cap-demo-en",
+        media_asset_id: "asset-cybp-01",
+        language: "en",
+        label: "English",
+        url: vttDataUrl(DEMO_VTT),
+        cue_count: 2,
+        is_default: true,
+        created_at: new Date(Date.now() - 3600000 * 20).toISOString(),
+        updated_at: new Date(Date.now() - 3600000 * 20).toISOString(),
+      },
+    ],
     renditions: [
       { id: "rend-1080p", media_asset_id: "asset-cybp-01", resolution: "1080p", bitrate_kbps: 4500, playlist_url: "https://cdn.inox.stream/hls/cyberpunk_trailer/stream_1080p.m3u8", created_at: new Date().toISOString() },
       { id: "rend-720p", media_asset_id: "asset-cybp-01", resolution: "720p", bitrate_kbps: 2500, playlist_url: "https://cdn.inox.stream/hls/cyberpunk_trailer/stream_720p.m3u8", created_at: new Date().toISOString() },
@@ -127,11 +177,17 @@ export function useMediaCatalog(): UseMediaCatalogResult {
 
     if (!silent) setIsLoading(true)
     try {
-      const data = await apiJson<MediaAsset[] | null>("/media?limit=50&offset=0")
+      const all: MediaAsset[] = []
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const data = await apiJson<MediaAsset[] | null>(`/media?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`)
+        const rows = Array.isArray(data) ? data : []
+        all.push(...rows)
+        if (rows.length < PAGE_SIZE) break
+      }
       // An empty catalog is a legitimate state; substituting mock rows here made
       // the table show assets that do not exist, whose delete/preview actions
       // then failed against the real API.
-      setAssets(Array.isArray(data) ? data : [])
+      setAssets(all)
       setError(null)
     } catch (err) {
       if (!silent) {
@@ -338,20 +394,182 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     setAssets(prev => prev.filter(a => a.id !== id))
   }, [])
 
+  const replaceAsset = React.useCallback((updated: MediaAsset) => {
+    setAssets(prev => prev.map(a => (a.id === updated.id ? { ...a, ...updated, captions: updated.captions } : a)))
+  }, [])
+
+  const fetchAsset = React.useCallback(async (id: string): Promise<MediaAsset | null> => {
+    if (isDemoModeRef.current) {
+      return assetsRef.current.find(a => a.id === id) ?? null
+    }
+    try {
+      return await apiJson<MediaAsset>(`/media/${encodeURIComponent(id)}`)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null
+      throw err
+    }
+  }, [])
+
+  // Caption changes can move the default flag between tracks, so the asset is
+  // re-read rather than patched locally.
+  const reloadAsset = React.useCallback(async (id: string) => {
+    const fresh = await fetchAsset(id)
+    if (fresh) replaceAsset(fresh)
+  }, [fetchAsset, replaceAsset])
+
   // Replaces an asset's poster with an uploaded image. Without one, the worker
   // captures a frame from the video itself.
-  const uploadThumbnail = React.useCallback(async (id: string, file: File): Promise<void> => {
+  const uploadThumbnail = React.useCallback(async (id: string, image: Blob): Promise<MediaAsset> => {
     if (isDemoModeRef.current) {
-      const url = URL.createObjectURL(file)
-      setAssets(prev => prev.map(a => (a.id === id ? { ...a, thumbnail_url: url } : a)))
-      return
+      const url = URL.createObjectURL(image)
+      const current = assetsRef.current.find(a => a.id === id)!
+      const updated = { ...current, thumbnail_url: url, updated_at: new Date().toISOString() }
+      replaceAsset(updated)
+      return updated
     }
 
     const formData = new FormData()
-    formData.append("file", file)
+    formData.append("file", image, image instanceof File ? image.name : "thumbnail.jpg")
     const updated = await uploadWithProgress<MediaAsset>(`/admin/media/${id}/thumbnail`, formData)
-    setAssets(prev => prev.map(a => (a.id === id ? { ...a, ...updated } : a)))
-  }, [])
+    // The upload response does not carry caption tracks; keep the ones we have.
+    const current = assetsRef.current.find(a => a.id === id)
+    const merged = { ...updated, captions: updated.captions ?? current?.captions }
+    replaceAsset(merged)
+    return merged
+  }, [replaceAsset])
+
+  const updateDetails = React.useCallback(async (id: string, update: MediaDetailsUpdate): Promise<MediaAsset> => {
+    if (isDemoModeRef.current) {
+      const current = assetsRef.current.find(a => a.id === id)!
+      const updated = { ...current, ...update, updated_at: new Date().toISOString() }
+      replaceAsset(updated)
+      return updated
+    }
+    const updated = await apiJson<MediaAsset>(`/admin/media/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    })
+    replaceAsset(updated)
+    return updated
+  }, [replaceAsset])
+
+  const resetThumbnail = React.useCallback(async (id: string): Promise<MediaAsset> => {
+    if (isDemoModeRef.current) {
+      const current = assetsRef.current.find(a => a.id === id)!
+      const updated = { ...current, thumbnail_url: "", updated_at: new Date().toISOString() }
+      replaceAsset(updated)
+      return updated
+    }
+    const updated = await apiJson<MediaAsset>(`/admin/media/${id}/thumbnail`, { method: "DELETE" })
+    replaceAsset(updated)
+    return updated
+  }, [replaceAsset])
+
+  const createCaption = React.useCallback(async (id: string, input: CaptionInput): Promise<MediaCaption> => {
+    if (isDemoModeRef.current) {
+      const text = input.file ? await input.file.text() : input.content ?? ""
+      const doc = parseCaptions(text)
+      const now = new Date().toISOString()
+      const current = assetsRef.current.find(a => a.id === id)!
+      const existing = current.captions?.find(c => c.language === input.language)
+      const caption: MediaCaption = {
+        id: existing?.id ?? `cap-demo-${Date.now()}`,
+        media_asset_id: id,
+        language: input.language,
+        label: input.label?.trim() || input.language,
+        url: vttDataUrl(serializeCaptions(doc)),
+        cue_count: doc.cues.length,
+        is_default: input.is_default ?? existing?.is_default ?? false,
+        created_at: existing?.created_at ?? now,
+        updated_at: now,
+      }
+      const others = (current.captions ?? [])
+        .filter(c => c.language !== input.language)
+        .map(c => (caption.is_default ? { ...c, is_default: false } : c))
+      replaceAsset({ ...current, captions: [...others, caption] })
+      return caption
+    }
+
+    let caption: MediaCaption
+    if (input.file) {
+      const form = new FormData()
+      form.append("language", input.language)
+      if (input.label) form.append("label", input.label)
+      if (input.is_default !== undefined) form.append("is_default", String(input.is_default))
+      form.append("file", input.file)
+      caption = await uploadWithProgress<MediaCaption>(`/admin/media/${id}/captions`, form)
+    } else {
+      caption = await apiJson<MediaCaption>(`/admin/media/${id}/captions`, {
+        method: "POST",
+        body: JSON.stringify({
+          language: input.language,
+          label: input.label,
+          content: input.content,
+          is_default: input.is_default,
+        }),
+      })
+    }
+    await reloadAsset(id)
+    return caption
+  }, [reloadAsset, replaceAsset])
+
+  const updateCaption = React.useCallback(async (id: string, captionId: string, update: CaptionUpdate): Promise<MediaCaption> => {
+    if (isDemoModeRef.current) {
+      const current = assetsRef.current.find(a => a.id === id)!
+      const existing = current.captions?.find(c => c.id === captionId)
+      if (!existing) throw new Error("caption track not found")
+      const text = update.file ? await update.file.text() : update.content
+      const doc = text !== undefined ? parseCaptions(text) : null
+      const caption: MediaCaption = {
+        ...existing,
+        language: update.language ?? existing.language,
+        label: update.label?.trim() || existing.label,
+        url: doc ? vttDataUrl(serializeCaptions(doc)) : existing.url,
+        cue_count: doc ? doc.cues.length : existing.cue_count,
+        is_default: update.is_default ?? existing.is_default,
+        updated_at: new Date().toISOString(),
+      }
+      const captions = (current.captions ?? []).map(c =>
+        c.id === captionId ? caption : caption.is_default && update.is_default ? { ...c, is_default: false } : c,
+      )
+      replaceAsset({ ...current, captions })
+      return caption
+    }
+
+    let caption: MediaCaption
+    if (update.file) {
+      // PUT with a multipart body: uploadWithProgress only POSTs, so this goes
+      // through apiFetch and leaves Content-Type for the browser to set.
+      const form = new FormData()
+      if (update.language) form.append("language", update.language)
+      if (update.label !== undefined) form.append("label", update.label)
+      if (update.is_default !== undefined) form.append("is_default", String(update.is_default))
+      form.append("file", update.file)
+      const res = await apiFetch(`/admin/media/${id}/captions/${captionId}`, { method: "PUT", body: form })
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Update failed: ${res.statusText}`)
+      caption = (await res.json()) as MediaCaption
+    } else {
+      caption = await apiJson<MediaCaption>(`/admin/media/${id}/captions/${captionId}`, {
+        method: "PUT",
+        body: JSON.stringify(update),
+      })
+    }
+    await reloadAsset(id)
+    return caption
+  }, [reloadAsset, replaceAsset])
+
+  const deleteCaption = React.useCallback(async (id: string, captionId: string): Promise<void> => {
+    if (isDemoModeRef.current) {
+      const current = assetsRef.current.find(a => a.id === id)!
+      replaceAsset({ ...current, captions: (current.captions ?? []).filter(c => c.id !== captionId) })
+      return
+    }
+    const res = await apiFetch(`/admin/media/${id}/captions/${captionId}`, { method: "DELETE" })
+    if (!res.ok && res.status !== 204) {
+      throw new Error((await res.text().catch(() => "")) || `Delete failed: ${res.statusText}`)
+    }
+    await reloadAsset(id)
+  }, [reloadAsset, replaceAsset])
 
   const toggleDemoMode = React.useCallback(() => {
     // Keep the updater pure and drive the reload from the resolved value, so
@@ -380,6 +598,12 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     registerExternal,
     deleteMedia,
     uploadThumbnail,
+    updateDetails,
+    resetThumbnail,
+    createCaption,
+    updateCaption,
+    deleteCaption,
+    fetchAsset,
     refresh: () => fetchAssets(false),
     toggleDemoMode,
   }

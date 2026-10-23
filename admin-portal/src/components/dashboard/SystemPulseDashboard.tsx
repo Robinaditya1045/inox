@@ -37,11 +37,11 @@ export function SystemPulseDashboard({ telemetry }: SystemPulseDashboardProps) {
     <div className="space-y-6 animate-enter">
       {/* Top Status & Mode Control Bar */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 rounded-xl border border-zinc-800 bg-gradient-to-r from-zinc-900/80 to-zinc-950/80 backdrop-blur-md">
-        <div className="flex items-center space-x-3">
-          <div className={`p-2 rounded-lg ${isConnected ? "bg-emerald-500/10 text-emerald-400" : isDemoMode ? "bg-amber-500/10 text-amber-400" : "bg-rose-500/10 text-rose-400"}`}>
+        <div className="flex min-w-0 items-center space-x-3">
+          <div className={`shrink-0 p-2 rounded-lg ${isConnected ? "bg-emerald-500/10 text-emerald-400" : isDemoMode ? "bg-amber-500/10 text-amber-400" : "bg-rose-500/10 text-rose-400"}`}>
             {isConnected ? <Wifi className="h-5 w-5 animate-pulse" /> : isDemoMode ? <Zap className="h-5 w-5" /> : <ShieldAlert className="h-5 w-5" />}
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center space-x-2">
               <span className="font-semibold text-white text-sm">
                 {isConnected ? "LIVE WEBSOCKET STREAM" : isDemoMode ? "DEMO SIMULATION MODE" : "DISCONNECTED"}
@@ -52,7 +52,7 @@ export function SystemPulseDashboard({ telemetry }: SystemPulseDashboardProps) {
                 {isConnected ? "0.5Hz LIVE" : isDemoMode ? "5Hz SIMULATED" : "OFFLINE"}
               </Badge>
             </div>
-            <p className="text-xs font-mono text-zinc-400 mt-0.5">
+            <p className="text-xs font-mono text-zinc-400 mt-0.5 break-all">
               {isDemoMode
                 ? "Backend offline or unreachable. Streaming simulated RED/USE ticks."
                 : `Streaming from ${TELEMETRY_ENDPOINT}`}

@@ -92,3 +92,22 @@ export function cn(...classes: (string | undefined | null | false | Record<strin
 
   return result.join(" ")
 }
+
+/**
+ * Joins class names without the deduplication `cn` does. `cn` buckets classes
+ * by prefix, so it drops one of e.g. `text-center text-[13px]` (both land in
+ * "text-other"); new components use this and spell out what they mean.
+ */
+export function cx(...classes: (string | false | null | undefined)[]): string {
+  return classes.filter(Boolean).join(" ")
+}
+
+/** Copies text, resolving to whether it worked (clipboard needs a secure context). */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}

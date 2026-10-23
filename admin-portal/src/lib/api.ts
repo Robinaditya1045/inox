@@ -121,6 +121,22 @@ export class ApiError extends Error {
 }
 
 /**
+ * A sentence to show for a failed request. The backend answers errors with
+ * `{"error": "..."}`, which ApiError carries verbatim; this unwraps it.
+ */
+export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : ""
+  if (!raw) return fallback
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown }
+    if (parsed && typeof parsed.error === "string" && parsed.error) return parsed.error
+  } catch {
+    /* not JSON: already a sentence */
+  }
+  return raw
+}
+
+/**
  * fetch() wrapper that attaches the API base URL and the session credentials
  * the backend's RequireAuth middleware expects.
  */
