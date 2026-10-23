@@ -52,6 +52,10 @@ func NewRouter(
 		// Public Media Endpoints (read-only, no auth required for streaming)
 		mux.HandleFunc("GET /api/v1/media", mediaHandler.List)
 		mux.HandleFunc("GET /api/v1/media/{id}", mediaHandler.GetByID)
+		// Looked up by the URL a room is playing, not by asset ID: that URL is all
+		// a room knows. (A /media/{id}/captions route would also collide with the
+		// /media/stream/ prefix below.)
+		mux.HandleFunc("GET /api/v1/media/captions", mediaHandler.CaptionsForMedia)
 
 		// Direct HTTP byte-range stream endpoint for locally stored media assets and HLS segments
 		mux.HandleFunc("PUT /media/stream/upload-direct", mediaHandler.UploadDirectLocal)
@@ -168,6 +172,11 @@ func NewRouter(
 			mux.Handle("POST /api/v1/admin/media/register", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Register))))
 			mux.Handle("DELETE /api/v1/admin/media/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.Delete))))
 			mux.Handle("POST /api/v1/admin/media/{id}/thumbnail", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.UploadThumbnail))))
+			mux.Handle("DELETE /api/v1/admin/media/{id}/thumbnail", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.ResetThumbnail))))
+			mux.Handle("PATCH /api/v1/admin/media/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.UpdateDetails))))
+			mux.Handle("POST /api/v1/admin/media/{id}/captions", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.CreateCaption))))
+			mux.Handle("PUT /api/v1/admin/media/{id}/captions/{caption_id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.UpdateCaption))))
+			mux.Handle("DELETE /api/v1/admin/media/{id}/captions/{caption_id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(mediaHandler.DeleteCaption))))
 		}
 
 		// Protected Admin Live Channel Endpoints

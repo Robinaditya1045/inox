@@ -81,6 +81,10 @@ func (s *LocalStorage) GetFile(ctx context.Context, key string) (io.ReadCloser, 
 		contentType = "image/jpeg"
 	case ".png":
 		contentType = "image/png"
+	case ".webp":
+		contentType = "image/webp"
+	case ".vtt":
+		contentType = "text/vtt; charset=utf-8"
 	}
 
 	return file, contentType, nil

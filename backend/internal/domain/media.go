@@ -35,6 +35,22 @@ type MediaAsset struct {
 	CreatedAt       time.Time         `json:"created_at"`
 	UpdatedAt       time.Time         `json:"updated_at"`
 	Renditions      []*MediaRendition `json:"renditions,omitempty"`
+	Captions        []*MediaCaption   `json:"captions,omitempty"`
+}
+
+// MediaCaption is one language's caption track for a video, stored as WebVTT.
+type MediaCaption struct {
+	ID           string `json:"id"`
+	MediaAssetID string `json:"media_asset_id"`
+	// Language is a BCP 47 tag such as "en" or "pt-BR".
+	Language   string    `json:"language"`
+	Label      string    `json:"label"`
+	URL        string    `json:"url"`
+	StorageKey string    `json:"-"`
+	CueCount   int       `json:"cue_count"`
+	IsDefault  bool      `json:"is_default"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type MediaRendition struct {

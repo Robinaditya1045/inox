@@ -28,38 +28,49 @@ func NewMediaHandler(service media.Service, streamBaseURL string) *MediaHandler 
 	return &MediaHandler{service: service, streamBaseURL: streamBaseURL}
 }
 
+// publicURL rewrites a stored URL that names MinIO's local address to the
+// stream base browsers can reach.
+func (h *MediaHandler) publicURL(u string) string {
+	if u == "" || h.streamBaseURL == "" {
+		return u
+	}
+	base := strings.TrimSuffix(h.streamBaseURL, "/")
+	for _, prefix := range []string{
+		"http://localhost:9000/inox-media",
+		"http://127.0.0.1:9000/inox-media",
+		"http://localhost:9000",
+		"http://127.0.0.1:9000",
+	} {
+		if strings.HasPrefix(u, prefix) {
+			clean := strings.TrimPrefix(u, prefix)
+			clean = strings.TrimPrefix(clean, "/")
+			return fmt.Sprintf("%s/%s", base, clean)
+		}
+	}
+	return u
+}
+
 func (h *MediaHandler) NormalizeAsset(asset *domain.MediaAsset) *domain.MediaAsset {
 	if asset == nil || h.streamBaseURL == "" {
 		return asset
 	}
-	base := strings.TrimSuffix(h.streamBaseURL, "/")
-	replaceURL := func(u string) string {
-		if u == "" {
-			return u
-		}
-		for _, prefix := range []string{
-			"http://localhost:9000/inox-media",
-			"http://127.0.0.1:9000/inox-media",
-			"http://localhost:9000",
-			"http://127.0.0.1:9000",
-		} {
-			if strings.HasPrefix(u, prefix) {
-				clean := strings.TrimPrefix(u, prefix)
-				clean = strings.TrimPrefix(clean, "/")
-				return fmt.Sprintf("%s/%s", base, clean)
-			}
-		}
-		return u
+	asset.SourceURL = h.publicURL(asset.SourceURL)
+	asset.HLSMasterURL = h.publicURL(asset.HLSMasterURL)
+	asset.ThumbnailURL = h.publicURL(asset.ThumbnailURL)
+	for _, r := range asset.Renditions {
+		r.PlaylistURL = h.publicURL(r.PlaylistURL)
 	}
-	asset.SourceURL = replaceURL(asset.SourceURL)
-	asset.HLSMasterURL = replaceURL(asset.HLSMasterURL)
-	asset.ThumbnailURL = replaceURL(asset.ThumbnailURL)
-	if asset.Renditions != nil {
-		for _, r := range asset.Renditions {
-			r.PlaylistURL = replaceURL(r.PlaylistURL)
-		}
+	for _, c := range asset.Captions {
+		h.normalizeCaption(c)
 	}
 	return asset
+}
+
+func (h *MediaHandler) normalizeCaption(c *domain.MediaCaption) *domain.MediaCaption {
+	if c != nil {
+		c.URL = h.publicURL(c.URL)
+	}
+	return c
 }
 
 type registerMediaReq struct {
@@ -407,11 +418,13 @@ func (h *MediaHandler) StreamProxy(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp2t")
 	} else if strings.HasSuffix(key, ".mp4") {
 		w.Header().Set("Content-Type", "video/mp4")
+	} else if strings.HasSuffix(key, ".vtt") {
+		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	}
 
-	// Posters are stored under a fresh key each time one is replaced, so they can
-	// be cached as long as segments.
-	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") || strings.HasPrefix(key, "thumbs/") {
+	// Posters and caption tracks are stored under a fresh key each time one is
+	// replaced, so they can be cached as long as segments.
+	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") || strings.HasPrefix(key, "thumbs/") || strings.HasPrefix(key, "captions/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -419,4 +432,183 @@ func (h *MediaHandler) StreamProxy(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, reader)
+}
+
+type updateDetailsReq struct {
+	Title        *string `json:"title"`
+	Description  *string `json:"description"`
+	ThumbnailURL *string `json:"thumbnail_url"`
+}
+
+// UpdateDetails edits a video's title, description, or points its poster at an
+// image link. Fields left out of the body are left as they are.
+func (h *MediaHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
+	var req updateDetailsReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	asset, err := h.service.UpdateDetails(r.Context(), r.PathValue("id"), media.DetailsUpdate{
+		Title:        req.Title,
+		Description:  req.Description,
+		ThumbnailURL: req.ThumbnailURL,
+	})
+	if err != nil {
+		writeMediaError(w, err)
+		return
+	}
+	respond.WriteJSON(w, http.StatusOK, h.NormalizeAsset(asset))
+}
+
+// ResetThumbnail drops a video's custom poster in favour of a captured frame.
+func (h *MediaHandler) ResetThumbnail(w http.ResponseWriter, r *http.Request) {
+	asset, err := h.service.ResetThumbnail(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeMediaError(w, err)
+		return
+	}
+	respond.WriteJSON(w, http.StatusOK, h.NormalizeAsset(asset))
+}
+
+// CaptionsForMedia lists the caption tracks of the library video at ?url=, the
+// URL a room is playing. Rooms only know what they play by URL, and a pasted
+// link to a library video should get its captions too.
+func (h *MediaHandler) CaptionsForMedia(w http.ResponseWriter, r *http.Request) {
+	captions, err := h.service.CaptionsForMediaURL(r.Context(), r.URL.Query().Get("url"))
+	if err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, c := range captions {
+		h.normalizeCaption(c)
+	}
+	respond.WriteJSON(w, http.StatusOK, captions)
+}
+
+type captionReq struct {
+	Language  *string `json:"language"`
+	Label     *string `json:"label"`
+	Content   *string `json:"content"`
+	IsDefault *bool   `json:"is_default"`
+}
+
+// readCaptionRequest accepts a caption track either as a multipart upload (a
+// .vtt or .srt "file" plus form fields) or as JSON carrying the text itself,
+// which is what the portal's caption editor sends.
+func readCaptionRequest(w http.ResponseWriter, r *http.Request) (captionReq, []byte, error) {
+	var req captionReq
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		r.Body = http.MaxBytesReader(w, r.Body, media.MaxCaptionBytes+(1<<20))
+		if err := r.ParseMultipartForm(media.MaxCaptionBytes + (1 << 20)); err != nil {
+			return req, nil, errors.New("caption file too large or malformed (2 MB max)")
+		}
+		for field, dst := range map[string]**string{"language": &req.Language, "label": &req.Label} {
+			if vals, ok := r.MultipartForm.Value[field]; ok && len(vals) > 0 {
+				v := vals[0]
+				*dst = &v
+			}
+		}
+		if v := r.FormValue("is_default"); v != "" {
+			b := v == "true" || v == "1" || v == "on"
+			req.IsDefault = &b
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			return req, nil, nil
+		}
+		defer file.Close()
+		content, err := io.ReadAll(io.LimitReader(file, media.MaxCaptionBytes+1))
+		if err != nil {
+			return req, nil, errors.New("failed to read caption file")
+		}
+		return req, content, nil
+	}
+
+	// JSON escaping can double the size of the text it carries.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*media.MaxCaptionBytes)).Decode(&req); err != nil {
+		return req, nil, errors.New("invalid request payload")
+	}
+	if req.Content != nil {
+		return req, []byte(*req.Content), nil
+	}
+	return req, nil, nil
+}
+
+// CreateCaption adds a language's caption track to a video, or replaces the
+// track it already has in that language.
+func (h *MediaHandler) CreateCaption(w http.ResponseWriter, r *http.Request) {
+	req, content, err := readCaptionRequest(w, r)
+	if err != nil {
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Language == nil || content == nil {
+		respond.WriteError(w, http.StatusBadRequest, "language and a caption file or content are required")
+		return
+	}
+	label := ""
+	if req.Label != nil {
+		label = *req.Label
+	}
+	caption, err := h.service.SaveCaption(r.Context(), r.PathValue("id"), media.CaptionInput{
+		Language:  *req.Language,
+		Label:     label,
+		Content:   content,
+		IsDefault: req.IsDefault,
+	})
+	if err != nil {
+		writeMediaError(w, err)
+		return
+	}
+	respond.WriteJSON(w, http.StatusCreated, h.normalizeCaption(caption))
+}
+
+// UpdateCaption renames a track, changes its language or default flag, or
+// replaces its cues.
+func (h *MediaHandler) UpdateCaption(w http.ResponseWriter, r *http.Request) {
+	req, content, err := readCaptionRequest(w, r)
+	if err != nil {
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	caption, err := h.service.UpdateCaption(r.Context(), r.PathValue("id"), r.PathValue("caption_id"), media.CaptionUpdate{
+		Language:  req.Language,
+		Label:     req.Label,
+		Content:   content,
+		IsDefault: req.IsDefault,
+	})
+	if err != nil {
+		writeMediaError(w, err)
+		return
+	}
+	respond.WriteJSON(w, http.StatusOK, h.normalizeCaption(caption))
+}
+
+// DeleteCaption removes a track and its stored file.
+func (h *MediaHandler) DeleteCaption(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.DeleteCaption(r.Context(), r.PathValue("id"), r.PathValue("caption_id")); err != nil {
+		writeMediaError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeMediaError maps the media service's validation and lookup errors onto
+// status codes; anything else is the server's fault.
+func writeMediaError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, media.ErrInvalidDetails),
+		errors.Is(err, media.ErrInvalidCaptions),
+		errors.Is(err, media.ErrInvalidCaptionTrack),
+		errors.Is(err, media.ErrInvalidLanguage):
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, media.ErrLiveCaptions),
+		errors.Is(err, media.ErrCaptionLanguageTaken):
+		respond.WriteError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, media.ErrCaptionNotFound),
+		strings.Contains(err.Error(), "not found"):
+		respond.WriteError(w, http.StatusNotFound, err.Error())
+	default:
+		respond.WriteError(w, http.StatusInternalServerError, err.Error())
+	}
 }

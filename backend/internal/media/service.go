@@ -27,6 +27,13 @@ type Service interface {
 	ReconcileOrphanedAssets(ctx context.Context)
 	UploadThumbnail(ctx context.Context, assetID string, reader io.Reader, size int64, contentType string) (*domain.MediaAsset, error)
 	BackfillThumbnails(ctx context.Context)
+	UpdateDetails(ctx context.Context, assetID string, upd DetailsUpdate) (*domain.MediaAsset, error)
+	ResetThumbnail(ctx context.Context, assetID string) (*domain.MediaAsset, error)
+
+	CaptionsForMediaURL(ctx context.Context, mediaURL string) ([]*domain.MediaCaption, error)
+	SaveCaption(ctx context.Context, assetID string, in CaptionInput) (*domain.MediaCaption, error)
+	UpdateCaption(ctx context.Context, assetID, captionID string, in CaptionUpdate) (*domain.MediaCaption, error)
+	DeleteCaption(ctx context.Context, assetID, captionID string) error
 }
 
 // ErrUnsupportedThumbnail rejects a poster upload that is not a web image format.
@@ -175,14 +182,24 @@ func (s *mediaService) CompleteDirectUpload(ctx context.Context, assetID string,
 	return s.repo.GetAssetByID(ctx, assetID)
 }
 
-// GetMediaByID retrieves an asset and its multi-bitrate HLS renditions.
+// GetMediaByID retrieves an asset with its HLS renditions and caption tracks.
 func (s *mediaService) GetMediaByID(ctx context.Context, id string) (*domain.MediaAsset, error) {
-	return s.repo.GetAssetByID(ctx, id)
+	asset, err := s.repo.GetAssetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.attachCaptions(ctx, []*domain.MediaAsset{asset})
+	return asset, nil
 }
 
-// ListMedia returns paginated media library items.
+// ListMedia returns paginated media library items with their caption tracks.
 func (s *mediaService) ListMedia(ctx context.Context, limit, offset int) ([]*domain.MediaAsset, error) {
-	return s.repo.ListAssets(ctx, limit, offset)
+	assets, err := s.repo.ListAssets(ctx, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	s.attachCaptions(ctx, assets)
+	return assets, nil
 }
 
 // DeleteMedia removes an asset from PostgreSQL and purges its stored objects.
@@ -191,11 +208,16 @@ func (s *mediaService) DeleteMedia(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// Read before the delete: the rows go with the asset, and with them the keys.
+	captions, _ := s.repo.ListCaptions(ctx, id)
 	if err := s.repo.DeleteAsset(ctx, id); err != nil {
 		return err
 	}
 	// Attempt to delete stored object from MinIO / local storage
 	_ = s.storage.DeleteFile(ctx, filepath.Base(asset.SourceURL))
+	for _, c := range captions {
+		_ = s.storage.DeleteFile(ctx, c.StorageKey)
+	}
 	return nil
 }
 
@@ -230,7 +252,7 @@ func (s *mediaService) ReconcileOrphanedAssets(ctx context.Context) {
 
 	for _, asset := range assets {
 		key := extractStorageKey(asset.SourceURL)
-		
+
 		// Check if the underlying file exists in object storage
 		reader, _, err := s.storage.GetFile(ctx, key)
 		if err != nil {
