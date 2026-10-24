@@ -58,6 +58,27 @@ const (
 	// ROOM_CLOSED tells everyone still in a room that it was deleted; the hub
 	// closes their connections right after sending it.
 	EventRoomClosed EventType = "ROOM_CLOSED"
+
+	// PRESENCE is the server's list of who is connected to a room right now. It
+	// goes to the whole room whenever that list may have changed, so a client
+	// replaces its copy rather than patching it from JOIN_ROOM/LEAVE_ROOM, which
+	// fire per connection (a second tab closing is not its owner leaving) and miss
+	// connections evicted for a full send buffer.
+	EventPresence EventType = "PRESENCE"
+
+	// REMOVED_FROM_ROOM tells someone whose membership was just taken away --
+	// kicked, or left from another tab -- that they are out. The hub closes
+	// their connections to the room right after sending it, since a socket
+	// outlives the membership it was opened with.
+	EventRemovedFromRoom EventType = "REMOVED_FROM_ROOM"
+)
+
+// RemovalReason says why someone was removed from a room.
+type RemovalReason string
+
+const (
+	RemovalKicked RemovalReason = "kicked"
+	RemovalLeft   RemovalReason = "left"
 )
 
 // Event represents a standardized real-time message exchanged over WebSocket connections.
@@ -156,6 +177,26 @@ type LiveLeaderPayload struct {
 type LiveStatusPayload struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
+}
+
+// PresencePayload lists everyone connected to a room, one entry per person
+// however many tabs they have open.
+type PresencePayload struct {
+	Users []PresenceUser `json:"users"`
+}
+
+// PresenceUser is one connected person. Role is what they connected with; it
+// lets a client place someone who joined after it loaded the member list
+// until it fetches that list again.
+type PresenceUser struct {
+	UserID   string      `json:"user_id"`
+	Username string      `json:"username"`
+	Role     domain.Role `json:"role,omitempty"`
+}
+
+// RemovedFromRoomPayload carries why a REMOVED_FROM_ROOM notice was sent.
+type RemovedFromRoomPayload struct {
+	Reason RemovalReason `json:"reason"`
 }
 
 // ChatPayload represents a room text chat message.

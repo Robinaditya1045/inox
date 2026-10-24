@@ -5,10 +5,18 @@ import type {
   RoomRole,
   RoomPermissions,
   RoomInvitation,
+  WSPresenceUser,
 } from "../types";
 
 export interface RoomContextValue {
   activeRoom: Room | null;
+  /**
+   * Everyone connected to the active room right now, from the server's PRESENCE
+   * list. Null until it arrives.
+   */
+  onlineUsers: WSPresenceUser[] | null;
+  /** Re-read the active room's member list (roles, joins, departures). */
+  refreshMembers: () => Promise<void>;
   rooms: Room[];
   invitations: RoomInvitation[];
   userRole: RoomRole | null;

@@ -43,19 +43,17 @@ func TestHubRoomBroadcastingAndTargetedSignaling(t *testing.T) {
 	hub.Register <- alice
 	hub.Register <- bob
 
-	// Draining initial JOIN_ROOM and SYNC_PLAYBACK notification events
-	readEventWithin(t, alice.Send, 500*time.Millisecond) // Alice joined notification
-	readEventWithin(t, alice.Send, 500*time.Millisecond) // Alice SYNC_PLAYBACK notification
-	readEventWithin(t, alice.Send, 500*time.Millisecond) // Bob joined notification sent to Alice
-	readEventWithin(t, bob.Send, 500*time.Millisecond)   // Bob joined notification sent to Bob
-	readEventWithin(t, bob.Send, 500*time.Millisecond)   // Bob SYNC_PLAYBACK notification
+	// Drain the join notices, presence lists and SYNC_PLAYBACK. Bob's join is the
+	// last thing Alice is sent, and his SYNC_PLAYBACK the last thing he is.
+	awaitEvent(t, alice.Send, ws.EventSyncPlayback, 500*time.Millisecond)
+	awaitPresence(t, alice.Send, alice.UserID, bob.UserID)
+	awaitEvent(t, bob.Send, ws.EventSyncPlayback, 500*time.Millisecond)
 
 	// Register Charlie
 	hub.Register <- charlie
-	readEventWithin(t, alice.Send, 500*time.Millisecond)   // Charlie joined -> Alice
-	readEventWithin(t, bob.Send, 500*time.Millisecond)     // Charlie joined -> Bob
-	readEventWithin(t, charlie.Send, 500*time.Millisecond) // Charlie joined -> Charlie
-	readEventWithin(t, charlie.Send, 500*time.Millisecond) // Charlie SYNC_PLAYBACK notification
+	awaitPresence(t, alice.Send, alice.UserID, bob.UserID, charlie.UserID)
+	awaitPresence(t, bob.Send, alice.UserID, bob.UserID, charlie.UserID)
+	awaitEvent(t, charlie.Send, ws.EventSyncPlayback, 500*time.Millisecond)
 
 	// 3. Test Room Broadcast (Video Play Command)
 	playEvt := &ws.Event{
@@ -96,6 +94,8 @@ func TestHubRoomBroadcastingAndTargetedSignaling(t *testing.T) {
 	hub.Unregister <- alice
 	verifyEventType(t, readEventWithin(t, bob.Send, 500*time.Millisecond), ws.EventLeaveRoom)
 	verifyEventType(t, readEventWithin(t, charlie.Send, 500*time.Millisecond), ws.EventLeaveRoom)
+	awaitPresence(t, bob.Send, bob.UserID, charlie.UserID)
+	awaitPresence(t, charlie.Send, bob.UserID, charlie.UserID)
 }
 
 func readEventWithin(t *testing.T, ch <-chan []byte, timeout time.Duration) *ws.Event {

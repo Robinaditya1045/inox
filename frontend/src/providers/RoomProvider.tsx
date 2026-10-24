@@ -15,6 +15,8 @@ import type {
   CreateRoomRequest,
   RoomRole,
   RoomInvitation,
+  WSPresencePayload,
+  WSPresenceUser,
 } from "../types";
 import { useAuth } from "../hooks/useAuth";
 import { logger } from "../utils/logger";
@@ -24,6 +26,15 @@ import { wsService } from "../services/ws/ws.service";
 interface RoomProviderProps {
   children: ReactNode;
 }
+
+interface RoomPresence {
+  roomId: string;
+  users: WSPresenceUser[];
+}
+
+// Joins and leaves tend to come in bursts (a reload is a leave and a join), so
+// the member list is fetched once things settle rather than once per change.
+const MEMBER_REFRESH_DELAY_MS = 500;
 
 export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
@@ -40,6 +51,74 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   // Guards against out-of-order joins: a slow join for room A must not overwrite
   // a later, faster join for room B.
   const joinSeqRef = useRef(0);
+
+  // Who is connected to a room right now, from the server's PRESENCE list. It
+  // lives here rather than in the member list because the server only sends it
+  // when someone arrives or leaves, so a component mounted afterwards would
+  // never hear it.
+  const [presence, setPresence] = useState<RoomPresence | null>(null);
+  const activeRoomRef = useRef(activeRoom);
+  useEffect(() => {
+    activeRoomRef.current = activeRoom;
+  }, [activeRoom]);
+
+  // Re-reads the active room's member list. The result is dropped if the user
+  // has moved to another room in the meantime.
+  const refreshMembers = useCallback(async () => {
+    const roomId = activeRoomRef.current?.id;
+    if (!roomId) return;
+    const updated = await roomService.getRoom(roomId);
+    setActiveRoom((current) =>
+      current?.id === updated.id ? updated : current,
+    );
+  }, []);
+
+  useEffect(() => {
+    let previous: RoomPresence | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Other people's membership changes reach this client only as presence:
+    // someone new joined, or someone left (perhaps the room itself, which should
+    // take them off the list rather than leave them showing offline).
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        refreshMembers().catch((err) =>
+          logger.warn("RoomProvider: Failed to refresh members", { err }),
+        );
+      }, MEMBER_REFRESH_DELAY_MS);
+    };
+
+    const unsubscribe = wsService.on("PRESENCE", (msg) => {
+      const users = (msg.payload as WSPresencePayload | undefined)?.users;
+      if (!msg.room_id || !users) return;
+      const next = { roomId: msg.room_id, users };
+      const prior = previous?.roomId === next.roomId ? previous : null;
+      previous = next;
+      setPresence(next);
+
+      const room = activeRoomRef.current;
+      if (!room || room.id !== next.roomId) return;
+      const memberIds = new Set(room.members?.map((m) => m.user_id));
+      const onlineIds = new Set(users.map((u) => u.user_id));
+      const arrived = users.some((u) => !memberIds.has(u.user_id));
+      const departed = !!prior?.users.some((u) => !onlineIds.has(u.user_id));
+      if (arrived || departed) scheduleRefresh();
+    });
+
+    return () => {
+      unsubscribe();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [refreshMembers]);
+
+  // Null until the server has said who is here, so callers can tell "nobody
+  // else is online" from "not known yet".
+  const onlineUsers =
+    presence && activeRoom && presence.roomId === activeRoom.id
+      ? presence.users
+      : null;
 
   const clearRoomError = useCallback(() => {
     setRoomError(null);
@@ -174,15 +253,18 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     }
     joinSeqRef.current++;
     setIsLoadingRoom(true);
+    // Hang up before telling the server, which closes every connection the
+    // user still has to the room with a "you left" notice meant for their
+    // other tabs, not this one.
+    wsService.disconnect();
     try {
-      await roomService.kickMember(activeRoom.id, user.id);
+      await roomService.leaveRoom(activeRoom.id);
       logger.info("RoomProvider: Left room successfully", {
         roomId: activeRoom.id,
       });
     } catch (err) {
       logger.warn("RoomProvider: Error while leaving room", { err });
     } finally {
-      wsService.disconnect();
       setActiveRoom(null);
       setIsLoadingRoom(false);
       await refreshRooms();
@@ -297,6 +379,8 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
   const value = {
     activeRoom,
+    onlineUsers,
+    refreshMembers,
     rooms,
     invitations,
     userRole,

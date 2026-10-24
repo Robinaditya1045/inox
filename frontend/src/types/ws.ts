@@ -1,4 +1,5 @@
 import type { RemoteTrackKind } from "./rtc";
+import type { RoomRole } from "./room";
 
 export type WSEventType =
   | "JOIN_ROOM"
@@ -28,6 +29,8 @@ export type WSEventType =
   | "QUEUE_STATE"
   | "SET_RATE"
   | "ROOM_CLOSED"
+  | "PRESENCE"
+  | "REMOVED_FROM_ROOM"
   | "ERROR";
 
 export interface WSMessage<T = unknown> {
@@ -43,6 +46,31 @@ export interface WSMessage<T = unknown> {
 export interface WSJoinPayload {
   sender_id: string;
   sender_name: string;
+}
+
+/** One person connected to the room, however many tabs they have open. */
+export interface WSPresenceUser {
+  user_id: string;
+  username: string;
+  /** What they connected with; the member list is the authority on roles. */
+  role?: RoomRole;
+}
+
+/**
+ * PRESENCE: everyone connected to the room right now. Sent whenever that may
+ * have changed, so it replaces the previous list rather than patching it.
+ */
+export interface WSPresencePayload {
+  users: WSPresenceUser[];
+}
+
+/**
+ * REMOVED_FROM_ROOM: this user's membership was just taken away. The server
+ * closes the socket right after sending it.
+ */
+export interface WSRemovedFromRoomPayload {
+  /** "left" when they left from another tab. */
+  reason: "kicked" | "left";
 }
 
 export type MediaKind = "vod" | "live";

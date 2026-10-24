@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/domain"
+	"github.com/inox/inox/backend/internal/room"
+	"github.com/inox/inox/backend/internal/ws"
 )
 
 type mockRoomService struct{}
@@ -281,5 +284,53 @@ func TestAdminDeleteRoomNotFound(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404", id, rec.Code)
 		}
+	}
+}
+
+type fakeMemberRemover struct{ removed []string }
+
+func (f *fakeMemberRemover) RemoveMember(roomID, userID string, reason ws.RemovalReason) {
+	f.removed = append(f.removed, roomID+"/"+userID+"/"+string(reason))
+}
+
+// kickRefusingService refuses every kick, as for a member without the right.
+type kickRefusingService struct{ mockRoomService }
+
+func (s *kickRefusingService) KickMember(ctx context.Context, roomID, requesterID, targetUserID string) error {
+	return room.ErrPermissionDenied
+}
+
+func memberRequest(method, path, roomID, targetID, asUser string) *http.Request {
+	req := httptest.NewRequest(method, path, nil)
+	req.SetPathValue("id", roomID)
+	if targetID != "" {
+		req.SetPathValue("user_id", targetID)
+	}
+	return req.WithContext(middleware.WithSessionContext(req.Context(), &domain.Session{UserID: asUser}))
+}
+
+// A socket outlives the membership it was opened with, so kicking or leaving has
+// to tell the hub to close it; a kick that was refused must leave it alone.
+func TestKickAndLeaveDisconnectTheMember(t *testing.T) {
+	remover := &fakeMemberRemover{}
+	h := handler.NewRoomHandler(&mockRoomService{})
+	h.SetMemberRemover(remover)
+
+	h.KickMember(httptest.NewRecorder(), memberRequest("DELETE", "/", roomA, "bob", "alice"))
+	h.KickMember(httptest.NewRecorder(), memberRequest("DELETE", "/", roomA, "carol", "carol"))
+	h.LeaveRoom(httptest.NewRecorder(), memberRequest("DELETE", "/", roomB, "", "dave"))
+
+	want := []string{roomA + "/bob/kicked", roomA + "/carol/left", roomB + "/dave/left"}
+	if !slices.Equal(remover.removed, want) {
+		t.Fatalf("removed %v, want %v", remover.removed, want)
+	}
+
+	refused := &fakeMemberRemover{}
+	h = handler.NewRoomHandler(&kickRefusingService{})
+	h.SetMemberRemover(refused)
+	rec := httptest.NewRecorder()
+	h.KickMember(rec, memberRequest("DELETE", "/", roomA, "bob", "alice"))
+	if rec.Code != http.StatusForbidden || len(refused.removed) != 0 {
+		t.Fatalf("refused kick: status %d, removed %v; want 403 and nobody disconnected", rec.Code, refused.removed)
 	}
 }

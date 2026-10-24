@@ -13,6 +13,7 @@ import (
 	"github.com/inox/inox/backend/internal/api/respond"
 	"github.com/inox/inox/backend/internal/domain"
 	"github.com/inox/inox/backend/internal/room"
+	"github.com/inox/inox/backend/internal/ws"
 
 	"github.com/google/uuid"
 )
@@ -33,6 +34,12 @@ type RoomCloser interface {
 	CloseRoom(roomID string)
 }
 
+// MemberRemover disconnects someone whose membership of a room was just taken
+// away. The WebSocket hub satisfies it.
+type MemberRemover interface {
+	RemoveMember(roomID, userID string, reason ws.RemovalReason)
+}
+
 // maxAdminRoomDeletes bounds one bulk delete request.
 const maxAdminRoomDeletes = 500
 
@@ -40,6 +47,7 @@ type RoomHandler struct {
 	roomService room.RoomService
 	activity    ActivitySource
 	closer      RoomCloser
+	remover     MemberRemover
 }
 
 func NewRoomHandler(roomService room.RoomService) *RoomHandler {
@@ -56,6 +64,18 @@ func (h *RoomHandler) SetActivitySource(src ActivitySource) {
 // room. Optional: without it they stay connected until they leave.
 func (h *RoomHandler) SetRoomCloser(c RoomCloser) {
 	h.closer = c
+}
+
+// SetMemberRemover lets kicking and leaving close the member's connections to
+// the room. Optional: without it they stay connected until they disconnect.
+func (h *RoomHandler) SetMemberRemover(m MemberRemover) {
+	h.remover = m
+}
+
+func (h *RoomHandler) removeMember(roomID, userID string, reason ws.RemovalReason) {
+	if h.remover != nil {
+		h.remover.RemoveMember(roomID, userID, reason)
+	}
 }
 
 func (h *RoomHandler) closeRooms(roomIDs []string) {
@@ -241,6 +261,13 @@ func (h *RoomHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A moderator can remove themselves this way; to them that is leaving.
+	reason := ws.RemovalKicked
+	if targetUserID == session.UserID {
+		reason = ws.RemovalLeft
+	}
+	h.removeMember(roomID, targetUserID, reason)
+
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "member kicked successfully"})
 }
 
@@ -354,6 +381,8 @@ func (h *RoomHandler) LeaveRoom(w http.ResponseWriter, r *http.Request) {
 		respond.WriteError(w, http.StatusInternalServerError, "failed to leave room")
 		return
 	}
+	// Their other tabs are still connected.
+	h.removeMember(roomID, session.UserID, ws.RemovalLeft)
 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "left room successfully"})
 }

@@ -119,6 +119,14 @@ export const roomService = {
     await apiClient.delete<void>(`/rooms/${roomId}/members/${userId}`);
   },
 
+  /** Give up your own membership. Not kickMember on yourself: kicking needs
+   *  the kick permission, which ordinary members don't have. Owners can't
+   *  leave; they delete the room instead. */
+  async leaveRoom(roomId: string): Promise<void> {
+    logger.info("RoomService: Leaving room", { roomId });
+    await apiClient.delete<void>(`/rooms/${roomId}/members/me`);
+  },
+
   async inviteUser(roomId: string, username: string): Promise<RoomInvitation> {
     logger.info("RoomService: Inviting user", { roomId, username });
     return apiClient.post<RoomInvitation>(`/rooms/${roomId}/invite`, {

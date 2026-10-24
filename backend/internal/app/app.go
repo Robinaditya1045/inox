@@ -102,6 +102,7 @@ func (a *App) Run() error {
 	roomHandler := handler.NewRoomHandler(roomService)
 	roomHandler.SetActivitySource(hub)
 	roomHandler.SetRoomCloser(hub)
+	roomHandler.SetMemberRemover(hub)
 	wsHandler := handler.NewWSHandler(hub)
 	chatHandler := handler.NewChatHandler(chatService)
 	adminHandler := handler.NewAdminHandler(telemetryHub)

@@ -237,6 +237,21 @@
   color: var(--color-text-muted);
 }
 
+/* Members who are not connected stay listed, as in Discord, but recede until
+   the row is hovered or focused, so the eye lands on who is actually here. */
+.offlineMember .idleAvatar,
+.offlineMember .memberDetails {
+  opacity: 0.45;
+  transition: opacity var(--transition-fast);
+}
+
+.offlineMember:hover .idleAvatar,
+.offlineMember:hover .memberDetails,
+.offlineMember:focus-within .idleAvatar,
+.offlineMember:focus-within .memberDetails {
+  opacity: 0.85;
+}
+
 /* Revealed on row hover or keyboard focus, like a message toolbar */
 .actionSlot {
   opacity: 0;

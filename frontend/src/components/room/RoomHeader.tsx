@@ -34,6 +34,8 @@ interface RoomHeaderProps {
   onOpenChannels?: () => void;
   mediaUrl?: string;
   memberCount?: number;
+  /** Members connected right now */
+  onlineCount?: number;
 }
 
 export type SidePanelTab = "members" | "chat";
@@ -66,6 +68,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
   onOpenChannels,
   mediaUrl,
   memberCount,
+  onlineCount,
 }) => {
   const { copied: copiedLink, copy: handleCopyInvite } = useInviteLink(
     activeRoom?.id,
@@ -78,6 +81,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
     topic = memberCount
       ? `${memberCount} member${memberCount === 1 ? "" : "s"}`
       : "";
+    if (memberCount && onlineCount) topic += ` · ${onlineCount} online`;
   } else if (activeChannel === "voice") {
     topic = "Voice & screen share";
   } else if (mediaUrl) {

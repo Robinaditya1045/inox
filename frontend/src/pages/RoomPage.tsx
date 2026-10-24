@@ -27,6 +27,7 @@ import { RoomHeader, type SidePanelTab } from "../components/room/RoomHeader";
 import { VoiceStage } from "../components/room/VoiceStage";
 import { MessageSquare, RotateCcw, ShieldAlert, Users, X } from "lucide-react";
 import { tabIds } from "../utils/tabs";
+import type { WSRemovedFromRoomPayload } from "../types/ws";
 import shellStyles from "../components/room/VideoRoomShell.module.css";
 import styles from "./RoomPage.module.css";
 
@@ -98,7 +99,7 @@ export const RoomPage: React.FC = () => {
   const { subscribe } = useRoomSocket(roomId);
   const rtc = useRTC(roomId);
   const { setMediaUrl, mediaUrl, isPlaying, playQueue } = usePlayerSync();
-  const { members } = usePresence();
+  const { members, onlineCount } = usePresence();
 
   useEffect(() => {
     if (!roomId) return;
@@ -124,6 +125,32 @@ export const RoomPage: React.FC = () => {
         description:
           "It no longer exists, so you've been taken back to the lobby.",
       });
+      navigate("/");
+    });
+  }, [subscribe, roomId, disconnectFromRoom, refreshRooms, toast, navigate]);
+
+  // Our membership was taken away: a moderator kicked us, or we left in another
+  // tab. As above, the server closes the socket next, so drop it first.
+  useEffect(() => {
+    return subscribe("REMOVED_FROM_ROOM", (msg) => {
+      if (msg.room_id && msg.room_id !== roomId) return;
+      const reason = (msg.payload as WSRemovedFromRoomPayload | undefined)
+        ?.reason;
+      disconnectFromRoom();
+      refreshRooms().catch(() => {});
+      toast(
+        reason === "left"
+          ? {
+              title: "You left this room",
+              description: "You left it in another tab or window.",
+            }
+          : {
+              tone: "danger",
+              title: "You were removed from this room",
+              description:
+                "A moderator removed you, so you've been taken back to the lobby.",
+            },
+      );
       navigate("/");
     });
   }, [subscribe, roomId, disconnectFromRoom, refreshRooms, toast, navigate]);
@@ -290,6 +317,7 @@ export const RoomPage: React.FC = () => {
             onOpenChannels={() => setIsChannelDrawerOpen(true)}
             mediaUrl={mediaUrl}
             memberCount={members.length}
+            onlineCount={onlineCount}
           />
 
           {activeChannel === "general" && (
@@ -372,8 +400,8 @@ export const RoomPage: React.FC = () => {
             </IconButton>
           </div>
 
-          {/* The member list stays mounted while chat is showing: it tracks joins
-              and leaves from the socket and would lose them if it unmounted. */}
+          {/* The member list stays mounted while chat is showing so it keeps its
+              invite draft and scroll position. */}
           <div
             className={shellStyles.panelBody}
             hidden={effectivePanelTab !== "members"}

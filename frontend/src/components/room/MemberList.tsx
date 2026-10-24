@@ -87,9 +87,10 @@ export const MemberList: React.FC = () => {
   };
 
   // Grouped the way a call-first client should read: who is in the call right
-  // now, then everyone else by role. Membership comes from the server's voice
-  // roster rather than from this client's own peer connection, which knows
-  // nothing about people it has no media for.
+  // now, then who else is here, then members who are away, each by role. Voice
+  // membership comes from the server's voice roster rather than from this
+  // client's own peer connection, which knows nothing about people it has no
+  // media for.
   const voiceState = new Map(voicePeers.map((peer) => [peer.userId, peer]));
 
   const inVoice = members.filter((m) => voiceState.has(m.user_id));
@@ -107,7 +108,16 @@ export const MemberList: React.FC = () => {
 
   const groups = [
     { key: "voice", label: "In Voice", members: inVoice },
-    { key: "room", label: "In Room", members: byRank },
+    {
+      key: "online",
+      label: "Online",
+      members: byRank.filter((m) => m.isOnline),
+    },
+    {
+      key: "offline",
+      label: "Offline",
+      members: byRank.filter((m) => !m.isOnline),
+    },
   ];
 
   return (
@@ -193,11 +203,14 @@ export const MemberList: React.FC = () => {
                     : member.role === "moderator"
                       ? styles.moderator
                       : "";
+                const presenceClass = member.isOnline
+                  ? ""
+                  : styles.offlineMember;
 
                 return (
                   <div
                     key={member.user_id}
-                    className={`${styles.memberItem} ${roleClass}`}
+                    className={`${styles.memberItem} ${roleClass} ${presenceClass}`}
                     style={stagger(i)}
                   >
                     <span
@@ -209,7 +222,7 @@ export const MemberList: React.FC = () => {
                         username={member.username}
                         src={isSelf ? user?.avatar_url : undefined}
                         size="sm"
-                        status="online"
+                        status={member.isOnline ? "online" : "offline"}
                       />
                     </span>
 
@@ -264,6 +277,9 @@ export const MemberList: React.FC = () => {
                       </span>
                       <span className={styles.roleText}>
                         {ROLE_LABEL[member.role]}
+                        {!member.isOnline && (
+                          <span className="sr-only">, offline</span>
+                        )}
                       </span>
                     </div>
 

@@ -77,6 +77,25 @@ type Hub struct {
 	// closeRequests carries the IDs of deleted rooms from HTTP handlers into the
 	// loop, which tells the people in them and disconnects them (see CloseRoom).
 	closeRequests chan string
+
+	// removeRequests carries members who were just kicked or left from HTTP
+	// handlers into the loop, which disconnects them (see RemoveMember).
+	removeRequests chan memberRemoval
+
+	// remoteEvents carries events that arrived over the Redis event bus into the
+	// loop. The bus reads each room's channel on a goroutine of its own, and
+	// delivering an event means walking h.rooms.
+	remoteEvents chan *Event
+
+	// inspectRequests lets the telemetry hub ask for per-room metrics, taken on
+	// the loop for the same reason as activityRequests.
+	inspectRequests chan chan []observability.RoomTelemetry
+}
+
+type memberRemoval struct {
+	roomID string
+	userID string
+	reason RemovalReason
 }
 
 // NewHub initializes a new Hub instance with buffered channels.
@@ -93,6 +112,9 @@ func NewHub() *Hub {
 		sfuSignals:        make(chan *Event, 256),
 		activityRequests:  make(chan chan map[string]domain.RoomActivity),
 		closeRequests:     make(chan string, 64),
+		removeRequests:    make(chan memberRemoval, 64),
+		remoteEvents:      make(chan *Event, 256),
+		inspectRequests:   make(chan chan []observability.RoomTelemetry),
 	}
 }
 
@@ -212,6 +234,15 @@ func (h *Hub) Run() {
 		case roomID := <-h.closeRequests:
 			h.dispatchEvent(&Event{Type: EventRoomClosed, RoomID: roomID, Timestamp: time.Now().UnixMilli()})
 
+		case removal := <-h.removeRequests:
+			h.dispatchEvent(removalEvent(removal))
+
+		case event := <-h.remoteEvents:
+			h.dispatchLocal(event)
+
+		case reply := <-h.inspectRequests:
+			reply <- h.snapshotTelemetry()
+
 		case <-h.Stop:
 			h.shutdownAll()
 			return
@@ -270,6 +301,7 @@ func (h *Hub) registerClient(client *Client) {
 		SenderName: client.Username,
 	}
 	h.dispatchEvent(joinEvt)
+	h.broadcastPresence(client.RoomID)
 
 	// A live room needs someone to follow before the newcomer is told where the room
 	// is, so that the sync payload below can name the leader.
@@ -369,6 +401,7 @@ func (h *Hub) unregisterClient(client *Client) {
 				SenderName: client.Username,
 			}
 			h.dispatchEvent(leaveEvt)
+			h.broadcastPresence(client.RoomID)
 		}
 	}
 }
@@ -470,6 +503,10 @@ func (h *Hub) dispatchLocal(event *Event) {
 
 	if event.Type == EventRoomClosed {
 		h.closeRoomLocal(event)
+		return
+	}
+	if event.Type == EventRemovedFromRoom {
+		h.removeMemberLocal(event)
 		return
 	}
 
@@ -587,6 +624,7 @@ func (h *Hub) dispatchLocal(event *Event) {
 		h.persistPlaybackState(event.RoomID)
 	}
 
+	evictedAny := false
 	for client := range roomClients {
 		// If event specifies a TargetID (e.g. peer-to-peer WebRTC SDP signaling), route only to that peer
 		if event.TargetID != "" && client.UserID != event.TargetID {
@@ -599,6 +637,7 @@ func (h *Hub) dispatchLocal(event *Event) {
 			// If client's send buffer is full, evict the slow/unresponsive connection
 			close(client.Send)
 			delete(roomClients, client)
+			evictedAny = true
 			observability.Global().IncWSEvictions()
 			observability.Global().DecActiveWSConnections()
 			// A leader with a full send buffer is exactly the client that gets
@@ -623,6 +662,13 @@ func (h *Hub) dispatchLocal(event *Event) {
 				h.releaseLiveLeadership(evicted)
 			}
 		}
+	}
+
+	// An evicted connection sends no LEAVE_ROOM, so this is the only way the
+	// rest of the room learns its owner may have gone. After the loop, because
+	// this fans out to the same clients again.
+	if evictedAny {
+		h.broadcastPresence(event.RoomID)
 	}
 
 	// After the media change itself, so clients have the new video before they
@@ -874,6 +920,66 @@ func (h *Hub) closeRoomLocal(event *Event) {
 	h.retireRoom(event.RoomID)
 }
 
+// RemoveMember disconnects someone from a room they are no longer a member of,
+// after telling them why. Safe to call from any goroutine. Without it a kicked
+// member's socket stays open: everything they send is refused, but they still
+// count as present and still receive the room's events.
+func (h *Hub) RemoveMember(roomID, userID string, reason RemovalReason) {
+	select {
+	case h.removeRequests <- memberRemoval{roomID: roomID, userID: userID, reason: reason}:
+	default:
+		slog.Warn("dropped member removal; hub queue full", "room_id", roomID, "user_id", userID)
+	}
+}
+
+// removalEvent is a server event, so with the Redis event bus it reaches every
+// process the member is connected to.
+func removalEvent(removal memberRemoval) *Event {
+	payload, _ := json.Marshal(RemovedFromRoomPayload{Reason: removal.reason})
+	return &Event{
+		Type:      EventRemovedFromRoom,
+		RoomID:    removal.roomID,
+		TargetID:  removal.userID,
+		Payload:   payload,
+		Timestamp: time.Now().UnixMilli(),
+	}
+}
+
+// removeMemberLocal closes every connection the removed member has to the room
+// on this process. Must only run on the hub loop.
+func (h *Hub) removeMemberLocal(event *Event) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("failed to serialize member removal notice", "error", err)
+		return
+	}
+	for client := range h.rooms[event.RoomID] {
+		if client.UserID != event.TargetID {
+			continue
+		}
+		// Queued ahead of the close, as in closeRoomLocal. unregisterClient then
+		// does what a disconnect does: hangs up their voice, hands on live
+		// leadership and tells the room who is left.
+		select {
+		case client.Send <- data:
+		default:
+		}
+		h.unregisterClient(client)
+	}
+}
+
+// deliverRemote hands an event from the Redis event bus to the loop. It waits
+// while the loop is busy, holding back that room's subscription rather than
+// dropping or reordering its events, and gives up once the subscription is
+// cancelled or the hub stops.
+func (h *Hub) deliverRemote(ctx context.Context, event *Event) {
+	select {
+	case h.remoteEvents <- event:
+	case <-ctx.Done():
+	case <-h.Stop:
+	}
+}
+
 // RoomActivity reports every room with someone connected to this process: how many
 // people are in it and what it is playing. Safe to call from any goroutine, since
 // the snapshot is taken on the hub's own loop. It gives up when ctx does, so a busy
@@ -922,11 +1028,42 @@ func (h *Hub) snapshotActivity() map[string]domain.RoomActivity {
 	return out
 }
 
-// InspectRooms satisfies the observability.RoomInspector interface to report active watch party metrics.
+// inspectTimeout bounds how long a telemetry snapshot waits on the hub. The
+// telemetry hub samples every two seconds, so a missed sample costs nothing.
+const inspectTimeout = time.Second
+
+// InspectRooms satisfies the observability.RoomInspector interface to report
+// active watch party metrics. The telemetry hub calls it from its own goroutine,
+// so, like RoomActivity, the snapshot is taken on the loop; a busy or stopped
+// hub yields no rooms rather than a hung sample.
 func (h *Hub) InspectRooms() []observability.RoomTelemetry {
+	ctx, cancel := context.WithTimeout(context.Background(), inspectTimeout)
+	defer cancel()
+	// Buffered so the loop never blocks replying to a caller that has given up.
+	reply := make(chan []observability.RoomTelemetry, 1)
+	select {
+	case h.inspectRequests <- reply:
+	case <-ctx.Done():
+		return nil
+	}
+	select {
+	case rooms := <-reply:
+		return rooms
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+// snapshotTelemetry must only run on the hub loop.
+func (h *Hub) snapshotTelemetry() []observability.RoomTelemetry {
 	var rooms []observability.RoomTelemetry
 	for roomID, clients := range h.rooms {
-		state := h.getOrCreatePlaybackState(roomID)
+		// Read directly, as snapshotActivity does: getOrCreatePlaybackState can
+		// reach Redis and Postgres, and a dashboard sample must not stall the loop.
+		state, ok := h.playbackStates[roomID]
+		if !ok {
+			state = &domain.RoomPlaybackState{}
+		}
 		sfuPeersCount := 0
 		if h.sfuManager != nil {
 			if sfuRoom, err := h.sfuManager.GetRoom(roomID); err == nil {

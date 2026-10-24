@@ -61,8 +61,10 @@ func (r *RedisEventBus) Subscribe(ctx context.Context, roomID string) {
 					continue
 				}
 
+				// Into the hub's loop, not straight to dispatchLocal: this goroutine
+				// must not touch the hub's rooms.
 				if r.hub != nil {
-					r.hub.dispatchLocal(&event)
+					r.hub.deliverRemote(ctx, &event)
 				}
 			}
 		}

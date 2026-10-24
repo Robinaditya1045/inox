@@ -22,7 +22,7 @@ func nextPlaybackEvent(t *testing.T, ch <-chan []byte) *ws.Event {
 				t.Fatalf("unmarshal event: %v", err)
 			}
 			switch evt.Type {
-			case ws.EventJoinRoom, ws.EventLeaveRoom, ws.EventSFUPeers:
+			case ws.EventJoinRoom, ws.EventLeaveRoom, ws.EventSFUPeers, ws.EventPresence:
 				continue
 			}
 			return &evt
@@ -42,7 +42,7 @@ func expectNoPlaybackEvent(t *testing.T, ch <-chan []byte) {
 		case data := <-ch:
 			var evt ws.Event
 			_ = json.Unmarshal(data, &evt)
-			if evt.Type == ws.EventJoinRoom || evt.Type == ws.EventLeaveRoom {
+			if evt.Type == ws.EventJoinRoom || evt.Type == ws.EventLeaveRoom || evt.Type == ws.EventPresence {
 				continue
 			}
 			t.Fatalf("expected no playback event, got %s %s", evt.Type, evt.Payload)
