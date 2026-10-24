@@ -10,6 +10,7 @@ function mapSessionToUser(data: any): User {
     id: data.user_id || data.id,
     username: data.username,
     email: data.email,
+    avatar_url: data.avatar_url || undefined,
     created_at: data.created_at || new Date().toISOString(),
   };
 }
@@ -45,6 +46,26 @@ export const authService = {
     } finally {
       localStorage.removeItem("inox_session_id");
     }
+  },
+
+  /** Uploads an image as the user's avatar and returns its URL. */
+  async uploadAvatar(image: Blob): Promise<string> {
+    const form = new FormData();
+    form.append("file", image, "avatar.jpg");
+    const response = await apiClient.postForm<{ avatar_url: string }>(
+      "/users/profile/avatar",
+      form,
+    );
+    return response.avatar_url;
+  },
+
+  /** Points the user's avatar at an image hosted elsewhere. */
+  async setAvatarLink(avatarUrl: string): Promise<void> {
+    await apiClient.put("/users/profile/avatar", { avatar_url: avatarUrl });
+  },
+
+  async removeAvatar(): Promise<void> {
+    await apiClient.delete("/users/profile/avatar");
   },
 
   async getCurrentUser(): Promise<User | null> {

@@ -107,9 +107,25 @@
   border: 1px solid var(--color-border-subtle);
 }
 
+/* Clicking (or dropping an image on) the avatar uploads a new one */
 .avatarPreview {
   position: relative;
   flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.avatarPreview:disabled {
+  cursor: progress;
+}
+
+.avatarPreview:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* The shared Avatar tops out at list sizes; the settings preview is larger */
@@ -118,6 +134,38 @@
   height: 80px;
   font-size: 1.75rem;
   box-shadow: 0 0 0 4px var(--color-canvas);
+  transition: filter var(--duration-fast) var(--ease-standard);
+}
+
+.avatarPreview:hover:not(:disabled) > div {
+  filter: brightness(0.8);
+}
+
+.avatarPreview[data-dragging] > div {
+  box-shadow:
+    0 0 0 4px var(--color-canvas),
+    0 0 0 6px var(--color-accent);
+}
+
+.avatarBusy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-backdrop);
+  color: var(--color-text-primary);
+}
+
+.avatarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.fileInput {
+  display: none;
 }
 
 .cameraBadge {
@@ -168,16 +216,6 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-}
-
-.saved {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-meta);
-  font-weight: 500;
-  color: var(--color-success);
-  animation: var(--animate-rise-in);
 }
 
 .errorBox {

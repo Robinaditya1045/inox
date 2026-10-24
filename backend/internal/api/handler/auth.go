@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 type AuthHandler struct {
 	authService auth.AuthService
+	avatars     *auth.AvatarService
 	isProd      bool
 }
 
@@ -24,6 +26,12 @@ func NewAuthHandler(authService auth.AuthService, isProd bool) *AuthHandler {
 		authService: authService,
 		isProd:      isProd,
 	}
+}
+
+// SetAvatarService enables avatar uploads and removal. Without it only linked
+// avatars can be set, and replacing an uploaded one leaves its file behind.
+func (h *AuthHandler) SetAvatarService(avatars *auth.AvatarService) {
+	h.avatars = avatars
 }
 
 type signupRequest struct {
@@ -167,7 +175,7 @@ type userResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// UpdateAvatar handles user profile avatar updates.
+// UpdateAvatar points the user's avatar at an image link.
 func (h *AuthHandler) UpdateAvatar(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		AvatarURL string `json:"avatar_url"`
@@ -183,12 +191,94 @@ func (h *AuthHandler) UpdateAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authService.UpdateAvatar(r.Context(), session.UserID, req.AvatarURL, session.ID); err != nil {
+	var err error
+	if h.avatars != nil {
+		err = h.avatars.SetLink(r.Context(), session.UserID, session.ID, req.AvatarURL)
+	} else {
+		err = h.authService.UpdateAvatar(r.Context(), session.UserID, req.AvatarURL, session.ID)
+	}
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidAvatarURL) {
+			respond.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		respond.WriteError(w, http.StatusInternalServerError, "failed to update avatar")
 		return
 	}
 
 	respond.WriteJSON(w, http.StatusOK, map[string]string{"message": "avatar updated successfully"})
+}
+
+// maxAvatarUpload caps an uploaded avatar. The viewer crops and downscales
+// before uploading, so real uploads are a small fraction of this.
+const maxAvatarUpload = 5 << 20 // 5 MB
+
+// UploadAvatar replaces the user's avatar with an uploaded image (multipart
+// field "file") and responds with its URL.
+func (h *AuthHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok || session == nil {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.avatars == nil {
+		respond.WriteError(w, http.StatusServiceUnavailable, "avatar uploads are unavailable")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarUpload)
+	if err := r.ParseMultipartForm(maxAvatarUpload); err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "avatar too large or malformed (5 MB max)")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		respond.WriteError(w, http.StatusBadRequest, "file parameter missing")
+		return
+	}
+	defer file.Close()
+
+	// Sniffed rather than taken from the part header, which is whatever the
+	// client claims and is what the stream proxy will later serve it as.
+	sniff := make([]byte, 512)
+	n, _ := io.ReadFull(file, sniff)
+	contentType := http.DetectContentType(sniff[:n])
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to read avatar")
+		return
+	}
+
+	avatarURL, err := h.avatars.Upload(r.Context(), session.UserID, session.ID, file, header.Size, contentType)
+	if err != nil {
+		if errors.Is(err, auth.ErrUnsupportedAvatar) {
+			respond.WriteError(w, http.StatusUnsupportedMediaType, err.Error())
+			return
+		}
+		slog.Error("failed to upload avatar", "user_id", session.UserID, "error", err)
+		respond.WriteError(w, http.StatusInternalServerError, "failed to upload avatar")
+		return
+	}
+
+	respond.WriteJSON(w, http.StatusOK, map[string]string{"avatar_url": avatarURL})
+}
+
+// RemoveAvatar clears the user's avatar, so clients fall back to initials.
+func (h *AuthHandler) RemoveAvatar(w http.ResponseWriter, r *http.Request) {
+	session, ok := middleware.GetSessionFromContext(r.Context())
+	if !ok || session == nil {
+		respond.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.avatars == nil {
+		respond.WriteError(w, http.StatusServiceUnavailable, "avatar removal is unavailable")
+		return
+	}
+
+	if err := h.avatars.Remove(r.Context(), session.UserID, session.ID); err != nil {
+		respond.WriteError(w, http.StatusInternalServerError, "failed to remove avatar")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ForgotPassword handles initiating the password reset flow.

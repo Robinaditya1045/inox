@@ -151,7 +151,7 @@ func (s *authService) UpdateAvatar(ctx context.Context, userID, avatarURL string
 	if avatarURL == "" {
 		return errors.New("avatar URL cannot be empty")
 	}
-	if err := s.userRepo.UpdateAvatar(ctx, userID, avatarURL); err != nil {
+	if err := s.userRepo.UpdateAvatar(ctx, userID, &avatarURL); err != nil {
 		return err
 	}
 	// Update session seamlessly

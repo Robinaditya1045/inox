@@ -158,7 +158,7 @@ func (m *mockUserRepository) Create(ctx context.Context, user *domain.User) erro
 func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	return nil, auth.ErrUserNotFound
 }
-func (m *mockUserRepository) UpdateAvatar(ctx context.Context, userID, avatarURL string) error {
+func (m *mockUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL *string) error {
 	return nil
 }
 func (m *mockUserRepository) CreatePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {

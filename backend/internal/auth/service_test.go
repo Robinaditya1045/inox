@@ -72,8 +72,14 @@ func (m *mockUserRepository) UpdatePassword(ctx context.Context, userID, passwor
 	return nil
 }
 
-func (m *mockUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL string) error {
-	return nil
+func (m *mockUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL *string) error {
+	for _, u := range m.users {
+		if u.ID == userID {
+			u.AvatarURL = avatarURL
+			return nil
+		}
+	}
+	return auth.ErrUserNotFound
 }
 
 // mockSessionStore implements auth.SessionStore in memory.

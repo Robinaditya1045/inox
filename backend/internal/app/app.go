@@ -133,6 +133,7 @@ func (a *App) Run() error {
 		}
 	}
 	mediaService := media.NewService(mediaRepo, storageSvc, mediaProcessor, queueClient)
+	authHandler.SetAvatarService(auth.NewAvatarService(userRepo, sessionStore, storageSvc, a.Config.MediaStreamBaseURL))
 	mediaHandler := handler.NewMediaHandler(mediaService, a.Config.MediaStreamBaseURL)
 	playlistService := playlist.NewService(playlist.NewRepository(a.DB), mediaRepo)
 	playlistHandler := handler.NewPlaylistHandler(playlistService, mediaHandler.NormalizeAsset)
