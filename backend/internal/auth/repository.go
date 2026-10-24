@@ -25,7 +25,7 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByUsername(ctx context.Context, username string) (*domain.User, error)
-	UpdateAvatar(ctx context.Context, userID string, avatarURL string) error
+	UpdateAvatar(ctx context.Context, userID string, avatarURL *string) error
 	CreatePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (string, error)
 	DeletePasswordResetToken(ctx context.Context, tokenHash string) error
@@ -153,8 +153,8 @@ func (r *postgresUserRepository) GetByUsername(ctx context.Context, username str
 	return &user, nil
 }
 
-// UpdateAvatar updates the user's avatar URL.
-func (r *postgresUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL string) error {
+// UpdateAvatar updates the user's avatar URL; nil clears it.
+func (r *postgresUserRepository) UpdateAvatar(ctx context.Context, userID string, avatarURL *string) error {
 	query := `
 		UPDATE users 
 		SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP

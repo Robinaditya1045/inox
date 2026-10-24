@@ -422,9 +422,9 @@ func (h *MediaHandler) StreamProxy(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	}
 
-	// Posters and caption tracks are stored under a fresh key each time one is
-	// replaced, so they can be cached as long as segments.
-	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") || strings.HasPrefix(key, "thumbs/") || strings.HasPrefix(key, "captions/") {
+	// Posters, caption tracks and avatars are stored under a fresh key each
+	// time one is replaced, so they can be cached as long as segments.
+	if strings.HasSuffix(key, ".ts") || strings.HasSuffix(key, ".mp4") || strings.HasPrefix(key, "thumbs/") || strings.HasPrefix(key, "captions/") || strings.HasPrefix(key, "avatars/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")

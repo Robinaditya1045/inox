@@ -1,14 +1,17 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal } from "../common/Modal";
 import { TextField } from "../common/TextField";
 import { Button } from "../common/Button";
 import { Avatar } from "../common/Avatar";
 import { EmptyState } from "../common/EmptyState";
+import { Spinner } from "../common/Spinner";
 import { useAuth } from "../../hooks/useAuth";
 import { useRoom } from "../../hooks/useRoom";
 import { useToast } from "../../hooks/useToast";
-import { apiClient as api, APIError } from "../../api/client";
+import { APIError } from "../../api/client";
+import { authService } from "../../services/auth/auth.service";
+import { cropAvatar, MAX_AVATAR_SOURCE_BYTES } from "../../utils/cropAvatar";
 import { tabIds } from "../../utils/tabs";
 import {
   User,
@@ -17,8 +20,9 @@ import {
   Shield,
   Image as ImageIcon,
   Camera,
-  Check,
   LogOut,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import styles from "./SettingsShell.module.css";
 
@@ -31,58 +35,176 @@ type SettingsTab = "profile" | "appearance" | "notifications" | "privacy";
 
 const TAB_PREFIX = "settings";
 
+const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
+
+type AvatarAction = "upload" | "link" | "remove";
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof APIError && err.message ? err.message : fallback;
+}
+
 const ProfileSettingsTab: React.FC = () => {
   const { user, mutateUser } = useAuth();
-  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
-  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [pending, setPending] = useState<AvatarAction | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!avatarUrl.trim() || avatarUrl === user?.avatar_url) return;
+  const setAvatar = (avatarUrl: string | undefined) => {
+    if (user) mutateUser({ ...user, avatar_url: avatarUrl });
+  };
 
-    setIsLoading(true);
+  const uploadFile = async (file: File) => {
+    if (pending) return;
     setError(null);
-    setSaved(false);
+    if (!file.type.startsWith("image/")) {
+      setError("Choose a PNG, JPEG, WebP or GIF image.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_SOURCE_BYTES) {
+      setError("That image is over 20 MB. Choose a smaller one.");
+      return;
+    }
 
+    setPending("upload");
     try {
-      await api.put("/users/profile/avatar", { avatar_url: avatarUrl });
-      if (mutateUser && user) {
-        mutateUser({ ...user, avatar_url: avatarUrl });
+      let image: Blob;
+      try {
+        image = await cropAvatar(file);
+      } catch {
+        setError("That file couldn't be read as an image.");
+        return;
       }
-      setSaved(true);
+      setAvatar(await authService.uploadAvatar(image));
+      toast({ tone: "success", title: "Avatar updated" });
     } catch (err) {
-      setError(
-        err instanceof APIError && err.message
-          ? err.message
-          : "Failed to update avatar",
-      );
+      setError(errorMessage(err, "Failed to upload avatar"));
     } finally {
-      setIsLoading(false);
+      setPending(null);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset so picking the same file again still fires a change.
+    e.target.value = "";
+    if (file) void uploadFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) void uploadFile(file);
+  };
+
+  const handleRemove = async () => {
+    setPending("remove");
+    setError(null);
+    try {
+      await authService.removeAvatar();
+      setAvatar(undefined);
+      toast({ title: "Avatar removed" });
+    } catch (err) {
+      setError(errorMessage(err, "Failed to remove avatar"));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const handleLinkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const link = linkUrl.trim();
+    if (!link || link === user?.avatar_url) return;
+
+    setPending("link");
+    setError(null);
+    try {
+      await authService.setAvatarLink(link);
+      setAvatar(link);
+      setLinkUrl("");
+      toast({ tone: "success", title: "Avatar updated" });
+    } catch (err) {
+      setError(errorMessage(err, "Failed to update avatar"));
+    } finally {
+      setPending(null);
     }
   };
 
   return (
     <>
       <div className={styles.profileCard}>
-        <div className={styles.avatarPreview}>
+        <button
+          type="button"
+          className={styles.avatarPreview}
+          data-dragging={isDragging || undefined}
+          aria-label="Upload a new avatar"
+          aria-busy={pending === "upload" || undefined}
+          disabled={pending !== null}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+        >
           <Avatar
-            src={avatarUrl || undefined}
+            src={user?.avatar_url}
             username={user?.username || "U"}
             size="xl"
           />
+          {pending === "upload" && (
+            <span className={styles.avatarBusy}>
+              <Spinner size={22} color="currentColor" label={null} />
+            </span>
+          )}
           <span className={styles.cameraBadge} aria-hidden="true">
             <Camera size={13} />
           </span>
-        </div>
+        </button>
         <div className={styles.identity}>
           <span className={styles.identityName}>{user?.username}</span>
           <span className={styles.identityMeta}>{user?.email}</span>
+          <div className={styles.avatarActions}>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Upload size={14} />}
+              isLoading={pending === "upload"}
+              disabled={pending !== null}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload image
+            </Button>
+            {user?.avatar_url && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Trash2 size={14} />}
+                isLoading={pending === "remove"}
+                disabled={pending !== null}
+                onClick={handleRemove}
+              >
+                Remove
+              </Button>
+            )}
+          </div>
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={AVATAR_ACCEPT}
+          className={styles.fileInput}
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={handleFileChange}
+        />
       </div>
 
-      <form onSubmit={handleSubmit} className={styles.form}>
+      <form onSubmit={handleLinkSubmit} className={styles.form}>
         {error && (
           <div className={styles.errorBox} role="alert">
             {error}
@@ -90,36 +212,32 @@ const ProfileSettingsTab: React.FC = () => {
         )}
 
         <TextField
-          label="Avatar image URL"
+          label="Or use an image link"
           type="url"
           name="avatar-url"
           inputMode="url"
           autoComplete="off"
           spellCheck={false}
           placeholder="https://example.com/avatar.png"
-          value={avatarUrl}
-          onChange={(e) => {
-            setAvatarUrl(e.target.value);
-            setSaved(false);
-          }}
+          value={linkUrl}
+          onChange={(e) => setLinkUrl(e.target.value)}
           icon={<ImageIcon size={16} />}
-          helperText="A square image of at least 128×128 works best."
+          helperText="Uploads are cropped to a square. Linked images should be square already."
         />
 
         <div className={styles.formActions}>
           <Button
             type="submit"
             variant="primary"
-            disabled={!avatarUrl.trim() || avatarUrl === user?.avatar_url}
-            isLoading={isLoading}
+            disabled={
+              !linkUrl.trim() ||
+              linkUrl.trim() === user?.avatar_url ||
+              (pending !== null && pending !== "link")
+            }
+            isLoading={pending === "link"}
           >
-            Save changes
+            Use link
           </Button>
-          {saved && (
-            <span className={styles.saved} role="status">
-              <Check size={14} aria-hidden="true" /> Saved
-            </span>
-          )}
         </div>
       </form>
     </>

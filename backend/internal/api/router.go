@@ -96,6 +96,8 @@ func NewRouter(
 		if authHandler != nil {
 			mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(authHandler.Me)))
 			mux.Handle("PUT /api/v1/users/profile/avatar", requireAuth(http.HandlerFunc(authHandler.UpdateAvatar)))
+			mux.Handle("POST /api/v1/users/profile/avatar", requireAuth(http.HandlerFunc(authHandler.UploadAvatar)))
+			mux.Handle("DELETE /api/v1/users/profile/avatar", requireAuth(http.HandlerFunc(authHandler.RemoveAvatar)))
 		}
 
 		if friendHandler != nil {

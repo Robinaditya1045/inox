@@ -62,7 +62,10 @@ async function request<T>(
     ...customConfig,
     credentials: "include", // Mandated by backend contracts for HttpOnly cookies
     headers: {
-      "Content-Type": "application/json",
+      // FormData bodies need the browser to set the multipart boundary itself.
+      ...(customConfig.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(storedSessionId
         ? {
             Authorization: `Bearer ${storedSessionId}`,
@@ -136,6 +139,15 @@ export const apiClient = {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     });
+  },
+
+  /** POSTs a multipart form, e.g. a file upload. */
+  postForm<T>(
+    endpoint: string,
+    form: FormData,
+    options?: RequestOptions,
+  ): Promise<T> {
+    return request<T>(endpoint, { ...options, method: "POST", body: form });
   },
 
   put<T>(
