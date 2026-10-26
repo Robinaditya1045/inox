@@ -6,6 +6,7 @@ import {
   Clapperboard,
   Film,
   LayoutDashboard,
+  Megaphone,
   Radio,
   RadioTower,
   Shield,
@@ -29,6 +30,7 @@ const MAIN_NAV: NavItem[] = [
   { to: "/content", label: "Content", icon: Clapperboard },
   { to: "/live", label: "Live channels", icon: RadioTower },
   { to: "/rooms", label: "Rooms", icon: Radio },
+  { to: "/community", label: "Community", icon: Megaphone },
   { to: "/tracing", label: "Tracing", icon: Terminal },
 ]
 

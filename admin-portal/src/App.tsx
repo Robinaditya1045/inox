@@ -12,6 +12,7 @@ import { VideoLayout } from "@/pages/VideoLayout"
 import { VideoDetailsPage } from "@/pages/VideoDetailsPage"
 import { VideoCaptionsPage } from "@/pages/VideoCaptionsPage"
 import { RoomsPage } from "@/pages/RoomsPage"
+import { CommunityPage } from "@/pages/CommunityPage"
 import { useTelemetryStream } from "@/hooks/useTelemetryStream"
 import { useMediaCatalog } from "@/hooks/useMediaCatalog"
 import { CatalogContext, StudioActionsContext, TelemetryContext, type StudioActions } from "@/lib/contexts"
@@ -107,6 +108,7 @@ const router = createBrowserRouter(
         },
         { path: "live", element: <LivePage /> },
         { path: "rooms", element: <RoomsPage /> },
+        { path: "community", element: <CommunityPage /> },
         { path: "tracing", element: <TracingPage /> },
         { path: "*", element: <Navigate to="/dashboard" replace /> },
       ],

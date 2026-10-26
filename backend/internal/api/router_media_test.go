@@ -37,7 +37,7 @@ func newMediaRouter(t *testing.T, svc media.Service) http.Handler {
 	// mux panics on overlapping patterns, such as a /media/{id}/captions route
 	// against the /media/stream/ prefix.
 	return NewRouter(nil, auth.NewAuthService(nil, nil), nil, nil, nil, nil, &handler.AdminHandler{},
-		handler.NewMediaHandler(svc, "https://cdn.example/media/stream"), &handler.LiveHandler{}, &handler.FriendHandler{}, &handler.PlaylistHandler{}, nil, nil)
+		handler.NewMediaHandler(svc, "https://cdn.example/media/stream"), &handler.LiveHandler{}, &handler.FriendHandler{}, &handler.PlaylistHandler{}, nil, nil, nil)
 }
 
 func TestRouter_CaptionsLookupByMediaURL(t *testing.T) {

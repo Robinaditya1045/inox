@@ -27,6 +27,9 @@ const RoomPage = React.lazy(() =>
 const FriendsPage = React.lazy(() =>
   import("./pages/FriendsPage").then((m) => ({ default: m.FriendsPage })),
 );
+const CommunityPage = React.lazy(() =>
+  import("./pages/CommunityPage").then((m) => ({ default: m.CommunityPage })),
+);
 const ForgotPasswordPage = React.lazy(() =>
   import("./pages/ForgotPasswordPage").then((m) => ({
     default: m.ForgotPasswordPage,
@@ -81,6 +84,18 @@ function App() {
                             <ProtectedRoute>
                               <AppLayout variant="home">
                                 <FriendsPage />
+                              </AppLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+
+                        {/* Community — platform updates, same shell as the lobby */}
+                        <Route
+                          path="/community"
+                          element={
+                            <ProtectedRoute>
+                              <AppLayout variant="home">
+                                <CommunityPage />
                               </AppLayout>
                             </ProtectedRoute>
                           }

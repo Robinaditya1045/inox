@@ -30,6 +30,7 @@ func NewRouter(
 	liveHandler *handler.LiveHandler,
 	friendHandler *handler.FriendHandler,
 	playlistHandler *handler.PlaylistHandler,
+	communityHandler *handler.CommunityHandler,
 	dbPool *pgxpool.Pool,
 	redisClient *redis.Client,
 ) http.Handler {
@@ -123,6 +124,15 @@ func NewRouter(
 			mux.Handle("POST /api/v1/playlists/{id}/items", requireAuth(http.HandlerFunc(playlistHandler.AddItem)))
 			mux.Handle("PUT /api/v1/playlists/{id}/items/order", requireAuth(http.HandlerFunc(playlistHandler.Reorder)))
 			mux.Handle("DELETE /api/v1/playlists/{id}/items/{item_id}", requireAuth(http.HandlerFunc(playlistHandler.RemoveItem)))
+		}
+
+		if communityHandler != nil {
+			// Platform updates: every signed-in viewer reads them, admins write them.
+			mux.Handle("GET /api/v1/community/posts", requireAuth(http.HandlerFunc(communityHandler.Feed)))
+			mux.Handle("GET /api/v1/admin/community/posts", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(communityHandler.AdminList))))
+			mux.Handle("POST /api/v1/admin/community/posts", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(communityHandler.Create))))
+			mux.Handle("PATCH /api/v1/admin/community/posts/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(communityHandler.Update))))
+			mux.Handle("DELETE /api/v1/admin/community/posts/{id}", requireAuth(middleware.RequireAdminRole()(http.HandlerFunc(communityHandler.Delete))))
 		}
 
 		if roomHandler != nil && roomService != nil {
