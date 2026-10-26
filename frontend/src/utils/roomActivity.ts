@@ -37,6 +37,8 @@ export interface MediaPreview {
   title: string;
   thumbnailUrl?: string;
   isLive: boolean;
+  /** Running time, when the library knows it */
+  durationSeconds?: number;
   /** Where it comes from, when there is no library entry to name it */
   source?: string;
 }
@@ -110,6 +112,7 @@ export function describeMedia(
       title: asset.title,
       thumbnailUrl: asset.thumbnail_url || undefined,
       isLive,
+      durationSeconds: asset.duration_seconds || undefined,
     };
   }
   return { title: titleFromUrl(url), isLive, source: hostOf(url) };

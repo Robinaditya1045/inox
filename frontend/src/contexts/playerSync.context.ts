@@ -25,6 +25,19 @@ export interface LiveAnchor {
   ageMs: number;
 }
 
+/**
+ * This client opened the room with nobody else in it and nothing playing, so
+ * the room is waiting for someone to decide what to watch.
+ */
+export interface RoomArrival {
+  roomId: string;
+  /**
+   * What the room was left on, and where. Null when it has nothing of its own
+   * to go back to: still on the stream every room starts with, never played.
+   */
+  leftOn: { mediaUrl: string; kind: MediaKind; time: number } | null;
+}
+
 export interface PlayerSyncContextValue {
   /** Canonical media URL as broadcast by the room. Normalize at playback time, not here. */
   mediaUrl: string;
@@ -69,6 +82,12 @@ export interface PlayerSyncContextValue {
   advanceQueue: (toIndex?: number) => void;
   /** Stops playing through the queue; the current video carries on. */
   clearQueue: () => void;
+
+  // ── Arrival ───────────────────────────────────────────────
+  /** Set once per visit, when this client opened the room. */
+  arrival: RoomArrival | null;
+  /** Starts the room playing at `time`, from outside the player. */
+  resumePlayback: (time: number) => void;
 }
 
 export const PlayerSyncContext = createContext<PlayerSyncContextValue | null>(

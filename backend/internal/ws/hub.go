@@ -168,6 +168,7 @@ func (h *Hub) getOrCreatePlaybackState(roomID string) *domain.RoomPlaybackState 
 				// State persisted before this room last changed media may carry no
 				// kind; the media URL is authoritative, so re-derive it.
 				s.Kind = h.kindForMediaURL(s.MediaURL)
+				resumeParkedState(s, time.Now().UnixMilli())
 				h.playbackStates[roomID] = s
 				return s
 			}
@@ -188,12 +189,8 @@ func (h *Hub) getOrCreatePlaybackState(roomID string) *domain.RoomPlaybackState 
 			LastUpdated:      time.Now().UnixMilli(),
 		}
 		h.playbackStates[roomID] = state
-
-		if h.stateRepo != nil {
-			go func(rID string, st *domain.RoomPlaybackState) {
-				_ = h.stateRepo.SetPlaybackState(context.Background(), rID, st)
-			}(roomID, state)
-		}
+		// A copy, not state itself: the loop goes on changing it.
+		h.persistPlaybackState(roomID)
 	}
 	return state
 }
@@ -277,7 +274,8 @@ func (h *Hub) shutdownAll() {
 }
 
 func (h *Hub) registerClient(client *Client) {
-	if h.rooms[client.RoomID] == nil {
+	firstIn := h.rooms[client.RoomID] == nil
+	if firstIn {
 		h.rooms[client.RoomID] = make(map[*Client]bool)
 		observability.Global().IncActiveRooms()
 
@@ -326,6 +324,7 @@ func (h *Hub) registerClient(client *Client) {
 		LivePosition:     state.LivePosition,
 		AgeMillis:        state.LiveAgeMillis(time.Now().UnixMilli()),
 		Queue:            state.Queue,
+		FirstIn:          firstIn,
 	})
 	syncEvt := &Event{
 		Type:      EventSyncPlayback,
@@ -388,6 +387,7 @@ func (h *Hub) unregisterClient(client *Client) {
 
 		// Clean up empty rooms from memory
 		if len(roomClients) == 0 {
+			h.parkPlaybackState(client.RoomID)
 			h.retireRoom(client.RoomID)
 		} else {
 			if h.sfuManager != nil {
@@ -409,6 +409,45 @@ func (h *Hub) unregisterClient(client *Client) {
 			h.broadcastPresence(client.RoomID)
 		}
 	}
+}
+
+// emptyRoomGrace is how long a room can sit empty and still be playing when
+// someone comes back: long enough to cover a lone viewer's connection dropping
+// and reconnecting, which would otherwise pause their film.
+const emptyRoomGrace = 30 * time.Second
+
+// parkPlaybackState saves a room's playback as its last viewer leaves, for
+// whoever opens it next. A room nobody is watching does not play on, so a
+// playing VOD is pinned to where it got to; without that, the next arrival
+// would be placed as many hours in as the room sat empty. Must only run on the
+// hub loop, before retireRoom. Not used when a room is deleted: its state is
+// being cleared, and a late write would bring it back.
+func (h *Hub) parkPlaybackState(roomID string) {
+	state, ok := h.playbackStates[roomID]
+	if !ok {
+		return
+	}
+	now := time.Now().UnixMilli()
+	if state.IsPlaying && state.Kind != domain.MediaKindLive {
+		state.MediaTimeSeconds += float64(now-state.LastUpdated) / 1000 * state.Rate()
+		state.LastUpdated = now
+	}
+	state.EmptiedAt = now
+	h.persistPlaybackState(roomID)
+}
+
+// resumeParkedState readies state parked by parkPlaybackState for the room's
+// next arrival: paused where it was left, unless the room was only empty for a
+// moment. State saved without being parked (a crash, or the park still in
+// flight) is taken as it is.
+func resumeParkedState(s *domain.RoomPlaybackState, nowMillis int64) {
+	if s.EmptiedAt <= 0 {
+		return
+	}
+	if s.IsPlaying && s.Kind != domain.MediaKindLive && nowMillis-s.EmptiedAt > emptyRoomGrace.Milliseconds() {
+		s.IsPlaying = false
+	}
+	s.EmptiedAt = 0
 }
 
 // retireRoom forgets a room nobody is connected to any more. Must only run on
@@ -659,16 +698,8 @@ func (h *Hub) dispatchLocal(event *Event) {
 				})
 			}
 			if len(roomClients) == 0 {
-				if state, ok := h.playbackStates[event.RoomID]; ok && state.LeaderID != "" {
-					h.dropLeaderClaim(event.RoomID, state.LeaderID)
-				}
-				delete(h.rooms, event.RoomID)
-				delete(h.playbackStates, event.RoomID)
-				delete(h.voiceInvites, event.RoomID)
-				observability.Global().DecActiveRooms()
-				if h.sfuManager != nil {
-					h.sfuManager.RemoveRoom(event.RoomID)
-				}
+				h.parkPlaybackState(event.RoomID)
+				h.retireRoom(event.RoomID)
 			} else {
 				h.releaseLiveLeadership(evicted)
 			}
