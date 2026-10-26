@@ -11,7 +11,7 @@ import (
 
 func TestRouter_AdminRoomRoutesRequireAuth(t *testing.T) {
 	router := NewRouter(nil, auth.NewAuthService(nil, nil), handler.NewRoomHandler(nil), nil, nil, nil, &handler.AdminHandler{},
-		nil, nil, nil, nil, nil, nil)
+		nil, nil, nil, nil, nil, nil, nil)
 
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/v1/admin/rooms"},

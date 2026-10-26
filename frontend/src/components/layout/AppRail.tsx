@@ -3,7 +3,8 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useRoom } from "../../hooks/useRoom";
 import { useFriends } from "../../hooks/useFriends";
 import { useAuth } from "../../hooks/useAuth";
-import { Plus, Users } from "lucide-react";
+import { useCommunityUnread } from "../../hooks/useCommunityUnread";
+import { Megaphone, Plus, Users } from "lucide-react";
 import { Tooltip } from "../common/Tooltip";
 import { Avatar } from "../common/Avatar";
 import { Logo } from "../common/Logo";
@@ -29,12 +30,14 @@ export const AppRail: React.FC<AppRailProps> = ({ variant = "home" }) => {
   const { rooms, invitations } = useRoom();
   const { incomingRequests } = useFriends();
   const { user } = useAuth();
+  const unreadUpdates = useCommunityUnread();
   const location = useLocation();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const isHome = location.pathname === "/";
   const isFriends = location.pathname === "/friends";
+  const isCommunity = location.pathname === "/community";
   const hasPendingInvites = invitations.length > 0;
   const hasFriendRequests = incomingRequests.length > 0;
 
@@ -88,6 +91,32 @@ export const AppRail: React.FC<AppRailProps> = ({ variant = "home" }) => {
                   aria-label={`${incomingRequests.length} pending friend requests`}
                 >
                   {incomingRequests.length}
+                </span>
+              )}
+            </NavLink>
+          </Tooltip>
+        </div>
+
+        {/* Community — platform updates */}
+        <div
+          className={styles.slot}
+          data-active={isCommunity || undefined}
+          style={stagger(slotIndex++)}
+        >
+          <span className={styles.pill} aria-hidden="true" />
+          <Tooltip content="Community" side={side}>
+            <NavLink
+              to="/community"
+              className={styles.item}
+              aria-label="Community"
+            >
+              <Megaphone size={20} />
+              {unreadUpdates > 0 && (
+                <span
+                  className={styles.badge}
+                  aria-label={`${unreadUpdates} new updates`}
+                >
+                  {unreadUpdates > 9 ? "9+" : unreadUpdates}
                 </span>
               )}
             </NavLink>

@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { useRoom } from "../../hooks/useRoom";
 import { useFriends } from "../../hooks/useFriends";
 import { useInvitationActions } from "../../hooks/useInvitationActions";
+import { useCommunityUnread } from "../../hooks/useCommunityUnread";
 import { CreateRoomModal } from "../room/CreateRoomModal";
 import { Badge } from "../common/Badge";
 import { Button } from "../common/Button";
@@ -11,7 +12,17 @@ import { Avatar } from "../common/Avatar";
 import { Skeleton } from "../common/Skeleton";
 import { EmptyState } from "../common/EmptyState";
 import { UserTray } from "../room/UserTray";
-import { Plus, Lock, Bell, Check, X, Users, Tv, Radio } from "lucide-react";
+import {
+  Plus,
+  Lock,
+  Bell,
+  Check,
+  X,
+  Users,
+  Tv,
+  Radio,
+  Megaphone,
+} from "lucide-react";
 import { stagger } from "../../utils/motion";
 import {
   isStreaming,
@@ -25,6 +36,7 @@ export const HomeSidebar: React.FC = () => {
   const { rooms, activeRoom, invitations, hasLoadedRooms } = useRoom();
   const { friends, incomingRequests } = useFriends();
   const invites = useInvitationActions();
+  const unreadUpdates = useCommunityUnread();
 
   const showSkeleton = !hasLoadedRooms && rooms.length === 0;
   // Same order as the lobby: streaming rooms first, then occupied, then empty.
@@ -46,8 +58,9 @@ export const HomeSidebar: React.FC = () => {
         </div>
 
         <div className={styles.scroll}>
-          {/* Friends — the lobby's other destination, kept above the room list so a
-              waiting friend request is visible without opening the page. */}
+          {/* Friends and Community — the lobby's other destinations, kept above the
+              room list so a waiting request or a new update is visible without
+              opening the page. */}
           <nav className={styles.section} aria-label="Lobby">
             <NavLink
               to="/friends"
@@ -69,6 +82,25 @@ export const HomeSidebar: React.FC = () => {
                 friends.length > 0 && (
                   <span className={styles.count}>{friends.length}</span>
                 )
+              )}
+            </NavLink>
+            <NavLink
+              to="/community"
+              className={({ isActive }) =>
+                `${styles.navItem} ${isActive ? styles.navItemActive : ""}`
+              }
+            >
+              <span className={styles.navIcon} aria-hidden="true">
+                <Megaphone size={20} />
+              </span>
+              <span className={styles.navLabel}>
+                <span className={styles.navName}>Community</span>
+              </span>
+              {unreadUpdates > 0 && (
+                <Badge variant="accent" pop>
+                  <span className="sr-only">New updates: </span>
+                  {unreadUpdates > 9 ? "9+" : unreadUpdates}
+                </Badge>
               )}
             </NavLink>
           </nav>

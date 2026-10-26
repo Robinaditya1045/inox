@@ -19,6 +19,7 @@ import (
 	"github.com/inox/inox/backend/internal/api/handler"
 	"github.com/inox/inox/backend/internal/api/middleware"
 	"github.com/inox/inox/backend/internal/auth"
+	"github.com/inox/inox/backend/internal/community"
 	"github.com/inox/inox/backend/internal/config"
 	"github.com/inox/inox/backend/internal/friend"
 	"github.com/inox/inox/backend/internal/playlist"
@@ -138,6 +139,7 @@ func (a *App) Run() error {
 	mediaHandler := handler.NewMediaHandler(mediaService, a.Config.MediaStreamBaseURL)
 	playlistService := playlist.NewService(playlist.NewRepository(a.DB), mediaRepo)
 	playlistHandler := handler.NewPlaylistHandler(playlistService, mediaHandler.NormalizeAsset)
+	communityHandler := handler.NewCommunityHandler(community.NewService(community.NewRepository(a.DB)))
 
 	// Live channels. Both ingest paths -- a manifest URL or provider API we already
 	// hold, and a page we resolve a manifest out of -- converge on one Resolver
@@ -186,7 +188,7 @@ func (a *App) Run() error {
 	middleware.SetAllowedOrigins(a.Config.CORSAllowedOrigins)
 
 	// 6. Register router with wired handlers & middleware
-	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, liveHandler, friendHandler, playlistHandler, a.DB, a.Redis)
+	router := api.NewRouter(authHandler, authService, roomHandler, roomService, wsHandler, chatHandler, adminHandler, mediaHandler, liveHandler, friendHandler, playlistHandler, communityHandler, a.DB, a.Redis)
 
 	// Whole-request read/write timeouts are wrong for this service. Uploads are
 	// large by design (the admin portal offers 1 GB multipart and 3 GB direct) and
