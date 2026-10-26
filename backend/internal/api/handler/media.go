@@ -136,10 +136,16 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		contentType = "video/mp4"
 	}
 
+	// Sent as repeated fields or as one comma-separated value.
+	var profiles []string
+	for _, v := range r.MultipartForm.Value["transcode_profiles"] {
+		profiles = append(profiles, strings.Split(v, ",")...)
+	}
+
 	userID := getOptionalUserID(r)
-	asset, err := h.service.UploadMedia(r.Context(), title, description, file, header.Size, contentType, userID)
+	asset, err := h.service.UploadMedia(r.Context(), title, description, file, header.Size, contentType, profiles, userID)
 	if err != nil {
-		respond.WriteError(w, http.StatusInternalServerError, err.Error())
+		writeUploadError(w, err)
 		return
 	}
 
@@ -152,6 +158,9 @@ type presignedReq struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
 	Size        int64  `json:"size"`
+	// TranscodeProfiles picks the qualities to encode, e.g. ["720p"]; omitted
+	// means all of them.
+	TranscodeProfiles []string `json:"transcode_profiles"`
 }
 
 // CreatePresignedUpload handles requests to initiate direct S3/MinIO uploads up to 3GB.
@@ -166,9 +175,9 @@ func (h *MediaHandler) CreatePresignedUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	userID := getOptionalUserID(r)
-	asset, uploadURL, key, err := h.service.CreatePresignedUpload(r.Context(), req.Title, req.Description, req.Filename, req.ContentType, req.Size, userID)
+	asset, uploadURL, key, err := h.service.CreatePresignedUpload(r.Context(), req.Title, req.Description, req.Filename, req.ContentType, req.Size, req.TranscodeProfiles, userID)
 	if err != nil {
-		respond.WriteError(w, http.StatusInternalServerError, err.Error())
+		writeUploadError(w, err)
 		return
 	}
 	respond.WriteJSON(w, http.StatusCreated, map[string]any{
@@ -176,6 +185,16 @@ func (h *MediaHandler) CreatePresignedUpload(w http.ResponseWriter, r *http.Requ
 		"upload_url": uploadURL,
 		"key":        key,
 	})
+}
+
+// writeUploadError reports a rejected choice of qualities as the caller's
+// mistake, and anything else as the server's.
+func writeUploadError(w http.ResponseWriter, err error) {
+	if errors.Is(err, media.ErrUnknownTranscodeProfile) {
+		respond.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respond.WriteError(w, http.StatusInternalServerError, err.Error())
 }
 
 type completeUploadReq struct {

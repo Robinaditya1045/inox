@@ -9,6 +9,7 @@ import type {
   MediaDetailsUpdate,
   PresignedUploadResponse,
   RegisterMediaRequest,
+  TranscodeProfile,
 } from "@/types/media"
 
 export interface UseMediaCatalogResult {
@@ -16,8 +17,9 @@ export interface UseMediaCatalogResult {
   isLoading: boolean
   isDemoMode: boolean
   error: string | null
-  uploadMedia: (file: File, title: string, description: string, onProgress?: (percent: number) => void) => Promise<MediaAsset>
-  uploadDirectS3: (file: File, title: string, description: string, onProgress?: (percent: number) => void) => Promise<MediaAsset>
+  /** `profiles` picks the qualities to transcode to; empty means all of them. */
+  uploadMedia: (file: File, title: string, description: string, profiles: TranscodeProfile[], onProgress?: (percent: number) => void) => Promise<MediaAsset>
+  uploadDirectS3: (file: File, title: string, description: string, profiles: TranscodeProfile[], onProgress?: (percent: number) => void) => Promise<MediaAsset>
   registerExternal: (req: RegisterMediaRequest) => Promise<MediaAsset>
   deleteMedia: (id: string) => Promise<void>
   /** Replaces the poster with an image; the portal always sends a cropped JPEG. */
@@ -222,6 +224,7 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     file: File,
     title: string,
     description: string,
+    profiles: TranscodeProfile[],
     onProgress?: (percent: number) => void
   ): Promise<MediaAsset> => {
     if (isDemoModeRef.current) {
@@ -242,7 +245,8 @@ export function useMediaCatalog(): UseMediaCatalogResult {
         created_by: "admin-local",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        progress: 15
+        progress: 15,
+        transcode_profiles: profiles.length ? profiles : undefined,
       }
 
       setAssets(prev => [newAsset, ...prev])
@@ -253,6 +257,7 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     formData.append("file", file)
     formData.append("title", title)
     formData.append("description", description)
+    for (const p of profiles) formData.append("transcode_profiles", p)
 
     // Uploaded via XHR rather than fetch(): fetch cannot report upload progress,
     // so the modal's progress bar used to sit at 5% for the whole transfer and
@@ -266,6 +271,7 @@ export function useMediaCatalog(): UseMediaCatalogResult {
     file: File,
     title: string,
     description: string,
+    profiles: TranscodeProfile[],
     onProgress?: (percent: number) => void
   ): Promise<MediaAsset> => {
     const maxSize = 3 * 1024 * 1024 * 1024 // 3GB
@@ -291,7 +297,8 @@ export function useMediaCatalog(): UseMediaCatalogResult {
         created_by: "admin-s3-direct",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        progress: 20
+        progress: 20,
+        transcode_profiles: profiles.length ? profiles : undefined,
       }
 
       setAssets(prev => [newAsset, ...prev])
@@ -306,6 +313,7 @@ export function useMediaCatalog(): UseMediaCatalogResult {
         filename: file.name,
         content_type: file.type || "video/mp4",
         size: file.size,
+        transcode_profiles: profiles,
       }),
     })
 

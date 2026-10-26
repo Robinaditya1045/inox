@@ -21,21 +21,24 @@ const (
 )
 
 type MediaAsset struct {
-	ID              string            `json:"id"`
-	Kind            MediaKind         `json:"kind"`
-	Title           string            `json:"title"`
-	Description     string            `json:"description"`
-	SourceURL       string            `json:"source_url"`
-	Status          MediaStatus       `json:"status"`
-	DurationSeconds int               `json:"duration_seconds"`
-	Progress        int               `json:"progress"`
-	ThumbnailURL    string            `json:"thumbnail_url"`
-	HLSMasterURL    string            `json:"hls_master_url"`
-	CreatedBy       *string           `json:"created_by"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
-	Renditions      []*MediaRendition `json:"renditions,omitempty"`
-	Captions        []*MediaCaption   `json:"captions,omitempty"`
+	ID              string      `json:"id"`
+	Kind            MediaKind   `json:"kind"`
+	Title           string      `json:"title"`
+	Description     string      `json:"description"`
+	SourceURL       string      `json:"source_url"`
+	Status          MediaStatus `json:"status"`
+	DurationSeconds int         `json:"duration_seconds"`
+	Progress        int         `json:"progress"`
+	ThumbnailURL    string      `json:"thumbnail_url"`
+	HLSMasterURL    string      `json:"hls_master_url"`
+	// TranscodeProfiles names the qualities an upload is transcoded to, such as
+	// "720p". Empty means the full ladder.
+	TranscodeProfiles []string          `json:"transcode_profiles,omitempty"`
+	CreatedBy         *string           `json:"created_by"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	Renditions        []*MediaRendition `json:"renditions,omitempty"`
+	Captions          []*MediaCaption   `json:"captions,omitempty"`
 }
 
 // MediaCaption is one language's caption track for a video, stored as WebVTT.

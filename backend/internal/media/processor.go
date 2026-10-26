@@ -23,7 +23,8 @@ import (
 )
 
 // Processor handles asynchronous video transcoding, slicing videos into short HLS segments
-// and generating multi-bitrate playlists (1080p, 720p, 480p) for Adaptive Bitrate (ABR) streaming.
+// and generating multi-bitrate playlists for Adaptive Bitrate (ABR) streaming -- by
+// default 1080p, 720p and 480p, or whichever of those an upload asked for.
 type Processor struct {
 	repo       Repository
 	storage    storage.Service
@@ -138,16 +139,8 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 	}
 
 	hasAudio := p.hasAudioStream(inputPath)
+	profiles := resolveTranscodeProfiles(asset.TranscodeProfiles)
 
-	// Optimized FFmpeg command for 3-tier Adaptive Bitrate HLS ladder (1080p, 720p, 480p)
-	//
-	// x264's default preset ("medium") encodes all three renditions at roughly
-	// 0.06x realtime on a single Ampere core, which is over two hours for an
-	// eight-minute source. "veryfast" trades some compression efficiency at the
-	// same bitrate for a ~4x speedup, which is the right side of that trade for a
-	// one-core host.
-	// Using pad=ceil(iw/2)*2:ceil(ih/2)*2 ensures both width and height are even integers,
-	// preventing 'width not divisible by 2' encoder errors when force_original_aspect_ratio produces odd dimensions.
 	args := []string{}
 	if strings.HasPrefix(inputPath, "http://") || strings.HasPrefix(inputPath, "https://") {
 		// Still remote: either an externally registered CDN asset or a staging
@@ -155,26 +148,9 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 		// than reporting it upstream as a clean end of file.
 		args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "30")
 	}
-	args = append(args,
-		"-i", inputPath,
-		"-filter_complex",
-		"[0:v]split=3[v1][v2][v3];[v1]scale=w=1920:h=1080:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v1out];[v2]scale=w=1280:h=720:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v2out];[v3]scale=w=854:h=480:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v3out]",
-		"-map", "[v1out]", "-c:v:0", "libx264", "-preset:v:0", "veryfast", "-profile:v:0", "main", "-pix_fmt:v:0", "yuv420p", "-b:v:0", "4500k", "-maxrate:v:0", "5000k", "-bufsize:v:0", "6000k",
-		"-map", "[v2out]", "-c:v:1", "libx264", "-preset:v:1", "veryfast", "-profile:v:1", "main", "-pix_fmt:v:1", "yuv420p", "-b:v:1", "2500k", "-maxrate:v:1", "2800k", "-bufsize:v:1", "3500k",
-		"-map", "[v3out]", "-c:v:2", "libx264", "-preset:v:2", "veryfast", "-profile:v:2", "main", "-pix_fmt:v:2", "yuv420p", "-b:v:2", "1000k", "-maxrate:v:2", "1200k", "-bufsize:v:2", "1500k",
-	)
-
-	if hasAudio {
-		args = append(args,
-			"-map", "0:a:0?", "-map", "0:a:0?", "-map", "0:a:0?",
-			"-c:a", "aac", "-b:a", "128k", "-ar", "48000",
-		)
-	}
-
-	varStreamMap := "v:0,name:1080p v:1,name:720p v:2,name:480p"
-	if hasAudio {
-		varStreamMap = "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p"
-	}
+	args = append(args, "-i", inputPath)
+	ladder, varStreamMap := ladderArgs(profiles, hasAudio)
+	args = append(args, ladder...)
 
 	args = append(args,
 		"-f", "hls",
@@ -313,12 +289,12 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 
 		if file.Name() == "master.m3u8" {
 			masterURL = url
-		} else if file.Name() == "stream_1080p.m3u8" {
-			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: "1080p", BitrateKbps: 4500, PlaylistURL: url})
-		} else if file.Name() == "stream_720p.m3u8" {
-			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: "720p", BitrateKbps: 2500, PlaylistURL: url})
-		} else if file.Name() == "stream_480p.m3u8" {
-			_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: "480p", BitrateKbps: 1000, PlaylistURL: url})
+			continue
+		}
+		for _, prof := range profiles {
+			if file.Name() == "stream_"+prof.Name+".m3u8" {
+				_ = p.repo.AddRendition(ctx, &domain.MediaRendition{MediaAssetID: asset.ID, Resolution: prof.Name, BitrateKbps: prof.BitrateKbps, PlaylistURL: url})
+			}
 		}
 	}
 
@@ -337,6 +313,71 @@ func (p *Processor) ProcessAsset(ctx context.Context, asset *domain.MediaAsset) 
 	slog.Info("media transcoding and hls upload complete", "asset_id", asset.ID, "master_url", masterURL, "progress_percent", 100)
 
 	return nil
+}
+
+// ladderArgs returns the ffmpeg arguments that encode one HLS variant per
+// profile, and the -var_stream_map naming them. Each variant is a separate x264
+// encode, which is nearly all of a transcode's cost, so fewer profiles finish
+// proportionally sooner.
+//
+// x264's default preset ("medium") encodes the full three-rung ladder at roughly
+// 0.06x realtime on a single Ampere core, which is over two hours for an
+// eight-minute source. "veryfast" trades some compression efficiency at the
+// same bitrate for a ~4x speedup, which is the right side of that trade for a
+// one-core host.
+//
+// pad=ceil(iw/2)*2:ceil(ih/2)*2 ensures both width and height are even integers,
+// preventing 'width not divisible by 2' encoder errors when
+// force_original_aspect_ratio produces odd dimensions.
+func ladderArgs(profiles []TranscodeProfile, hasAudio bool) (args []string, varStreamMap string) {
+	// One input feeds every rung, through split when there is more than one.
+	var chains []string
+	if len(profiles) > 1 {
+		labels := make([]string, len(profiles))
+		for i := range profiles {
+			labels[i] = fmt.Sprintf("[v%d]", i)
+		}
+		chains = append(chains, fmt.Sprintf("[0:v]split=%d%s", len(profiles), strings.Join(labels, "")))
+	}
+	for i, prof := range profiles {
+		in := "[0:v]"
+		if len(profiles) > 1 {
+			in = fmt.Sprintf("[v%d]", i)
+		}
+		chains = append(chains, fmt.Sprintf("%sscale=w=%d:h=%d:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2[v%dout]",
+			in, prof.Width, prof.Height, i))
+	}
+	args = append(args, "-filter_complex", strings.Join(chains, ";"))
+
+	for i, prof := range profiles {
+		n := strconv.Itoa(i)
+		args = append(args,
+			"-map", "[v"+n+"out]",
+			"-c:v:"+n, "libx264", "-preset:v:"+n, "veryfast", "-profile:v:"+n, "main", "-pix_fmt:v:"+n, "yuv420p",
+			"-b:v:"+n, fmt.Sprintf("%dk", prof.BitrateKbps),
+			"-maxrate:v:"+n, fmt.Sprintf("%dk", prof.MaxrateKbps),
+			"-bufsize:v:"+n, fmt.Sprintf("%dk", prof.BufsizeKbps),
+		)
+	}
+
+	// HLS muxes each variant with its own copy of the audio, so the source's
+	// track is mapped once per variant.
+	if hasAudio {
+		for range profiles {
+			args = append(args, "-map", "0:a:0?")
+		}
+		args = append(args, "-c:a", "aac", "-b:a", "128k", "-ar", "48000")
+	}
+
+	streams := make([]string, len(profiles))
+	for i, prof := range profiles {
+		if hasAudio {
+			streams[i] = fmt.Sprintf("v:%d,a:%d,name:%s", i, i, prof.Name)
+		} else {
+			streams[i] = fmt.Sprintf("v:%d,name:%s", i, prof.Name)
+		}
+	}
+	return args, strings.Join(streams, " ")
 }
 
 func (p *Processor) hasAudioStream(sourceURL string) bool {

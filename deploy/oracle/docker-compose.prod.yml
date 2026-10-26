@@ -148,7 +148,12 @@ services:
     env_file: .env.prod
     volumes:
       - storage_data:/app/storage_data
+    # The worker queries the same tables as the server, so it must not run new
+    # code against an old schema either. Waiting on the backend already implies
+    # this; it is stated so that dropping that dependency cannot lose it.
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_started
 

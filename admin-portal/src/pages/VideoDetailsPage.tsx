@@ -250,7 +250,13 @@ function DetailsForm({ asset }: { asset: MediaAsset }) {
                 {renditions === null ? (
                   <span className="text-zinc-500">Loading…</span>
                 ) : renditions.length === 0 ? (
-                  <span className="text-zinc-400">{origin.origin === "upload" ? "Not transcoded yet" : "Played as linked"}</span>
+                  <span className="text-zinc-400">
+                    {origin.origin !== "upload"
+                      ? "Played as linked"
+                      : asset.transcode_profiles?.length
+                        ? `Not transcoded yet · ${asset.transcode_profiles.join(", ")} only`
+                        : "Not transcoded yet"}
+                  </span>
                 ) : (
                   <span className="flex flex-wrap gap-1.5">
                     {renditions.map((r) => (

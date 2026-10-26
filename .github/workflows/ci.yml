@@ -250,7 +250,11 @@ jobs:
 
             # --no-build: the host must never fall back to compiling on its
             # single core. A missing image should fail loudly instead.
+            # The one-shot migrate service runs before backend and worker start;
+            # if it fails they never start and this command exits non-zero.
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build
+            echo '--- schema migrations ---'
+            docker compose --env-file .env.prod -f docker-compose.prod.yml logs --no-log-prefix migrate
             docker compose --env-file .env.prod -f docker-compose.prod.yml ps
             docker logout ghcr.io
             docker image prune -f

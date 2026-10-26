@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
 import { CircleAlert, Film, Link2, Loader2, UploadCloud } from "lucide-react"
-import type { MediaAsset } from "@/types/media"
+import type { MediaAsset, TranscodeProfile } from "@/types/media"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { useCatalog } from "@/lib/contexts"
@@ -20,6 +20,15 @@ interface UploadDialogProps {
 // to object storage with a presigned URL, up to 3 GB.
 const MULTIPART_LIMIT = 1 << 30
 const DIRECT_LIMIT = 3 * (1 << 30)
+
+// Each quality is a separate encode, so every one dropped makes the transcode
+// finish sooner -- at the cost of viewers having fewer to switch between.
+const QUALITIES: { value: TranscodeProfile; label: string }[] = [
+  { value: "1080p", label: "Full HD" },
+  { value: "720p", label: "HD" },
+  { value: "480p", label: "SD" },
+]
+const ALL_QUALITIES = QUALITIES.map((q) => q.value)
 
 function formatSize(bytes: number): string {
   if (bytes >= 1 << 30) return `${(bytes / (1 << 30)).toFixed(2)} GB`
@@ -40,6 +49,7 @@ export function UploadDialog({ open, mode, onModeChange, onClose }: UploadDialog
   const [title, setTitle] = React.useState("")
   const [description, setDescription] = React.useState("")
   const [sourceUrl, setSourceUrl] = React.useState("")
+  const [profiles, setProfiles] = React.useState<TranscodeProfile[]>(ALL_QUALITIES)
   const [progress, setProgress] = React.useState<number | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [dragOver, setDragOver] = React.useState(false)
@@ -54,6 +64,7 @@ export function UploadDialog({ open, mode, onModeChange, onClose }: UploadDialog
       setTitle("")
       setDescription("")
       setSourceUrl("")
+      setProfiles(ALL_QUALITIES)
       setProgress(null)
       setError(null)
     }
@@ -70,6 +81,16 @@ export function UploadDialog({ open, mode, onModeChange, onClose }: UploadDialog
     if (!title) setTitle(f.name.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim())
   }
 
+  // Kept in ladder order, and never empty: there has to be something to encode.
+  const toggleProfile = (value: TranscodeProfile) =>
+    setProfiles((prev) =>
+      prev.includes(value)
+        ? prev.length > 1
+          ? prev.filter((p) => p !== value)
+          : prev
+        : ALL_QUALITIES.filter((q) => q === value || prev.includes(q)),
+    )
+
   const finish = (asset: MediaAsset, message: string) => {
     toast(message, { tone: "success" })
     onClose()
@@ -82,7 +103,7 @@ export function UploadDialog({ open, mode, onModeChange, onClose }: UploadDialog
     setProgress(0)
     try {
       const upload = file.size > MULTIPART_LIMIT ? uploadDirectS3 : uploadMedia
-      const asset = await upload(file, title.trim(), description.trim(), (p) => setProgress(p))
+      const asset = await upload(file, title.trim(), description.trim(), profiles, (p) => setProgress(p))
       finish(asset, "Upload complete. The video is being processed — add a thumbnail and captions meanwhile.")
     } catch (err) {
       setError(errorMessage(err, "The upload failed."))
@@ -229,6 +250,43 @@ export function UploadDialog({ open, mode, onModeChange, onClose }: UploadDialog
                 className="w-full resize-y rounded-lg border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
               />
             </Field>
+            {mode === "file" && (
+              <fieldset disabled={busy} aria-describedby="upload-quality-hint">
+                <legend className="text-xs font-medium text-zinc-400">Transcode to</legend>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {QUALITIES.map((q) => {
+                    const on = profiles.includes(q.value)
+                    const onlyOne = on && profiles.length === 1
+                    return (
+                      <label
+                        key={q.value}
+                        title={onlyOne ? "At least one quality is needed" : undefined}
+                        className={cx(
+                          "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-emerald-400",
+                          on ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100" : "border-zinc-700 bg-black/30 text-zinc-300 hover:border-zinc-600",
+                          onlyOne || busy ? "cursor-not-allowed" : "cursor-pointer",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          disabled={onlyOne}
+                          onChange={() => toggleProfile(q.value)}
+                          className="h-4 w-4 accent-emerald-500 disabled:cursor-not-allowed"
+                        />
+                        <span className="font-medium">{q.value}</span>
+                        <span className="text-xs text-zinc-500">{q.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <p id="upload-quality-hint" className="mt-1.5 text-xs text-zinc-500">
+                  {profiles.length === ALL_QUALITIES.length
+                    ? "Viewers switch between all three to suit their connection. Fewer qualities transcode faster."
+                    : `Only ${profiles.join(" and ")} — transcodes faster, but viewers can't switch to another quality.`}
+                </p>
+              </fieldset>
+            )}
           </div>
         )}
 

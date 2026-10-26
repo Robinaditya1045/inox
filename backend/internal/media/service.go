@@ -16,8 +16,10 @@ import (
 // Service defines business logic for managing the media library, uploading assets, and streaming HLS renditions.
 type Service interface {
 	RegisterExternalMedia(ctx context.Context, title, description, sourceURL, thumbnailURL string, createdBy *string) (*domain.MediaAsset, error)
-	UploadMedia(ctx context.Context, title, description string, reader io.Reader, size int64, contentType string, createdBy *string) (*domain.MediaAsset, error)
-	CreatePresignedUpload(ctx context.Context, title, description, filename, contentType string, size int64, createdBy *string) (*domain.MediaAsset, string, string, error)
+	// UploadMedia and CreatePresignedUpload take the qualities to transcode the
+	// upload to (see NormalizeTranscodeProfiles); none means all of them.
+	UploadMedia(ctx context.Context, title, description string, reader io.Reader, size int64, contentType string, profiles []string, createdBy *string) (*domain.MediaAsset, error)
+	CreatePresignedUpload(ctx context.Context, title, description, filename, contentType string, size int64, profiles []string, createdBy *string) (*domain.MediaAsset, string, string, error)
 	CompleteDirectUpload(ctx context.Context, assetID string, key string) (*domain.MediaAsset, error)
 	GetMediaByID(ctx context.Context, id string) (*domain.MediaAsset, error)
 	ListMedia(ctx context.Context, limit, offset int) ([]*domain.MediaAsset, error)
@@ -82,7 +84,13 @@ func (s *mediaService) RegisterExternalMedia(ctx context.Context, title, descrip
 }
 
 // UploadMedia saves an uploaded video file to object storage and triggers background HLS processing.
-func (s *mediaService) UploadMedia(ctx context.Context, title, description string, reader io.Reader, size int64, contentType string, createdBy *string) (*domain.MediaAsset, error) {
+func (s *mediaService) UploadMedia(ctx context.Context, title, description string, reader io.Reader, size int64, contentType string, profiles []string, createdBy *string) (*domain.MediaAsset, error) {
+	// Checked before anything is stored, so a bad choice leaves no orphan file.
+	profiles, err := NormalizeTranscodeProfiles(profiles)
+	if err != nil {
+		return nil, err
+	}
+
 	// Generate unique storage key
 	ext := ".mp4"
 	if contentType == "application/vnd.apple.mpegurl" || contentType == "audio/x-mpegurl" {
@@ -97,11 +105,12 @@ func (s *mediaService) UploadMedia(ctx context.Context, title, description strin
 	}
 
 	asset := &domain.MediaAsset{
-		Title:       title,
-		Description: description,
-		SourceURL:   url,
-		Status:      domain.MediaStatusPending,
-		CreatedBy:   createdBy,
+		Title:             title,
+		Description:       description,
+		SourceURL:         url,
+		Status:            domain.MediaStatusPending,
+		TranscodeProfiles: profiles,
+		CreatedBy:         createdBy,
 	}
 	if err := s.repo.CreateAsset(ctx, asset); err != nil {
 		return nil, fmt.Errorf("failed to save asset in database: %w", err)
@@ -121,9 +130,14 @@ func (s *mediaService) UploadMedia(ctx context.Context, title, description strin
 }
 
 // CreatePresignedUpload generates a direct storage PUT URL for files up to 3GB, bypassing server RAM buffering.
-func (s *mediaService) CreatePresignedUpload(ctx context.Context, title, description, filename, contentType string, size int64, createdBy *string) (*domain.MediaAsset, string, string, error) {
+func (s *mediaService) CreatePresignedUpload(ctx context.Context, title, description, filename, contentType string, size int64, profiles []string, createdBy *string) (*domain.MediaAsset, string, string, error) {
 	if size > 3<<30 { // 3GB limit (3,221,225,472 bytes)
 		return nil, "", "", fmt.Errorf("file size %d exceeds 3GB direct upload limit", size)
+	}
+	// Kept on the asset now; CompleteDirectUpload queues the transcode later.
+	profiles, err := NormalizeTranscodeProfiles(profiles)
+	if err != nil {
+		return nil, "", "", err
 	}
 	ext := filepath.Ext(filename)
 	if ext == "" {
@@ -142,11 +156,12 @@ func (s *mediaService) CreatePresignedUpload(ctx context.Context, title, descrip
 	}
 
 	asset := &domain.MediaAsset{
-		Title:       title,
-		Description: description,
-		SourceURL:   streamURL,
-		Status:      domain.MediaStatusPending,
-		CreatedBy:   createdBy,
+		Title:             title,
+		Description:       description,
+		SourceURL:         streamURL,
+		Status:            domain.MediaStatusPending,
+		TranscodeProfiles: profiles,
+		CreatedBy:         createdBy,
 	}
 	if err := s.repo.CreateAsset(ctx, asset); err != nil {
 		return nil, "", "", fmt.Errorf("failed to create asset in database: %w", err)

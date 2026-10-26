@@ -1,5 +1,8 @@
 export type MediaStatus = "pending" | "processing" | "ready" | "failed"
 
+/** A quality an upload can be transcoded to; each one is a separate encode. */
+export type TranscodeProfile = "1080p" | "720p" | "480p"
+
 export interface MediaRendition {
   id: string
   media_asset_id: string
@@ -39,6 +42,8 @@ export interface MediaAsset {
   created_at: string
   updated_at: string
   renditions?: MediaRendition[]
+  /** The qualities an upload was sent to be transcoded to; omitted means all of them */
+  transcode_profiles?: TranscodeProfile[]
   /** Omitted by the API when a video has none */
   captions?: MediaCaption[]
 }
