@@ -9,6 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
 import { ToastContext, type ToastOptions } from "../contexts/toast.context";
+import { Button } from "../components/common/Button";
 import styles from "../components/common/Toast.module.css";
 
 interface ToastItem extends ToastOptions {
@@ -73,6 +74,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({
       while (liveIds.current.length > MAX_VISIBLE) {
         dismiss(liveIds.current[0]);
       }
+      return id;
     },
     [dismiss],
   );
@@ -115,15 +117,35 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({
                   {t.description && (
                     <span className={styles.description}>{t.description}</span>
                   )}
+                  {t.actions && t.actions.length > 0 && (
+                    <div className={styles.actions}>
+                      {t.actions.map((action) => (
+                        <Button
+                          key={action.label}
+                          size="sm"
+                          variant={action.variant ?? "secondary"}
+                          disabled={t.leaving}
+                          onClick={() => {
+                            dismiss(t.id);
+                            action.onClick();
+                          }}
+                        >
+                          {action.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className={styles.close}
-                  onClick={() => dismiss(t.id)}
-                  aria-label="Dismiss notification"
-                >
-                  <X size={14} />
-                </button>
+                {!t.actions?.length && (
+                  <button
+                    type="button"
+                    className={styles.close}
+                    onClick={() => dismiss(t.id)}
+                    aria-label="Dismiss notification"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
             );
           })}

@@ -12,6 +12,13 @@ export interface RTCContextValue {
   /** Subset of peers whose audio is currently carrying speech. */
   speakingIds: Set<string>;
   localScreenStream: MediaStream | null;
+  /**
+   * People this client invited to voice recently: until they answer and for a
+   * while after, so the same person is not invited again straight away.
+   */
+  invitedToVoice: ReadonlySet<string>;
+  /** Asks someone in the room to join the call. Only works from inside it. */
+  inviteToVoice: (userId: string) => void;
   connectAudio: () => Promise<void>;
   disconnectAudio: () => void;
   toggleMute: () => void;

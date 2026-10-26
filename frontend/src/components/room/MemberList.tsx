@@ -14,6 +14,7 @@ import {
   Check,
   AlertCircle,
   MicOff,
+  PhoneCall,
   ScreenShare,
   Video,
   Volume2,
@@ -40,7 +41,15 @@ export const MemberList: React.FC = () => {
     usePresence();
   const { user } = useAuth();
   const { permissions, inviteUser, activeRoom } = useRoom();
-  const { peers: voicePeers, speakingIds } = useRTC(activeRoom?.id);
+  const {
+    peers: voicePeers,
+    speakingIds,
+    connectionState,
+    invitedToVoice,
+    inviteToVoice,
+  } = useRTC(activeRoom?.id);
+  // Inviting someone is asking them to join you, so it takes being in the call.
+  const canInviteToVoice = connectionState === "connected";
 
   const [inviteUsername, setInviteUsername] = useState("");
   const [isInviting, setIsInviting] = useState(false);
@@ -196,6 +205,15 @@ export const MemberList: React.FC = () => {
                 const isSelf = member.user_id === user?.id;
                 const showAdminControls = !isSelf && canModerate(member);
                 const voice = voiceState.get(member.user_id);
+                // Only someone here who could actually speak: a guest without
+                // voice access would be invited to a call they cannot join.
+                const showVoiceInvite =
+                  canInviteToVoice &&
+                  !isSelf &&
+                  !voice &&
+                  member.isOnline &&
+                  member.permissions?.can_stream_audio;
+                const isInvited = invitedToVoice.has(member.user_id);
                 const isSpeaking = speakingIds.has(member.user_id);
                 const roleClass =
                   member.role === "owner"
@@ -282,6 +300,29 @@ export const MemberList: React.FC = () => {
                         )}
                       </span>
                     </div>
+
+                    {showVoiceInvite && (
+                      <IconButton
+                        label={
+                          isInvited
+                            ? `Invited ${member.username} to voice`
+                            : `Invite ${member.username} to voice`
+                        }
+                        tooltip={isInvited ? "Invite sent" : "Invite to voice"}
+                        variant="ghost"
+                        size="sm"
+                        disabled={isInvited}
+                        className={styles.voiceInvite}
+                        data-sent={isInvited || undefined}
+                        onClick={() => inviteToVoice(member.user_id)}
+                      >
+                        {isInvited ? (
+                          <Check size={15} />
+                        ) : (
+                          <PhoneCall size={15} />
+                        )}
+                      </IconButton>
+                    )}
 
                     {/* Moderation Actions Menu */}
                     {showAdminControls && (

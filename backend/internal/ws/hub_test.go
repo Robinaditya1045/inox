@@ -148,37 +148,8 @@ func TestHubSFUSignalingAndVoiceRoster(t *testing.T) {
 	hub.Register <- alice
 	hub.Register <- bob
 
-	// Alice joins voice with an offer her browser would have produced. It gathers
-	// no candidates: this test is about the hub's signaling, and a transport that
-	// connects and is then closed mid-start trips a data race inside pion (see
-	// newBrowserPeerConnection in the sfu package tests).
-	settings := webrtc.SettingEngine{}
-	settings.SetInterfaceFilter(func(string) bool { return false })
-	mediaEngine := &webrtc.MediaEngine{}
-	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
-		t.Fatalf("failed to register codecs: %v", err)
-	}
-	browser, err := webrtc.NewAPI(
-		webrtc.WithSettingEngine(settings),
-		webrtc.WithMediaEngine(mediaEngine),
-	).NewPeerConnection(webrtc.Configuration{})
-	if err != nil {
-		t.Fatalf("failed to create browser-side peer connection: %v", err)
-	}
-	t.Cleanup(func() { _ = browser.Close() })
-	if _, err := browser.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendrecv,
-	}); err != nil {
-		t.Fatalf("failed to add microphone transceiver: %v", err)
-	}
-	offer, err := browser.CreateOffer(nil)
-	if err != nil {
-		t.Fatalf("failed to create offer: %v", err)
-	}
-	if err := browser.SetLocalDescription(offer); err != nil {
-		t.Fatalf("failed to apply offer: %v", err)
-	}
-	offerPayload, _ := json.Marshal(ws.SFUSDOPayload{SDP: offer.SDP, Type: "offer"})
+	// Alice joins voice with an offer her browser would have produced.
+	browser, offerPayload := newBrowserOffer(t)
 
 	hub.Broadcast <- &ws.Event{
 		Type:       ws.EventSFUOffer,
@@ -243,4 +214,40 @@ func decodeRoster(t *testing.T, evt *ws.Event) []sfu.PeerState {
 		t.Fatalf("failed to decode roster payload: %v", err)
 	}
 	return payload.Peers
+}
+
+// newBrowserOffer makes the offer a browser joining voice would send, from a
+// peer connection that gathers no candidates: these tests are about the hub's
+// signaling, and a transport that connects and is then closed mid-start trips a
+// data race inside pion (see newBrowserPeerConnection in the sfu package tests).
+func newBrowserOffer(t *testing.T) (*webrtc.PeerConnection, json.RawMessage) {
+	t.Helper()
+	settings := webrtc.SettingEngine{}
+	settings.SetInterfaceFilter(func(string) bool { return false })
+	mediaEngine := &webrtc.MediaEngine{}
+	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+		t.Fatalf("failed to register codecs: %v", err)
+	}
+	browser, err := webrtc.NewAPI(
+		webrtc.WithSettingEngine(settings),
+		webrtc.WithMediaEngine(mediaEngine),
+	).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("failed to create browser-side peer connection: %v", err)
+	}
+	t.Cleanup(func() { _ = browser.Close() })
+	if _, err := browser.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendrecv,
+	}); err != nil {
+		t.Fatalf("failed to add microphone transceiver: %v", err)
+	}
+	offer, err := browser.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("failed to create offer: %v", err)
+	}
+	if err := browser.SetLocalDescription(offer); err != nil {
+		t.Fatalf("failed to apply offer: %v", err)
+	}
+	payload, _ := json.Marshal(ws.SFUSDOPayload{SDP: offer.SDP, Type: "offer"})
+	return browser, payload
 }

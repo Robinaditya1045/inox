@@ -31,6 +31,8 @@ export type WSEventType =
   | "ROOM_CLOSED"
   | "PRESENCE"
   | "REMOVED_FROM_ROOM"
+  | "VOICE_INVITE"
+  | "VOICE_INVITE_REPLY"
   | "ERROR";
 
 export interface WSMessage<T = unknown> {
@@ -71,6 +73,15 @@ export interface WSPresencePayload {
 export interface WSRemovedFromRoomPayload {
   /** "left" when they left from another tab. */
   reason: "kicked" | "left";
+}
+
+/**
+ * VOICE_INVITE_REPLY: the invitee's answer, sent only to whoever invited them.
+ * VOICE_INVITE itself carries no payload — the sender is the inviter and the
+ * target the person asked. Letting an invite expire sends no reply.
+ */
+export interface WSVoiceInviteReplyPayload {
+  accepted: boolean;
 }
 
 export type MediaKind = "vod" | "live";

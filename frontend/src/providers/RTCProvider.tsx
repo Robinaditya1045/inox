@@ -24,6 +24,7 @@ import type {
   WSSfuPeer,
   WSSfuPeersPayload,
   WSSfuStatePayload,
+  WSVoiceInviteReplyPayload,
 } from "../types/ws";
 import type {
   RemoteTrackKind,
@@ -39,6 +40,15 @@ interface RTCProviderProps {
 /** Remote media held per publisher, so a microphone, camera and screen share
  *  from the same person land on the same tile. */
 type PeerMedia = Partial<Record<RemoteTrackKind, MediaStream>>;
+
+/** How long a voice invite stays on the screen of the person invited. */
+const VOICE_INVITE_TTL_MS = 25_000;
+/**
+ * How long the inviter's button stays "Invited". Longer than the invite lives,
+ * so an answer always finds it, and than the server's 15s cooldown between
+ * invites to the same person, so the button never offers one it would drop.
+ */
+const VOICE_INVITE_PENDING_MS = 30_000;
 
 /** Why getUserMedia refused the camera, in words a person can act on. */
 function describeCameraError(err: unknown): string {
@@ -74,17 +84,31 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
   const [remoteMedia, setRemoteMedia] = useState<Map<string, PeerMedia>>(
     () => new Map(),
   );
+  const [invitedToVoice, setInvitedToVoice] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
 
   const { send, subscribe } = useRoomSocket();
   const permissions = usePermissions();
   const { activeRoom } = useRoom();
   const { user } = useAuth();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const roomId = activeRoom?.id;
   const isConnectedRef = useRef(false);
   // Set while the browser is asking for the camera, so a second click does not
   // publish a second one.
   const isCameraStartingRef = useRef(false);
+  // Invites this client sent, by invitee, until VOICE_INVITE_PENDING_MS is up.
+  // Only these people's replies are shown, and each only once.
+  const sentInvitesRef = useRef(
+    new Map<
+      string,
+      { timer: ReturnType<typeof setTimeout>; answered: boolean }
+    >(),
+  );
+  // The invite toast on screen from each inviter, so a second invite replaces
+  // the first and joining voice clears them all.
+  const inviteToastsRef = useRef(new Map<string, number>());
 
   // The socket is shared, so a stale send() closure would post signaling into the
   // wrong room after a switch. Keeping it in a ref lets the peer-connection
@@ -114,16 +138,27 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     setLocalAudioStream(null);
   }, []);
 
+  const dismissInviteToasts = useCallback(() => {
+    inviteToastsRef.current.forEach((id) => dismiss(id));
+    inviteToastsRef.current.clear();
+  }, [dismiss]);
+
   // Leaving the room leaves the call. Without the explicit hang-up the SFU keeps
   // the peer until its websocket drops, and everyone else keeps a dead tile.
+  // Invites belong to the room too, in both directions.
   useEffect(() => {
+    const sentInvites = sentInvitesRef.current;
     return () => {
       if (isConnectedRef.current) {
         teardown(true);
       }
       setRoster([]);
+      sentInvites.forEach(({ timer }) => clearTimeout(timer));
+      sentInvites.clear();
+      setInvitedToVoice(new Set());
+      dismissInviteToasts();
     };
-  }, [roomId, teardown]);
+  }, [roomId, teardown, dismissInviteToasts]);
 
   // Signaling from the SFU.
   useEffect(() => {
@@ -292,6 +327,103 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     logger.info("RTCProvider: Disconnected voice channel");
   }, [teardown]);
 
+  // Read by invite toasts, which outlive the render that showed them.
+  const connectAudioRef = useRef(connectAudio);
+  const canStreamAudioRef = useRef(permissions.can_stream_audio);
+  useEffect(() => {
+    connectAudioRef.current = connectAudio;
+    canStreamAudioRef.current = permissions.can_stream_audio;
+  });
+
+  const inviteToVoice = useCallback((userId: string) => {
+    // The server only relays invites from someone already in the call.
+    if (connectionStateRef.current !== "connected") return;
+    if (sentInvitesRef.current.has(userId)) return;
+
+    sendRef.current("VOICE_INVITE", undefined, userId);
+    const timer = setTimeout(() => {
+      sentInvitesRef.current.delete(userId);
+      setInvitedToVoice((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    }, VOICE_INVITE_PENDING_MS);
+    sentInvitesRef.current.set(userId, { timer, answered: false });
+    setInvitedToVoice((prev) => new Set(prev).add(userId));
+  }, []);
+
+  // Invites to voice, both ways. Each is addressed to one person by the
+  // server, so anything arriving here is meant for this user.
+  useEffect(() => {
+    if (!roomId) return;
+
+    const unsubInvite = subscribe("VOICE_INVITE", (msg) => {
+      const inviterId = msg.sender_id;
+      if (!inviterId || (msg.room_id && msg.room_id !== roomId)) return;
+      // Nothing to accept for someone already in the call, or not allowed in.
+      if (isConnectedRef.current || !canStreamAudioRef.current) return;
+
+      const reply = (accepted: boolean) => {
+        const payload: WSVoiceInviteReplyPayload = { accepted };
+        sendRef.current("VOICE_INVITE_REPLY", payload, inviterId);
+      };
+      const previous = inviteToastsRef.current.get(inviterId);
+      if (previous !== undefined) dismiss(previous);
+
+      const id = toast({
+        title: `${msg.sender_name || "Someone"} invited you to voice`,
+        description: "Join them in the voice channel?",
+        duration: VOICE_INVITE_TTL_MS,
+        actions: [
+          {
+            label: "Accept",
+            variant: "primary",
+            onClick: () => {
+              inviteToastsRef.current.delete(inviterId);
+              // The click is the gesture the microphone prompt and audio
+              // playback need, so the call starts from here and not later.
+              void connectAudioRef.current().then(() => {
+                // A refused microphone leaves the call unjoined; the voice
+                // panel says why, and the inviter hears nothing either way.
+                if (isConnectedRef.current) reply(true);
+              });
+            },
+          },
+          {
+            label: "Reject",
+            onClick: () => {
+              inviteToastsRef.current.delete(inviterId);
+              reply(false);
+            },
+          },
+        ],
+      });
+      inviteToastsRef.current.set(inviterId, id);
+    });
+
+    const unsubReply = subscribe("VOICE_INVITE_REPLY", (msg) => {
+      const inviteeId = msg.sender_id;
+      const sent = inviteeId && sentInvitesRef.current.get(inviteeId);
+      // Another tab's invite, or an answer already shown.
+      if (!sent || sent.answered) return;
+      sent.answered = true;
+
+      const name = msg.sender_name || "They";
+      const payload = msg.payload as WSVoiceInviteReplyPayload | undefined;
+      toast(
+        payload?.accepted
+          ? { tone: "success", title: `${name} is joining voice` }
+          : { title: `${name} declined your voice invite` },
+      );
+    });
+
+    return () => {
+      unsubInvite();
+      unsubReply();
+    };
+  }, [roomId, subscribe, toast, dismiss]);
+
   const toggleMute = useCallback(() => {
     if (!isConnectedRef.current) return;
     const nextMuted = !isAudioMuted;
@@ -382,6 +514,13 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
   const inCall =
     connectionState === "connected" || connectionState === "connecting";
 
+  // Once in voice -- by accepting one invite, the voice button, or from another
+  // tab, which the roster shows -- the remaining invites have nothing to offer.
+  const isSelfInRoster = roster.some((peer) => peer.user_id === user?.id);
+  useEffect(() => {
+    if (inCall || isSelfInRoster) dismissInviteToasts();
+  }, [inCall, isSelfInRoster, dismissInviteToasts]);
+
   const peers = useMemo<VoicePeer[]>(() => {
     const list = roster.map<VoicePeer>((entry) => {
       const isLocal = entry.user_id === user?.id;
@@ -453,6 +592,8 @@ export const RTCProvider: React.FC<RTCProviderProps> = ({ children }) => {
     peers,
     speakingIds,
     localScreenStream,
+    invitedToVoice,
+    inviteToVoice,
     connectAudio,
     disconnectAudio,
     toggleMute,

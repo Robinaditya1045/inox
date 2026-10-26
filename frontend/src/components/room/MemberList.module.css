@@ -252,6 +252,20 @@
   opacity: 0.85;
 }
 
+/* Always shown, unlike the moderation menu: it only appears while you are in
+   voice, and an invite nobody can find is an invite nobody sends. */
+.voiceInvite {
+  flex-shrink: 0;
+}
+
+/* Sent is a confirmation, not an unavailable control, so it keeps full
+   strength rather than the faded disabled look. */
+.memberItem .voiceInvite[data-sent]:disabled {
+  opacity: 1;
+  cursor: default;
+  color: var(--color-success);
+}
+
 /* Revealed on row hover or keyboard focus, like a message toolbar */
 .actionSlot {
   opacity: 0;

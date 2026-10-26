@@ -90,6 +90,10 @@ type Hub struct {
 	// inspectRequests lets the telemetry hub ask for per-room metrics, taken on
 	// the loop for the same reason as activityRequests.
 	inspectRequests chan chan []observability.RoomTelemetry
+
+	// voiceInvites remembers when each member last invited each other member to
+	// voice, per room, to enforce voiceInviteCooldown.
+	voiceInvites map[string]map[voiceInvitePair]time.Time
 }
 
 type memberRemoval struct {
@@ -115,6 +119,7 @@ func NewHub() *Hub {
 		removeRequests:    make(chan memberRemoval, 64),
 		remoteEvents:      make(chan *Event, 256),
 		inspectRequests:   make(chan chan []observability.RoomTelemetry),
+		voiceInvites:      make(map[string]map[voiceInvitePair]time.Time),
 	}
 }
 
@@ -417,6 +422,7 @@ func (h *Hub) retireRoom(roomID string) {
 	}
 	delete(h.rooms, roomID)
 	delete(h.playbackStates, roomID)
+	delete(h.voiceInvites, roomID)
 
 	if cancel, ok := h.roomCancelFuncs[roomID]; ok {
 		cancel()
@@ -480,6 +486,10 @@ func (h *Hub) dispatchEvent(event *Event) {
 		if h.stateRepo != nil {
 			_ = h.stateRepo.CacheMemberVerification(context.Background(), event.RoomID, event.SenderID)
 		}
+	}
+
+	if isVoiceInvite(event.Type) && !h.admitVoiceInvite(event) {
+		return
 	}
 
 	if h.redisEventBus != nil {
@@ -654,6 +664,7 @@ func (h *Hub) dispatchLocal(event *Event) {
 				}
 				delete(h.rooms, event.RoomID)
 				delete(h.playbackStates, event.RoomID)
+				delete(h.voiceInvites, event.RoomID)
 				observability.Global().DecActiveRooms()
 				if h.sfuManager != nil {
 					h.sfuManager.RemoveRoom(event.RoomID)

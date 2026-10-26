@@ -71,6 +71,12 @@ const (
 	// their connections to the room right after sending it, since a socket
 	// outlives the membership it was opened with.
 	EventRemovedFromRoom EventType = "REMOVED_FROM_ROOM"
+
+	// VOICE_INVITE asks one person in the room (TargetID) to join the sender in
+	// voice; VOICE_INVITE_REPLY carries their answer back to the inviter. Both are
+	// relayed only to their target (see admitVoiceInvite).
+	EventVoiceInvite      EventType = "VOICE_INVITE"
+	EventVoiceInviteReply EventType = "VOICE_INVITE_REPLY"
 )
 
 // RemovalReason says why someone was removed from a room.
@@ -197,6 +203,12 @@ type PresenceUser struct {
 // RemovedFromRoomPayload carries why a REMOVED_FROM_ROOM notice was sent.
 type RemovedFromRoomPayload struct {
 	Reason RemovalReason `json:"reason"`
+}
+
+// VoiceInviteReplyPayload is an invitee's answer to a VOICE_INVITE. Letting the
+// invite expire sends nothing.
+type VoiceInviteReplyPayload struct {
+	Accepted bool `json:"accepted"`
 }
 
 // ChatPayload represents a room text chat message.
