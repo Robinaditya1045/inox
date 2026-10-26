@@ -28,6 +28,7 @@ import { VoiceStage } from "../components/room/VoiceStage";
 import { MessageSquare, RotateCcw, ShieldAlert, Users, X } from "lucide-react";
 import { tabIds } from "../utils/tabs";
 import type { WSRemovedFromRoomPayload } from "../types/ws";
+import type { RoomArrival } from "../contexts/playerSync.context";
 import shellStyles from "../components/room/VideoRoomShell.module.css";
 import styles from "./RoomPage.module.css";
 
@@ -68,7 +69,13 @@ export const RoomPage: React.FC = () => {
   // so its tab, selection and live statuses reflect the room when it opens —
   // and a room that never opens it never fetches the library.
   const [libraryOpens, setLibraryOpens] = useState(0);
-  const openLibrary = () => {
+  // Set when the library was opened for someone arriving, rather than from its
+  // button.
+  const [libraryArrival, setLibraryArrival] = useState<RoomArrival | null>(
+    null,
+  );
+  const openLibrary = (forArrival: RoomArrival | null = null) => {
+    setLibraryArrival(forArrival);
     setLibraryOpens((n) => n + 1);
     setIsLibraryOpen(true);
   };
@@ -98,8 +105,33 @@ export const RoomPage: React.FC = () => {
   // otherwise switching rooms leaves you on the old room's socket.
   const { subscribe } = useRoomSocket(roomId);
   const rtc = useRTC(roomId);
-  const { setMediaUrl, mediaUrl, isPlaying, playQueue } = usePlayerSync();
+  const {
+    setMediaUrl,
+    mediaUrl,
+    isPlaying,
+    playQueue,
+    arrival,
+    resumePlayback,
+  } = usePlayerSync();
   const { members, onlineCount } = usePresence();
+
+  // Whoever opens an empty room decides what it watches, so the library is
+  // waiting for them, with what the room was left on at the top. Offered once
+  // per arrival — and not to someone who cannot choose, or once something is
+  // playing after all.
+  const [offeredArrival, setOfferedArrival] = useState<RoomArrival | null>(
+    null,
+  );
+  if (
+    arrival &&
+    arrival !== offeredArrival &&
+    arrival.roomId === roomId &&
+    permissions.can_control_playback &&
+    !isPlaying
+  ) {
+    setOfferedArrival(arrival);
+    openLibrary(arrival);
+  }
 
   useEffect(() => {
     if (!roomId) return;
@@ -345,7 +377,9 @@ export const RoomPage: React.FC = () => {
               <div className={shellStyles.playerSlot}>
                 <WatchPartyPlayer
                   onOpenLibrary={
-                    permissions.can_control_playback ? openLibrary : undefined
+                    permissions.can_control_playback
+                      ? () => openLibrary()
+                      : undefined
                   }
                 />
               </div>
@@ -446,6 +480,8 @@ export const RoomPage: React.FC = () => {
           currentUrl={mediaUrl}
           onSelectUrl={setMediaUrl}
           onPlayQueue={playQueue}
+          arrival={libraryArrival}
+          onResume={resumePlayback}
         />
       )}
     </>

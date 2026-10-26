@@ -58,6 +58,11 @@ type RoomPlaybackState struct {
 	// Queue is the playlist the room is playing through, if any. When the current
 	// item ends the room moves on to the next one.
 	Queue *PlaybackQueue `json:"queue,omitempty"`
+
+	// EmptiedAt is when the last viewer left (epoch millis), set as the state is
+	// parked for whoever opens the room next. It is cleared again when the state
+	// is picked back up, and never sent to clients.
+	EmptiedAt int64 `json:"emptied_at,omitempty"`
 }
 
 // Rate is the room's playback speed, with the zero value read as normal speed.

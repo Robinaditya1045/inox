@@ -121,6 +121,11 @@ export interface WSPlaybackPayload {
   is_dvr?: boolean;
   /** On SYNC_PLAYBACK: the list the room is playing through, if any. */
   queue?: WSQueue | null;
+  /**
+   * On SYNC_PLAYBACK: this connection opened an empty room, so the media is
+   * what the room was left on rather than something anyone is watching.
+   */
+  first_in?: boolean;
 }
 
 export interface WSQueueItem {

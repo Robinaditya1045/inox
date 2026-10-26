@@ -8,6 +8,7 @@ import React, {
 import {
   PlayerSyncContext,
   type LiveAnchor,
+  type RoomArrival,
 } from "../contexts/playerSync.context";
 import { useRoomSocket } from "../hooks/useRoomSocket";
 import { usePermissions } from "../hooks/usePermissions";
@@ -73,6 +74,13 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
   // ── Play queue ────────────────────────────────────────────
   const [queue, setQueue] = useState<WSQueue | null>(null);
 
+  // ── Arrival ───────────────────────────────────────────────
+  const [arrival, setArrival] = useState<RoomArrival | null>(null);
+  // The room this visit has already had its first sync for. A dropped socket
+  // reconnecting into a room it left empty is first in again, and must not
+  // count as arriving.
+  const syncedRoomRef = useRef<string | null>(null);
+
   // Prevents echo loops when the video element is driven by a remote WebSocket event
   const isRemoteUpdateRef = useRef<boolean>(false);
 
@@ -86,8 +94,32 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
   // Applies the server's authoritative state for the room. receivedAt is when it
   // arrived, which can be earlier than now when it was held back (see below).
   const applySync = useCallback(
-    (payload: WSPlaybackPayload, receivedAt: number) => {
+    (
+      payload: WSPlaybackPayload,
+      receivedAt: number,
+      room: string | undefined,
+    ) => {
       isRemoteUpdateRef.current = true;
+      // Opening a room that is still playing (a reload within moments of
+      // leaving it) carries on watching rather than arriving.
+      if (
+        room &&
+        syncedRoomRef.current !== room &&
+        payload.first_in &&
+        !payload.is_playing
+      ) {
+        const mediaUrl = payload.media_url ?? "";
+        const time = payload.media_time_seconds || 0;
+        const neverWatched = mediaUrl === DEFAULT_STREAM_URL && time < 1;
+        setArrival({
+          roomId: room,
+          leftOn:
+            mediaUrl && !neverWatched
+              ? { mediaUrl, kind: payload.kind ?? "vod", time }
+              : null,
+        });
+      }
+      if (room) syncedRoomRef.current = room;
       if (payload.media_url) {
         setMediaUrlState(payload.media_url);
       }
@@ -153,6 +185,8 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     setLiveStatus(null);
     setQueue(null);
     setPlaybackRateState(1);
+    setArrival(null);
+    syncedRoomRef.current = null;
   }, [roomId]);
 
   // After both resets above, which is what lets a held sync survive them.
@@ -161,7 +195,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     const pending = pendingSyncRef.current;
     if (!pending || pending.roomId !== roomId) return;
     pendingSyncRef.current = null;
-    applySync(pending.payload, pending.receivedAt);
+    applySync(pending.payload, pending.receivedAt, pending.roomId);
   }, [roomId, applySync]);
 
   const clearRemoteFlag = useCallback(() => {
@@ -281,7 +315,7 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
           return;
         }
         pendingSyncRef.current = null;
-        applySync(payload, Date.now());
+        applySync(payload, Date.now(), msg.room_id ?? roomIdRef.current);
       }
     });
 
@@ -467,6 +501,17 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     send("QUEUE_CLEAR", {});
   }, [permissions.can_control_playback, queue, send]);
 
+  // The player follows lastSyncTimestamp. Its own play button starts the video
+  // and then calls play(); from anywhere else the video has to be moved too.
+  const resumePlayback = useCallback(
+    (time: number) => {
+      play(time);
+      isRemoteUpdateRef.current = true;
+      setLastSyncTimestamp(Date.now());
+    },
+    [play],
+  );
+
   const notifyLocalProgress = useCallback((time: number) => {
     if (!isRemoteUpdateRef.current) {
       setCurrentTime(time);
@@ -498,6 +543,8 @@ export const PlayerSyncProvider: React.FC<PlayerSyncProviderProps> = ({
     playQueue,
     advanceQueue,
     clearQueue,
+    arrival,
+    resumePlayback,
   };
 
   return (

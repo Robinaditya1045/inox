@@ -14,6 +14,8 @@ import { SaveToPlaylistMenu } from "../library/SaveToPlaylistMenu";
 import { NewPlaylistCard, PlaylistCard } from "../library/PlaylistCard";
 import { PlaylistDetail } from "../library/PlaylistDetail";
 import { PlaylistFormModal } from "../library/PlaylistFormModal";
+import { ContinueWatching } from "./ContinueWatching";
+import type { RoomArrival } from "../../contexts/playerSync.context";
 import type {
   LiveChannelStatus,
   LiveChannelSummary,
@@ -53,6 +55,13 @@ interface MediaLibraryPickerProps {
   onSelectUrl: (url: string) => void;
   /** Starts the room playing through a playlist */
   onPlayQueue: (queue: WSQueue) => void;
+  /**
+   * Set when the picker opens because this viewer opened the room: what the
+   * room was left on is offered above the library.
+   */
+  arrival?: RoomArrival | null;
+  /** Plays the room from `time` in what it was left on */
+  onResume?: (time: number) => void;
 }
 
 type PickerTab = "library" | "playlists" | "live" | "url";
@@ -142,6 +151,8 @@ export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
   currentUrl,
   onSelectUrl,
   onPlayQueue,
+  arrival,
+  onResume,
 }) => {
   const { assets, isLoading, error, refresh } = useMediaLibrary();
   const { byAssetId: channels, refresh: refreshChannels } = useLiveChannels();
@@ -151,9 +162,10 @@ export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
 
   const [customUrl, setCustomUrl] = useState("");
   const [selected, setSelected] = useState<string>(currentUrl);
-  // Open on whichever kind of media the room is playing now.
+  // Open on whichever kind of media the room is playing now — or, for someone
+  // arriving, on the library under what the room was left on.
   const [tab, setTab] = useState<PickerTab>(() =>
-    isLiveMediaUrl(currentUrl) ? "live" : "library",
+    !arrival && isLiveMediaUrl(currentUrl) ? "live" : "library",
   );
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
@@ -241,6 +253,12 @@ export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
     const queue = queueFromPlaylist(openPlaylist, startIndex);
     if (!queue) return;
     onPlayQueue(queue);
+    onClose();
+  };
+
+  const resume = (time: number) => {
+    // A live channel has no room-wide play; it is already on in the player.
+    if (arrival?.leftOn?.kind !== "live") onResume?.(time);
     onClose();
   };
 
@@ -334,11 +352,25 @@ export const MediaLibraryPicker: React.FC<MediaLibraryPickerProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Media Library"
-      description="Choose what the whole room watches next."
+      title={arrival ? "What are we watching?" : "Media Library"}
+      description={
+        arrival
+          ? arrival.leftOn
+            ? "You're the first one here. Pick up where the room left off, or choose something new."
+            : "You're the first one here. Choose what the room watches."
+          : "Choose what the whole room watches next."
+      }
       maxWidth="1080px"
     >
       <div className={styles.body}>
+        {arrival?.leftOn && onResume && (
+          <ContinueWatching
+            leftOn={arrival.leftOn}
+            assets={assets}
+            onResume={resume}
+          />
+        )}
+
         <Tabs<PickerTab>
           className={styles.tabs}
           ariaLabel="Media source"

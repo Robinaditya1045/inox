@@ -123,6 +123,11 @@ type VideoControlPayload struct {
 	// Queue rides along on SYNC_PLAYBACK so that a late joiner learns what the
 	// room is playing through along with where it is.
 	Queue *domain.PlaybackQueue `json:"queue,omitempty"`
+
+	// FirstIn is set on SYNC_PLAYBACK for the connection that opened an empty
+	// room: the media is where the room was left, not something anyone is
+	// watching, so the viewer is offered the library to resume or pick anew.
+	FirstIn bool `json:"first_in,omitempty"`
 }
 
 // QueueSetPayload starts a room playing through a list, at Queue.Index.
