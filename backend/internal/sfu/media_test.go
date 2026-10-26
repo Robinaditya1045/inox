@@ -337,6 +337,13 @@ func TestRoomTellsCamerasFromScreenShares(t *testing.T) {
 	bob := joinCall(t, room, "user-bob")
 	bob.publishMicrophone(t)
 
+	// Let the call settle before Alice publishes again. Alice hearing Bob takes an
+	// offer from the SFU, sent whenever Bob's first packets happen to arrive; an
+	// offer of Alice's own crossing it collides, which a browser rolls back but
+	// Pion -- and so this harness -- cannot.
+	alice.awaitMedia(t, sfu.TrackName(sfu.KindMic, "user-bob"))
+	bob.awaitMedia(t, sfu.TrackName(sfu.KindMic, "user-alice"))
+
 	camera := alice.publishVideo(t, sfu.KindCamera)
 	alice.publishVideo(t, sfu.KindScreen)
 
